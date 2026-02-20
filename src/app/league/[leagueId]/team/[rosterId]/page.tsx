@@ -58,68 +58,73 @@ export default async function TeamPage({ params }: PageProps) {
     const POSITIONS_TO_SHOW = ['QB', 'RB', 'WR', 'TE'];
 
     return (
-        <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6">
+        <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
             <div className="max-w-4xl mx-auto">
-                <div className="mb-8">
+                <div className="mb-6 sm:mb-8">
                     <Link href={`/league/${leagueId}`} className="text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 mb-4 inline-block">
                         ← Back to League
                     </Link>
 
-                    <div className="flex items-center gap-6 bg-white dark:bg-zinc-900 p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
+                    <div className="flex items-center gap-4 sm:gap-6 bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                         {owner?.avatar ? (
                             <img
                                 src={`https://sleepercdn.com/avatars/${owner.avatar}`}
                                 alt={owner.display_name}
-                                className="w-20 h-20 rounded-full bg-zinc-100"
+                                className="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-zinc-100 flex-shrink-0"
                             />
                         ) : (
-                            <div className="w-20 h-20 rounded-full bg-zinc-200 flex items-center justify-center text-zinc-500 text-2xl font-bold">
+                            <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-zinc-200 flex items-center justify-center text-zinc-500 text-xl sm:text-2xl font-bold flex-shrink-0">
                                 {owner?.display_name?.charAt(0) || '?'}
                             </div>
                         )}
 
-                        <div>
-                            <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">{owner?.display_name || 'Unknown Manager'}</h1>
-                            <div className="text-zinc-500 mt-1">Roster ID: {rosterId}</div>
-                            <div className="mt-2 text-2xl font-mono font-bold text-green-600 dark:text-green-400">
-                                {totalValue.toLocaleString()} <span className="text-sm font-sans text-zinc-500 font-normal">pts</span>
+                        <div className="min-w-0">
+                            <h1 className="text-xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-50 truncate">{owner?.display_name || 'Unknown Manager'}</h1>
+                            <div className="text-xs sm:text-base text-zinc-500 mt-0.5 sm:mt-1">Roster ID: {rosterId}</div>
+                            <div className="mt-1 sm:mt-2 text-xl sm:text-2xl font-mono font-bold text-green-600 dark:text-green-400">
+                                {totalValue.toLocaleString()} <span className="text-xs sm:text-sm font-sans text-zinc-500 font-normal">pts</span>
                             </div>
                         </div>
                     </div>
 
-                    <div className="mt-4 flex gap-3">
+                    <div className="mt-3 sm:mt-4 grid grid-cols-4 gap-2 sm:gap-3">
                         {POSITIONS_TO_SHOW.map(pos => (
-                            <div key={pos} className="bg-zinc-100 dark:bg-zinc-800 px-4 py-2 rounded-lg">
-                                <div className="text-xs text-zinc-500 font-semibold">{pos}</div>
-                                <div className="font-mono font-medium">{positionValues[pos]?.toLocaleString() || 0}</div>
+                            <div key={pos} className="bg-zinc-100 dark:bg-zinc-800 px-2 sm:px-4 py-2 rounded-lg text-center sm:text-left">
+                                <div className="text-[10px] sm:text-xs text-zinc-500 font-semibold">{pos}</div>
+                                <div className="font-mono font-medium text-xs sm:text-base">{positionValues[pos]?.toLocaleString() || 0}</div>
                             </div>
                         ))}
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden">
+                <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden -mx-4 sm:mx-0">
                     <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                         <thead className="bg-zinc-50 dark:bg-zinc-950/50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Player</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Position</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Team</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Value</th>
+                                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Player</th>
+                                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">Position</th>
+                                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">Team</th>
+                                <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Value</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                             {enrichedPlayers.map((player) => (
                                 <tr key={player!.sleeper_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                                    <td className="px-6 py-4 whitespace-nowrap font-medium text-zinc-900 dark:text-zinc-100">
-                                        {player!.full_name}
+                                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
+                                        <div className="text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100">
+                                            {player!.full_name}
+                                        </div>
+                                        <div className="sm:hidden text-[11px] text-zinc-400 mt-0.5">
+                                            {player!.position} · {player!.team || 'FA'}
+                                        </div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-zinc-500 dark:text-zinc-400">
+                                    <td className="px-2 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400 hidden sm:table-cell">
                                         {player!.position}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-zinc-500 dark:text-zinc-400">
+                                    <td className="px-2 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400 hidden sm:table-cell">
                                         {player!.team || 'FA'}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right font-mono text-zinc-900 dark:text-zinc-100">
+                                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right font-mono text-sm sm:text-base text-zinc-900 dark:text-zinc-100">
                                         {player!.fc_value?.toLocaleString() || '-'}
                                     </td>
                                 </tr>
