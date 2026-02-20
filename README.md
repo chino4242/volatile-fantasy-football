@@ -146,6 +146,7 @@ Player valuations are fetched via the ingestion script and stored in PostgreSQL 
 | `npm run build`                     | Create a production build                        |
 | `npm run start`                     | Start the production server                      |
 | `npm run test`                      | Run the Vitest unit test suite                   |
+| `npm run test:e2e`                  | Run the Playwright E2E test suite                |
 | `npm run lint`                      | Run ESLint                                       |
 | `npx drizzle-kit push`             | Push schema changes to the database              |
 | `npx drizzle-kit studio`           | Open Drizzle Studio (visual DB browser)          |
@@ -154,18 +155,22 @@ Player valuations are fetched via the ingestion script and stored in PostgreSQL 
 
 ## Testing
 
-We use **Vitest** for unit testing, focusing on pure functions and API integrations.
+We use a layered testing approach combining **Vitest** (Unit Tests) and **Playwright** (End-to-End Tests).
 
-To run the test suite:
-
+To run the unit test suite:
 ```bash
 npm run test
 ```
 
+To run the full Playwright E2E suite (verifies critical user journeys on both Desktop and Mobile viewports):
+```bash
+npm run test:e2e
+```
+
 ### Test Strategy
 Our testing layers prioritize different areas:
-1. **Unit Tests (Vitest)** — API clients (`src/lib/`) and complex pure functions.
-2. **E2E Tests (Playwright - Planned)** — Critical user journeys (home -> players -> league) and mobile responsiveness formatting.
+1. **Unit Tests (Vitest)** — API clients (`src/lib/sleeper.ts`) and complex pure functions.
+2. **E2E Tests (Playwright)** — Critical user journeys (home -> players -> league -> team) and mobile responsiveness formatting.
 3. **Integration Tests (Planned)** — Database ingestion scripts.
 
 ## Deployment

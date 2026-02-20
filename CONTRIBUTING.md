@@ -10,7 +10,8 @@ Thanks for your interest in contributing! This guide will help you get set up an
 4. Run `npx drizzle-kit push` to set up the database schema
 5. Run `npx tsx scripts/ingest-players.ts` to seed player data
 6. Run `npm run dev` to start the dev server
-7. Run `npm run test` to verify your environment is working
+7. Run `npm run test` to verify your environment is working (Vitest unit tests)
+8. Run `npm run test:e2e` to verify the core UI workflows (Playwright E2E)
 
 ## Branch Naming
 
@@ -32,15 +33,16 @@ chore/update-dependencies
 
 ## Testing Guidelines
 
-We use **Vitest** for unit testing. Before submitting a PR, make sure you run:
+We use both **Vitest** for unit testing and **Playwright** for End-to-End testing. Before submitting a PR, make sure you run:
 
 ```bash
 npm run test
+npm run test:e2e
 ```
 
 - **API Integrations:** Any changes to fetching logic (e.g., `src/lib/sleeper.ts`) must include tests that mock the network request using Vitest's `vi.fn()`.
-- **Pure Functions:** Any complex data transformations should have unit tests.
-- **Coverage:** Aim to cover edge cases (e.g., network errors, invalid sleeper IDs) in your tests.
+- **UI Workflows:** Any new pages or changes to critical navigation paths must be covered or updated in `e2e/navigation.spec.ts`.
+- **Mobile First:** The Playwright config tests against both Desktop Chrome and Mobile Chrome. Ensure your Tailwind classes (`sm:`) work correctly across both viewports.
 
 ## Project Architecture
 
