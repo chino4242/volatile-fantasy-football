@@ -36,11 +36,11 @@ chore/update-dependencies
 We use both **Vitest** for unit testing and **Playwright** for End-to-End testing. Before submitting a PR, make sure you run:
 
 ```bash
-npm run test
-npm run test:e2e
+npm run test:all
 ```
 
 - **API Integrations:** Any changes to fetching logic (e.g., `src/lib/sleeper.ts`) must include tests that mock the network request using Vitest's `vi.fn()`.
+- **Database Scripts:** Any changes to ingestion or migration scripts should be tested by mocking the Drizzle `db` export, verifying the exact `insert.values().onConflictDoUpdate()` flow.
 - **UI Workflows:** Any new pages or changes to critical navigation paths must be covered or updated in `e2e/navigation.spec.ts`.
 - **Mobile First:** The Playwright config tests against both Desktop Chrome and Mobile Chrome. Ensure your Tailwind classes (`sm:`) work correctly across both viewports.
 

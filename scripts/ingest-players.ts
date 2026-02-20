@@ -7,7 +7,7 @@ console.log("DB URL:", process.env.DATABASE_URL ? process.env.DATABASE_URL.repla
 
 const FANTASY_CALC_URL = "https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=2&numTeams=12&ppr=0.5";
 
-async function ingestPlayers() {
+export async function ingestPlayers() {
     console.log("--- Starting Player Ingestion ---");
     // Import DB after config
     const { db } = await import("../src/db");
@@ -93,4 +93,7 @@ async function ingestPlayers() {
     }
 }
 
-ingestPlayers();
+// Only run automatically if executed directly via Node/TSX
+if (import.meta.url === `file://${process.argv[1]}`) {
+    ingestPlayers();
+}
