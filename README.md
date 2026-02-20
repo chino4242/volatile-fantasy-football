@@ -1,36 +1,192 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Volatile Fantasy Football
+
+A high-performance dynasty fantasy football analytics platform built with **Next.js 16**, **Drizzle ORM**, and **PostgreSQL**. Live at [theprovingground.co](https://theprovingground.co).
+
+## Features
+
+- **League Dashboard** — View all teams in a Sleeper league ranked by total dynasty value
+- **Team Rosters** — Drill into any team to see their full roster with per-player valuations
+- **Player Rankings** — Browse the top 50 dynasty players by FantasyCalc value
+- **Live Sleeper Integration** — Roster data is fetched in real-time from the [Sleeper API](https://docs.sleeper.com/)
+- **FantasyCalc Valuations** — Player trade values sourced from [FantasyCalc](https://fantasycalc.com/)
+- **Mobile-Responsive** — Optimized table layouts for phones and tablets
+
+## Tech Stack
+
+| Layer      | Technology                                                       |
+| ---------- | ---------------------------------------------------------------- |
+| Framework  | [Next.js 16](https://nextjs.org/) (App Router, Server Components)|
+| Database   | PostgreSQL (via [Neon](https://neon.tech/) or any Postgres host) |
+| ORM        | [Drizzle ORM](https://orm.drizzle.team/)                        |
+| Styling    | [Tailwind CSS v4](https://tailwindcss.com/)                      |
+| Icons      | [Lucide React](https://lucide.dev/)                              |
+| Font       | [Inter](https://fonts.google.com/specimen/Inter) (via next/font) |
+| Hosting    | [Vercel](https://vercel.com/)                                    |
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- **Node.js** ≥ 18
+- **npm** (comes with Node)
+- A **PostgreSQL** database (we recommend [Neon](https://neon.tech/) for serverless Postgres)
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/<your-org>/volatile-fantasy-football.git
+cd volatile-fantasy-football
+```
+
+### 2. Install Dependencies
+
+```bash
+npm install
+```
+
+### 3. Configure Environment Variables
+
+Create a `.env.local` file in the project root:
+
+```env
+DATABASE_URL=postgresql://<user>:<password>@<host>/<database>?sslmode=require
+```
+
+> **Note:** The `DATABASE_URL` must point to a PostgreSQL database. If you're using Neon, copy the connection string from your Neon dashboard.
+
+### 4. Set Up the Database
+
+Push the Drizzle schema to your database:
+
+```bash
+npx drizzle-kit push
+```
+
+Then seed the database with player data from FantasyCalc:
+
+```bash
+npx tsx scripts/ingest-players.ts
+```
+
+### 5. Run the Dev Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to see the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+volatile-fantasy-football/
+├── scripts/                    # Data ingestion & DB utility scripts
+│   ├── ingest-players.ts       # Fetches player data from FantasyCalc API
+│   ├── test-db.js              # Quick DB connection test
+│   └── verify-db.ts            # Verifies DB schema and data
+├── src/
+│   ├── app/                    # Next.js App Router pages
+│   │   ├── layout.tsx          # Root layout (header, fonts, metadata)
+│   │   ├── page.tsx            # Home page
+│   │   ├── players/
+│   │   │   └── page.tsx        # Top 50 players list
+│   │   └── league/
+│   │       └── [leagueId]/
+│   │           ├── page.tsx    # League dashboard (all teams ranked)
+│   │           └── team/
+│   │               └── [rosterId]/
+│   │                   └── page.tsx  # Individual team roster
+│   ├── components/
+│   │   └── AppHeader.tsx       # Sticky navigation header
+│   ├── db/
+│   │   ├── index.ts            # Database connection (Drizzle + postgres.js)
+│   │   └── schema.ts           # Drizzle schema (players, leagues, rosters, values)
+│   └── lib/
+│       └── sleeper.ts          # Sleeper API client (users, rosters)
+├── drizzle.config.ts           # Drizzle Kit configuration
+├── package.json
+└── tsconfig.json
+```
 
-## Learn More
+## Database Schema
 
-To learn more about Next.js, take a look at the following resources:
+The app uses five tables managed by Drizzle ORM:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Table             | Description                                            |
+| ----------------- | ------------------------------------------------------ |
+| `players`         | Master player list (name, position, team, age)         |
+| `player_values`   | Dynasty trade values from FantasyCalc and KTC          |
+| `leagues`         | League metadata (platform, scoring, roster settings)   |
+| `rosters`         | Team rosters within a league (W/L record, points)      |
+| `roster_players`  | Join table linking rosters to players                  |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+See [`src/db/schema.ts`](src/db/schema.ts) for the full schema definition.
 
-## Deploy on Vercel
+## Key APIs & Data Sources
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Sleeper API (Live)
+Roster and user data is fetched **at request time** from the Sleeper API. No Sleeper data is cached in the database.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Endpoint:** `https://api.sleeper.app/v1/league/{leagueId}/users`
+- **Endpoint:** `https://api.sleeper.app/v1/league/{leagueId}/rosters`
+- **Client:** [`src/lib/sleeper.ts`](src/lib/sleeper.ts)
+
+### FantasyCalc API (Ingested)
+Player valuations are fetched via the ingestion script and stored in PostgreSQL for fast lookups.
+
+- **Endpoint:** `https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=2&numTeams=12&ppr=0.5`
+- **Script:** [`scripts/ingest-players.ts`](scripts/ingest-players.ts)
+- **Run:** `npx tsx scripts/ingest-players.ts`
+
+## Available Scripts
+
+| Command                             | Description                                      |
+| ----------------------------------- | ------------------------------------------------ |
+| `npm run dev`                       | Start the Next.js development server             |
+| `npm run build`                     | Create a production build                        |
+| `npm run start`                     | Start the production server                      |
+| `npm run test`                      | Run the Vitest unit test suite                   |
+| `npm run lint`                      | Run ESLint                                       |
+| `npx drizzle-kit push`             | Push schema changes to the database              |
+| `npx drizzle-kit studio`           | Open Drizzle Studio (visual DB browser)          |
+| `npx tsx scripts/ingest-players.ts`| Ingest/update player data from FantasyCalc       |
+| `npx tsx scripts/verify-db.ts`     | Verify database connection and data              |
+
+## Testing
+
+We use **Vitest** for unit testing, focusing on pure functions and API integrations.
+
+To run the test suite:
+
+```bash
+npm run test
+```
+
+### Test Strategy
+Our testing layers prioritize different areas:
+1. **Unit Tests (Vitest)** — API clients (`src/lib/`) and complex pure functions.
+2. **E2E Tests (Playwright - Planned)** — Critical user journeys (home -> players -> league) and mobile responsiveness formatting.
+3. **Integration Tests (Planned)** — Database ingestion scripts.
+
+## Deployment
+
+The app is deployed on **Vercel** and automatically deploys on pushes to `main`.
+
+- **Production URL:** [theprovingground.co](https://theprovingground.co)
+- **Vercel Root Directory:** `volatile-fantasy-football`
+
+### Environment Variables on Vercel
+
+Make sure the following environment variable is set in your Vercel project settings:
+
+| Variable        | Description                          |
+| --------------- | ------------------------------------ |
+| `DATABASE_URL`  | PostgreSQL connection string         |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+
+## License
+
+This project is private. Please contact the maintainer for licensing inquiries.

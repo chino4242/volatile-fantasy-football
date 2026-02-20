@@ -1,0 +1,98 @@
+# Contributing to Volatile Fantasy Football
+
+Thanks for your interest in contributing! This guide will help you get set up and understand our workflow.
+
+## Development Setup
+
+1. **Fork & clone** the repository
+2. Run `npm install`
+3. Copy `.env.local.example` to `.env.local` and fill in your `DATABASE_URL`
+4. Run `npx drizzle-kit push` to set up the database schema
+5. Run `npx tsx scripts/ingest-players.ts` to seed player data
+6. Run `npm run dev` to start the dev server
+7. Run `npm run test` to verify your environment is working
+
+## Branch Naming
+
+Use descriptive branch names:
+
+```
+feature/add-trade-calculator
+fix/mobile-table-overflow
+chore/update-dependencies
+```
+
+## Code Style
+
+- **TypeScript** — All new files should be `.ts` or `.tsx`
+- **Tailwind CSS** — Use Tailwind utility classes for styling. No external CSS files per component
+- **Server Components** — Pages are Server Components by default (Next.js App Router). Only use `"use client"` when you need interactivity (event handlers, hooks, etc.)
+- **Drizzle ORM** — All database queries go through Drizzle. No raw SQL unless absolutely necessary
+- **Formatting** — We use Prettier with the Tailwind plugin. Run `npx prettier --write .` before committing
+
+## Testing Guidelines
+
+We use **Vitest** for unit testing. Before submitting a PR, make sure you run:
+
+```bash
+npm run test
+```
+
+- **API Integrations:** Any changes to fetching logic (e.g., `src/lib/sleeper.ts`) must include tests that mock the network request using Vitest's `vi.fn()`.
+- **Pure Functions:** Any complex data transformations should have unit tests.
+- **Coverage:** Aim to cover edge cases (e.g., network errors, invalid sleeper IDs) in your tests.
+
+## Project Architecture
+
+```
+src/
+├── app/          # Pages & layouts (Next.js App Router)
+├── components/   # Reusable React components
+├── db/           # Database connection & Drizzle schema
+└── lib/          # API clients & utility functions
+```
+
+### Key Conventions
+
+- **Pages** live in `src/app/` using Next.js file-based routing
+- **Shared components** go in `src/components/`
+- **External API clients** (Sleeper, FantasyCalc, etc.) go in `src/lib/`
+- **Database schema changes** are made in `src/db/schema.ts` and pushed with `npx drizzle-kit push`
+- **Data scripts** live in `scripts/` and are run with `npx tsx`
+
+## Database Changes
+
+If your contribution modifies the database schema:
+
+1. Update `src/db/schema.ts`
+2. Run `npx drizzle-kit push` to apply changes to your local database
+3. Test thoroughly — schema changes affect all pages that query the database
+4. Document any new tables or columns in your PR description
+
+## Adding a New Page
+
+1. Create a new directory under `src/app/` following Next.js conventions
+2. Export a default async function (Server Component) from `page.tsx`
+3. Use `export const dynamic = 'force-dynamic'` if the page queries the database
+4. Add navigation links in `src/components/AppHeader.tsx` if appropriate
+
+## Pull Request Guidelines
+
+- Keep PRs focused — one feature or fix per PR
+- Include a clear description of what changed and why
+- Add screenshots for UI changes (especially mobile views)
+- Make sure `npm run build` passes before submitting
+- Test on mobile viewport sizes — we care about mobile UX
+
+## Reporting Issues
+
+Open a GitHub issue with:
+
+- **What happened** vs. **what you expected**
+- Browser/device info (especially for mobile bugs)
+- Screenshots if applicable
+- Steps to reproduce
+
+## Questions?
+
+Open a discussion or reach out to the maintainer. We're happy to help you get started!
