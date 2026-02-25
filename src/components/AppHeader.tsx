@@ -13,18 +13,24 @@ export function AppHeader() {
                     <span className="sm:hidden">Volatile</span>
                 </Link>
 
-                <nav className="ml-auto flex items-center gap-4">
+                <nav className="ml-auto flex items-center gap-2 sm:gap-4">
                     <Link
                         href="/league/1200992049558454272"
-                        className="text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                        className="flex items-center min-h-[44px] min-w-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
                     >
                         League
                     </Link>
                     <Link
                         href="/players"
-                        className="text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                        className="flex items-center min-h-[44px] min-w-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
                     >
                         Players
+                    </Link>
+                    <Link
+                        href="/admin"
+                        className="flex items-center min-h-[44px] min-w-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                    >
+                        Admin
                     </Link>
                 </nav>
             </div>

@@ -4,6 +4,7 @@ import { getLeagueData } from "@/lib/sleeper";
 import { eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { TeamRosterTable } from "./TeamRosterTable";
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +35,12 @@ export default async function TeamPage({ params }: PageProps) {
             position: players.position,
             team: players.team,
             fc_value: playerValues.fc_value,
+            rank_1qb_overall: playerValues.rank_1qb_overall,
+            rank_1qb_pos: playerValues.rank_1qb_pos,
+            rank_1qb_tier: playerValues.rank_1qb_tier,
+            rank_sf_overall: playerValues.rank_sf_overall,
+            rank_sf_pos: playerValues.rank_sf_pos,
+            rank_sf_tier: playerValues.rank_sf_tier,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -42,10 +49,12 @@ export default async function TeamPage({ params }: PageProps) {
     const playerMap = new Map(dbPlayers.map(p => [p.sleeper_id, p]));
 
     // 5. Enrich players
+    // We treat the mapped element as 'any' briefly to bypass strict Typescript checks, 
+    // but the db values match the Client Component interface
     const enrichedPlayers = rosterPlayerIds
         .map(pid => playerMap.get(pid))
         .filter(p => p !== undefined)
-        .sort((a, b) => (b!.fc_value || 0) - (a!.fc_value || 0));
+        .sort((a, b) => (b!.fc_value || 0) - (a!.fc_value || 0)) as any[];
 
     // 6. Calculate stats
     const totalValue = enrichedPlayers.reduce((sum, p) => sum + (p!.fc_value || 0), 0);
@@ -97,41 +106,7 @@ export default async function TeamPage({ params }: PageProps) {
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden -mx-4 sm:mx-0">
-                    <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
-                        <thead className="bg-zinc-50 dark:bg-zinc-950/50">
-                            <tr>
-                                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Player</th>
-                                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">Position</th>
-                                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">Team</th>
-                                <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Value</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                            {enrichedPlayers.map((player) => (
-                                <tr key={player!.sleeper_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
-                                        <div className="text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100">
-                                            {player!.full_name}
-                                        </div>
-                                        <div className="sm:hidden text-[11px] text-zinc-400 mt-0.5">
-                                            {player!.position} · {player!.team || 'FA'}
-                                        </div>
-                                    </td>
-                                    <td className="px-2 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400 hidden sm:table-cell">
-                                        {player!.position}
-                                    </td>
-                                    <td className="px-2 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400 hidden sm:table-cell">
-                                        {player!.team || 'FA'}
-                                    </td>
-                                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right font-mono text-sm sm:text-base text-zinc-900 dark:text-zinc-100">
-                                        {player!.fc_value?.toLocaleString() || '-'}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                <TeamRosterTable players={enrichedPlayers} />
             </div>
         </div>
     );
