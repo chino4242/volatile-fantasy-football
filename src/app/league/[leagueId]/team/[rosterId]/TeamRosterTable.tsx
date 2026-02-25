@@ -117,8 +117,17 @@ export function TeamRosterTable({ players }: TeamRosterTableProps) {
                                 {/* 1QB Columns */}
                                 {show1Qb && (
                                     <>
-                                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right font-mono text-sm sm:text-base text-zinc-900 dark:text-zinc-100 bg-blue-50/20 dark:bg-blue-950/10">
-                                            {player.rank_1qb_overall || '-'}
+                                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right bg-blue-50/20 dark:bg-blue-950/10">
+                                            <div className="font-mono text-sm sm:text-base text-zinc-900 dark:text-zinc-100">
+                                                {player.rank_1qb_overall || '-'}
+                                            </div>
+                                            <div className="md:hidden text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 font-mono">
+                                                {player.rank_1qb_pos ? `${player.position}${player.rank_1qb_pos}` : '-'}
+                                                <span className="mx-1">•</span>
+                                                <span className={player.rank_1qb_tier ? getTierColorClass(player.rank_1qb_tier) : ""}>
+                                                    {player.rank_1qb_tier ? `T${player.rank_1qb_tier}` : '-'}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right font-mono text-sm sm:text-base text-zinc-500 dark:text-zinc-400 bg-blue-50/20 dark:bg-blue-950/10 hidden md:table-cell">
                                             {player.rank_1qb_pos ? `${player.position}${player.rank_1qb_pos}` : '-'}
@@ -132,8 +141,17 @@ export function TeamRosterTable({ players }: TeamRosterTableProps) {
                                 {/* SF Columns */}
                                 {showSf && (
                                     <>
-                                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right font-mono text-sm sm:text-base text-zinc-900 dark:text-zinc-100 bg-purple-50/20 dark:bg-purple-950/10">
-                                            {player.rank_sf_overall || '-'}
+                                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right bg-purple-50/20 dark:bg-purple-950/10">
+                                            <div className="font-mono text-sm sm:text-base text-zinc-900 dark:text-zinc-100">
+                                                {player.rank_sf_overall || '-'}
+                                            </div>
+                                            <div className="md:hidden text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 font-mono">
+                                                {player.rank_sf_pos ? `${player.position}${player.rank_sf_pos}` : '-'}
+                                                <span className="mx-1">•</span>
+                                                <span className={player.rank_sf_tier ? getTierColorClass(player.rank_sf_tier) : ""}>
+                                                    {player.rank_sf_tier ? `T${player.rank_sf_tier}` : '-'}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right font-mono text-sm sm:text-base text-zinc-500 dark:text-zinc-400 bg-purple-50/20 dark:bg-purple-950/10 hidden md:table-cell">
                                             {player.rank_sf_pos ? `${player.position}${player.rank_sf_pos}` : '-'}
