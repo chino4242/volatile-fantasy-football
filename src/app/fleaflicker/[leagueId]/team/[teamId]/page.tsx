@@ -71,53 +71,55 @@ export default async function FleaflickerTeamPage({
     const totalValue = playersWithValue.reduce((sum, p) => sum + p.value, 0);
 
     return (
-        <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+        <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 p-4 md:p-8">
             <div className="mx-auto max-w-5xl">
                 <div className="mb-6">
                     <Link
                         href={`/fleaflicker/${leagueId}`}
-                        className="text-sm text-blue-600 hover:underline"
+                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
                     >
                         ← Back to League
                     </Link>
                 </div>
 
                 <div className="mb-6">
-                    <h1 className="text-2xl font-bold md:text-3xl">{roster.name}</h1>
-                    <p className="mt-2 text-lg font-semibold">
+                    <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 md:text-3xl">{roster.name}</h1>
+                    <p className="mt-2 text-lg font-semibold text-zinc-700 dark:text-zinc-300">
                         Total Value: {totalValue.toLocaleString()}
                     </p>
                 </div>
 
-                <div className="overflow-x-auto rounded-lg bg-white shadow">
-                    <table className="w-full">
-                        <thead className="bg-gray-100">
-                            <tr>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Player</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Pos</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Team</th>
-                                <th className="px-4 py-3 text-right text-sm font-semibold">Value</th>
-                                <th className="px-4 py-3 text-right text-sm font-semibold">Rank</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {playersWithValue.map((player, idx) => (
-                                <tr key={idx} className="hover:bg-gray-50">
-                                    <td className="px-4 py-3 font-medium">{player.name}</td>
-                                    <td className="px-4 py-3 text-sm">{player.position || "—"}</td>
-                                    <td className="px-4 py-3 text-sm text-gray-600">
-                                        {player.team || "—"}
-                                    </td>
-                                    <td className="px-4 py-3 text-right font-semibold">
-                                        {player.value.toLocaleString()}
-                                    </td>
-                                    <td className="px-4 py-3 text-right text-sm text-gray-600">
-                                        {player.rank || "—"}
-                                    </td>
+                <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
+                            <thead className="bg-zinc-50 dark:bg-zinc-950/50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Player</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Pos</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Team</th>
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Value</th>
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Rank</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
+                                {playersWithValue.map((player, idx) => (
+                                    <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                                        <td className="px-4 py-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">{player.name}</td>
+                                        <td className="px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">{player.position || "—"}</td>
+                                        <td className="px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">
+                                            {player.team || "—"}
+                                        </td>
+                                        <td className="px-4 py-3 text-right text-sm font-mono font-medium text-green-600 dark:text-green-400">
+                                            {player.value.toLocaleString()}
+                                        </td>
+                                        <td className="px-4 py-3 text-right text-sm text-zinc-500 dark:text-zinc-400">
+                                            {player.rank || "—"}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
