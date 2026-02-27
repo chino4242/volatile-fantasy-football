@@ -26,7 +26,7 @@ describe('AppHeader Component', () => {
         expect(sleeperLink).toHaveAttribute('href', '/league/1200992049558454272');
 
         expect(fleaflickerLink).toBeInTheDocument();
-        expect(fleaflickerLink).toHaveAttribute('href', '/fleaflicker/417068');
+        expect(fleaflickerLink).toHaveAttribute('href', '/fleaflicker/197269');
 
         expect(playersLink).toBeInTheDocument();
         expect(playersLink).toHaveAttribute('href', '/players');
