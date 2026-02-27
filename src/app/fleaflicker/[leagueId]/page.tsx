@@ -10,7 +10,6 @@ export const dynamic = "force-dynamic";
 interface TeamWithValue {
     id: number;
     name: string;
-    owner: string;
     totalValue: number;
     playerCount: number;
 }
@@ -61,7 +60,6 @@ export default async function FleaflickerLeaguePage({
         return {
             id: roster.id,
             name: roster.name,
-            owner: roster.owners[0]?.display_name || "Unknown",
             totalValue,
             playerCount: roster.players.length,
         };
@@ -82,7 +80,6 @@ export default async function FleaflickerLeaguePage({
                             <tr>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Rank</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Team</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Owner</th>
                                 <th className="px-4 py-3 text-right text-sm font-semibold">Value</th>
                                 <th className="px-4 py-3 text-right text-sm font-semibold">Players</th>
                             </tr>
@@ -99,7 +96,6 @@ export default async function FleaflickerLeaguePage({
                                             {team.name}
                                         </Link>
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-gray-600">{team.owner}</td>
                                     <td className="px-4 py-3 text-right text-sm font-semibold">
                                         {team.totalValue.toLocaleString()}
                                     </td>

@@ -26,7 +26,9 @@ export async function getFleaflickerLeague(leagueId: string): Promise<Fleaflicke
     const response = await fetch(`${BASE_URL}/FetchLeagueRosters?sport=NFL&league_id=${leagueId}`);
     
     if (!response.ok) {
-        throw new Error("Failed to fetch Fleaflicker rosters");
+        const text = await response.text();
+        console.error('Fleaflicker API error:', response.status, text);
+        throw new Error(`Failed to fetch Fleaflicker rosters: ${response.status} - ${text.substring(0, 200)}`);
     }
     
     const data = await response.json();
@@ -47,7 +49,11 @@ export async function getFleaflickerLeague(leagueId: string): Promise<Fleaflicke
         return {
             id: r.team?.id || r.id,
             name: r.team?.name || '',
-            owners: r.team?.owners || [],
+            owners: [{
+                display_name: r.team?.owners?.[0]?.displayName || 
+                             r.owners?.[0]?.displayName || 
+                             'Unknown'
+            }],
             players
         };
     });
