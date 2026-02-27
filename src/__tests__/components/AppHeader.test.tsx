@@ -17,13 +17,21 @@ describe('AppHeader Component', () => {
     it('should render navigation links', () => {
         render(<AppHeader />);
 
-        const leagueLink = screen.getByRole('link', { name: 'League' });
+        const sleeperLink = screen.getByRole('link', { name: 'Sleeper' });
+        const fleaflickerLink = screen.getByRole('link', { name: 'Fleaflicker' });
         const playersLink = screen.getByRole('link', { name: 'Players' });
+        const adminLink = screen.getByRole('link', { name: 'Admin' });
 
-        expect(leagueLink).toBeInTheDocument();
-        expect(leagueLink).toHaveAttribute('href', '/league/1200992049558454272');
+        expect(sleeperLink).toBeInTheDocument();
+        expect(sleeperLink).toHaveAttribute('href', '/league/1200992049558454272');
+
+        expect(fleaflickerLink).toBeInTheDocument();
+        expect(fleaflickerLink).toHaveAttribute('href', '/fleaflicker/417068');
 
         expect(playersLink).toBeInTheDocument();
         expect(playersLink).toHaveAttribute('href', '/players');
+
+        expect(adminLink).toBeInTheDocument();
+        expect(adminLink).toHaveAttribute('href', '/admin');
     });
 });

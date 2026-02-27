@@ -18,7 +18,13 @@ export function AppHeader() {
                         href="/league/1200992049558454272"
                         className="flex items-center min-h-[44px] min-w-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
                     >
-                        League
+                        Sleeper
+                    </Link>
+                    <Link
+                        href="/fleaflicker/417068"
+                        className="flex items-center min-h-[44px] min-w-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                    >
+                        Fleaflicker
                     </Link>
                     <Link
                         href="/players"
