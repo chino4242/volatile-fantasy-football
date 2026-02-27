@@ -3,16 +3,9 @@ import { getFleaflickerLeague } from "@/lib/fleaflicker";
 import { db } from "@/db";
 import { players, playerValues } from "@/db/schema";
 import { inArray } from "drizzle-orm";
+import { TeamRosterTable } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterTable";
 
 export const dynamic = "force-dynamic";
-
-interface PlayerWithValue {
-    name: string;
-    team?: string;
-    position?: string;
-    value: number;
-    rank?: number;
-}
 
 export default async function FleaflickerTeamPage({
     params,
@@ -44,35 +37,41 @@ export default async function FleaflickerTeamPage({
         .from(playerValues)
         .where(inArray(playerValues.sleeper_id, playerIds));
 
-    const valueMap = new Map(
-        values.map(v => [v.sleeper_id, { value: v.fc_value || 0, rank: v.fc_rank }])
-    );
-
+    const valueMap = new Map(values.map(v => [v.sleeper_id, v]));
     const nameToPlayerMap = new Map(
         matchedPlayers.map(p => [p.full_name.toLowerCase(), p])
     );
 
-    // Merge data
-    const playersWithValue: PlayerWithValue[] = roster.players.map(player => {
-        const dbPlayer = nameToPlayerMap.get(player.full_name.toLowerCase());
-        const valueData = dbPlayer ? valueMap.get(dbPlayer.sleeper_id) : undefined;
+    // Transform to TeamRosterTable format
+    const playersWithData = roster.players
+        .map(player => {
+            const dbPlayer = nameToPlayerMap.get(player.full_name.toLowerCase());
+            if (!dbPlayer) return null;
+            
+            const valueData = valueMap.get(dbPlayer.sleeper_id);
+            
+            return {
+                sleeper_id: dbPlayer.sleeper_id,
+                full_name: player.full_name,
+                position: dbPlayer.position,
+                team: player.team || dbPlayer.team,
+                fc_value: valueData?.fc_value || null,
+                rank_1qb_overall: valueData?.rank_1qb_overall || null,
+                rank_1qb_pos: valueData?.rank_1qb_pos || null,
+                rank_1qb_tier: valueData?.rank_1qb_tier || null,
+                rank_sf_overall: valueData?.rank_sf_overall || null,
+                rank_sf_pos: valueData?.rank_sf_pos || null,
+                rank_sf_tier: valueData?.rank_sf_tier || null,
+            };
+        })
+        .filter((p): p is NonNullable<typeof p> => p !== null)
+        .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
 
-        return {
-            name: player.full_name,
-            team: player.team,
-            position: dbPlayer?.position || undefined,
-            value: valueData?.value || 0,
-            rank: valueData?.rank || undefined,
-        };
-    });
-
-    playersWithValue.sort((a, b) => b.value - a.value);
-
-    const totalValue = playersWithValue.reduce((sum, p) => sum + p.value, 0);
+    const totalValue = playersWithData.reduce((sum, p) => sum + (p.fc_value || 0), 0);
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 p-4 md:p-8">
-            <div className="mx-auto max-w-5xl">
+            <div className="mx-auto max-w-7xl">
                 <div className="mb-6">
                     <Link
                         href={`/fleaflicker/${leagueId}`}
@@ -83,44 +82,15 @@ export default async function FleaflickerTeamPage({
                 </div>
 
                 <div className="mb-6">
-                    <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 md:text-3xl">{roster.name}</h1>
+                    <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 md:text-3xl">
+                        {roster.name}
+                    </h1>
                     <p className="mt-2 text-lg font-semibold text-zinc-700 dark:text-zinc-300">
                         Total Value: {totalValue.toLocaleString()}
                     </p>
                 </div>
 
-                <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
-                            <thead className="bg-zinc-50 dark:bg-zinc-950/50">
-                                <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Player</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Pos</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Team</th>
-                                    <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Value</th>
-                                    <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Rank</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
-                                {playersWithValue.map((player, idx) => (
-                                    <tr key={idx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                                        <td className="px-4 py-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">{player.name}</td>
-                                        <td className="px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">{player.position || "—"}</td>
-                                        <td className="px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">
-                                            {player.team || "—"}
-                                        </td>
-                                        <td className="px-4 py-3 text-right text-sm font-mono font-medium text-green-600 dark:text-green-400">
-                                            {player.value.toLocaleString()}
-                                        </td>
-                                        <td className="px-4 py-3 text-right text-sm text-zinc-500 dark:text-zinc-400">
-                                            {player.rank || "—"}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <TeamRosterTable players={playersWithData} />
             </div>
         </div>
     );
