@@ -23,28 +23,37 @@ export interface FleaflickerLeagueData {
 const BASE_URL = "https://www.fleaflicker.com/api";
 
 export async function getFleaflickerLeague(leagueId: string): Promise<FleaflickerLeagueData> {
-    const [rosters, players] = await Promise.all([
-        fetch(`${BASE_URL}/FetchLeagueRosters?sport=NFL&league_id=${leagueId}`).then(r => {
-            if (!r.ok) throw new Error("Failed to fetch Fleaflicker rosters");
-            return r.json();
-        }),
-        fetch(`${BASE_URL}/FetchLeaguePlayers?sport=NFL&league_id=${leagueId}`).then(r => {
-            if (!r.ok) throw new Error("Failed to fetch Fleaflicker players");
-            return r.json();
-        })
-    ]);
-
-    return {
-        master_player_list: players.players || [],
-        rosters: (rosters.rosters || []).map((r: any) => ({
-            id: r.id,
-            name: r.name,
-            owners: r.owners || [],
-            players: (r.players || []).map((p: any) => ({
+    const response = await fetch(`${BASE_URL}/FetchLeagueRosters?sport=NFL&league_id=${leagueId}`);
+    
+    if (!response.ok) {
+        throw new Error("Failed to fetch Fleaflicker rosters");
+    }
+    
+    const data = await response.json();
+    
+    // Extract all unique players from rosters
+    const allPlayers = new Set<string>();
+    const rosters = (data.rosters || []).map((r: any) => {
+        const players = (r.players || []).map((p: any) => {
+            const player = {
                 id: p.proPlayer?.id?.toString() || '',
                 full_name: p.proPlayer?.nameFull || '',
                 team: p.proPlayer?.proTeamAbbreviation
-            }))
-        }))
+            };
+            if (player.full_name) allPlayers.add(player.full_name);
+            return player;
+        });
+        
+        return {
+            id: r.team?.id || r.id,
+            name: r.team?.name || '',
+            owners: r.team?.owners || [],
+            players
+        };
+    });
+
+    return {
+        master_player_list: Array.from(allPlayers).map(name => ({ id: '', full_name: name })),
+        rosters
     };
 }
