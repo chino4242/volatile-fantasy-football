@@ -18,11 +18,14 @@ export default async function FleaflickerFreeAgentsPage({ params }: PageProps) {
         // 1. Fetch live Fleaflicker data
         const fleaflickerData = await getFleaflickerLeague(leagueId);
 
-        // 2. Get all unique player names from rosters
+        // 2. Get all unique player names from rosters (normalized to handle punctuation diffs like "Jr." vs "Jr")
+        const normalizeName = (name: string) =>
+            name.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+
         const allPlayerNames = new Set<string>();
         fleaflickerData.rosters.forEach(roster => {
             roster.players.forEach(p => {
-                if (p.full_name) allPlayerNames.add(p.full_name.toLowerCase());
+                if (p.full_name) allPlayerNames.add(normalizeName(p.full_name));
             });
         });
 
@@ -48,9 +51,9 @@ export default async function FleaflickerFreeAgentsPage({ params }: PageProps) {
             .orderBy(desc(playerValues.fc_value))
             .limit(1000); // Fetch enough to ensure we have 200 after filtering
 
-        // 4. Filter out rostered players by matching name
+        // 4. Filter out rostered players using normalized name matching
         const freeAgents = dbPlayers
-            .filter(p => !allPlayerNames.has((p.full_name || '').toLowerCase()))
+            .filter(p => !allPlayerNames.has(normalizeName(p.full_name || '')))
             .slice(0, 200);
 
         return (
