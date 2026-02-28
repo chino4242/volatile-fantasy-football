@@ -63,33 +63,55 @@ export async function ingestPlayers() {
                 console.log(`No sleeperId: "${p.name}"`);
             }
 
-            // Handle draft picks - FantasyCalc format is like "2026 Pick 1.01"
-            // Convert to our format: FP_2026_1.01
-            if (!p.sleeperId && p.name && p.name.match(/^\d{4} Pick \d+\.\d+$/)) {
-                const match = p.name.match(/^(\d{4}) Pick (\d+)\.(\d+)$/);
-                if (match) {
-                    const [_, year, round, slot] = match;
-                    const pickId = `FP_${year}_${round}.${slot}`;
-
-                    // Find matching 1QB pick value
-                    const qbItem = qbData.find((qb: any) => qb.player.name === p.name);
-
-                    valuesBatch.push({
-                        sleeper_id: pickId,
-                        fc_value_sf: item.value,
-                        fc_rank_sf: item.overallRank,
-                        fc_value_1qb: qbItem?.value || null,
-                        fc_rank_1qb: qbItem?.overallRank || null,
-                        fc_value: item.value,
-                        fc_rank: item.overallRank,
-                        fc_trend_30_day: item.trend30Day,
-                        redraft_value: item.redraftValue,
-                        updated_at: new Date(),
-                    });
-
-                    picksCount++;
-                    continue;
+            // Handle draft picks - FantasyCalc format is like "2026 Pick 1.01" or "2026 1st"
+            let pickId: string | null = null;
+            if (p.position === 'PICK' && p.name) {
+                // Specific pick: "2026 Pick 1.01" -> "FP_2026_1.01"
+                const specificMatch = p.name.match(/^(\d{4}) Pick (\d+)\.(\d+)$/);
+                if (specificMatch) {
+                    const [_, year, round, slot] = specificMatch;
+                    pickId = `FP_${year}_${round}.${slot}`;
+                } else {
+                    // Generic pick: "2026 1st", "2027 2nd", "2028 3rd", "2026 Mid 2nd" (sometimes they have "Mid", "Early", "Late")
+                    // Actually, FC format is typically "<Year> <Round>st/nd/rd/th". Let's handle carefully:
+                    const genericMatch = p.name.match(/^(\d{4})\s(?:Early\s|Mid\s|Late\s)?(\d+)(?:st|nd|rd|th)$/);
+                    if (genericMatch) {
+                        const [_, year, round] = genericMatch;
+                        pickId = `FP_${year}_${round}`;
+                    }
                 }
+            }
+
+            if (pickId) {
+                // Find matching 1QB pick value
+                const qbItem = qbData.find((qb: any) => qb.player.name === p.name);
+
+                playersBatch.push({
+                    sleeper_id: pickId,
+                    full_name: p.name,
+                    first_name: null,
+                    last_name: null,
+                    position: 'PICK',
+                    team: null,
+                    age: null,
+                    status: "Active",
+                });
+
+                valuesBatch.push({
+                    sleeper_id: pickId,
+                    fc_value_sf: item.value,
+                    fc_rank_sf: item.overallRank,
+                    fc_value_1qb: qbItem?.value || null,
+                    fc_rank_1qb: qbItem?.overallRank || null,
+                    fc_value: item.value,
+                    fc_rank: item.overallRank,
+                    fc_trend_30_day: item.trend30Day,
+                    redraft_value: item.redraftValue,
+                    updated_at: new Date(),
+                });
+
+                picksCount++;
+                continue;
             }
 
             if (!p.sleeperId) {

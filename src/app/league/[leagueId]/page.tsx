@@ -2,8 +2,7 @@ import { db } from "@/db";
 import { players, playerValues } from "@/db/schema";
 import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from "@/lib/sleeper";
 import { desc, eq, inArray } from "drizzle-orm";
-import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { LeagueTable } from "@/components/LeagueTable";
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -97,82 +96,7 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
                         </h1>
                         <p className="text-sm text-zinc-500">ID: {leagueId}</p>
                     </div>
-
-                    <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden">
-                        <div className="overflow-x-auto -mx-4 sm:mx-0">
-                            <div className="inline-block min-w-full align-middle">
-                                <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
-                                    <thead className="bg-zinc-50 dark:bg-zinc-950/50">
-                                        <tr>
-                                            <th scope="col" className="sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-950 px-2 sm:px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.05)]">Rank</th>
-                                            <th scope="col" className="sticky left-[3rem] sm:left-[4rem] z-10 bg-zinc-50 dark:bg-zinc-950 px-2 sm:px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.05)]">Manager</th>
-                                            <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider whitespace-nowrap">Total Value</th>
-                                            <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">QB</th>
-                                            <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">RB</th>
-                                            <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">WR</th>
-                                            <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">TE</th>
-                                            <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider hidden md:table-cell">Picks</th>
-                                            <th scope="col" className="relative px-2 sm:px-3 py-3">
-                                                <span className="sr-only">View</span>
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
-                                        {teamStats.map((team, idx) => (
-                                            <tr key={team.rosterId} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group relative cursor-pointer">
-                                                <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.05)]">
-                                                    #{idx + 1}
-                                                </td>
-                                                <td className="sticky left-[3rem] sm:left-[4rem] z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap shadow-[1px_0_0_0_rgba(0,0,0,0.05)] dark:shadow-[1px_0_0_0_rgba(255,255,255,0.05)]">
-                                                    <Link
-                                                        href={`/league/${leagueId}/team/${team.rosterId}`}
-                                                        className="flex items-center after:absolute after:inset-0 after:content-[''] z-20"
-                                                    >
-                                                        <div className="h-6 w-6 sm:h-8 sm:w-8 flex-shrink-0">
-                                                            {team.ownerAvatar ? (
-                                                                <img className="h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-zinc-100" src={`https://sleepercdn.com/avatars/${team.ownerAvatar}`} alt="" />
-                                                            ) : (
-                                                                <div className="h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 text-[10px] sm:text-xs">?</div>
-                                                            )}
-                                                        </div>
-                                                        <div className="ml-2 sm:ml-3">
-                                                            <div className="text-xs sm:text-sm font-medium text-zinc-900 dark:text-zinc-100 max-w-[80px] sm:max-w-[120px] truncate">{team.ownerName}</div>
-                                                        </div>
-                                                    </Link>
-                                                </td>
-                                                <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-mono font-medium text-green-600 dark:text-green-400">
-                                                    {team.totalValue.toLocaleString()}
-                                                    <div className="sm:hidden text-[10px] text-zinc-400 font-sans mt-0.5 font-normal">
-                                                        QB: {team.qbValue.toLocaleString()} | RB: {team.rbValue.toLocaleString()}
-                                                        <br />
-                                                        WR: {team.wrValue.toLocaleString()} | TE: {team.teValue.toLocaleString()}
-                                                    </div>
-                                                </td>
-                                                <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 hidden sm:table-cell">
-                                                    {team.qbValue.toLocaleString()}
-                                                </td>
-                                                <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 hidden sm:table-cell">
-                                                    {team.rbValue.toLocaleString()}
-                                                </td>
-                                                <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 hidden sm:table-cell">
-                                                    {team.wrValue.toLocaleString()}
-                                                </td>
-                                                <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 hidden sm:table-cell">
-                                                    {team.teValue.toLocaleString()}
-                                                </td>
-                                                <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 hidden md:table-cell">
-                                                    {team.pickValue.toLocaleString()}
-                                                </td>
-                                                <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium">
-                                                    <ChevronRight className="h-5 w-5 text-zinc-400 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors" />
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
+                    <LeagueTable teams={teamStats.map(t => ({ id: t.rosterId, ...t }))} platform="sleeper" leagueId={leagueId} />
                 </div>
             </div>
         );

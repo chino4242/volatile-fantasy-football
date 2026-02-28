@@ -114,14 +114,16 @@ async function getFleaflickerTeamPicks(leagueId: string, teamId: number): Promis
 
         const data = await response.json();
 
-        return (data.picks || []).map((pick: any) => ({
-            season: pick.season || 0,
-            round: pick.slot?.round || 0,
-            slot: pick.slot?.slot || 0,
-            overall: pick.slot?.overall || 0,
-            originalOwner: pick.original_owner?.id || teamId,
-            currentOwner: pick.owned_by?.id || teamId
-        }));
+        return (data.picks || [])
+            .filter((pick: any) => (pick.ownedBy?.id || teamId) === teamId) // Only keep picks currently owned by this team
+            .map((pick: any) => ({
+                season: pick.season || 0,
+                round: pick.slot?.round || 0,
+                slot: pick.slot?.slot || 0,
+                overall: pick.slot?.overall || 0,
+                originalOwner: pick.originalOwner?.id || teamId,
+                currentOwner: pick.ownedBy?.id || teamId
+            }));
     } catch (error) {
         console.warn(`Error fetching picks for team ${teamId}:`, error);
         return [];
