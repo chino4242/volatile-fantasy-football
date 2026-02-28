@@ -4,12 +4,17 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 
 ## Features
 
-- **League Dashboard** — View all teams in a Sleeper league ranked by total dynasty value (players + draft picks)
+- **League Dashboard** — View all teams in a Sleeper or Fleaflicker league ranked by total dynasty value (players + draft picks)
 - **Team Rosters** — Drill into any team to see their full roster with per-player valuations
 - **Draft Capital** — All draft picks (next 3 years) are displayed with FantasyCalc values and integrated into team valuations
+- **Specific Pick Values** — Individual pick slots (e.g., 1.02 vs 1.09) are valued using real FantasyCalc pick data, not generic round averages
 - **Position Filters** — Interactive position filters on team pages to toggle between viewing players and draft picks
 - **Market Value Gap Analysis** — BUY/SELL/HOLD indicators comparing FantasyCalc market rankings vs. proprietary analysis rankings for both 1QB and Superflex formats
 - **Trade Target Finder** — Click any draft pick to see trade targets from other teams within 5% value range, with value gap indicators and expandable results
+- **Free Agent View** — See available waiver wire players ranked by dynasty value, with position and rookie filters
+- **Rookie Filter** — On the Free Agent page, filter specifically by rookies (identified by `years_exp === 0` from FantasyCalc)
+- **Column Sorting** — All table columns are sortable on League and Free Agent pages
+- **Soft Login / Dashboard** — Enter your Sleeper username to get a personalized dashboard showing all your leagues. Supports Fleaflicker accounts too
 - **Player Rankings** — Browse the top 50 dynasty players by FantasyCalc value
 - **Live Sleeper Integration** — Roster data is fetched in real-time from the [Sleeper API](https://docs.sleeper.com/)
 - **FantasyCalc Valuations** — Player trade values sourced from [FantasyCalc](https://fantasycalc.com/)
@@ -85,28 +90,44 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 ```
 volatile-fantasy-football/
 ├── scripts/                    # Data ingestion & DB utility scripts
-│   ├── ingest-players.ts       # Fetches player data from FantasyCalc API
+│   ├── ingest-players.ts       # Fetches player + pick data from FantasyCalc API
 │   ├── test-db.js              # Quick DB connection test
 │   └── verify-db.ts            # Verifies DB schema and data
 ├── src/
 │   ├── app/                    # Next.js App Router pages
-│   │   ├── layout.tsx          # Root layout (header, fonts, metadata)
-│   │   ├── page.tsx            # Home page
+│   │   ├── layout.tsx          # Root layout (header, providers, fonts, metadata)
+│   │   ├── page.tsx            # Home page / personalized dashboard (login)
+│   │   ├── providers.tsx       # Client-side context providers (AuthProvider)
 │   │   ├── players/
 │   │   │   └── page.tsx        # Top 50 players list
-│   │   └── league/
+│   │   ├── league/
+│   │   │   └── [leagueId]/
+│   │   │       ├── page.tsx    # League dashboard (all teams ranked)
+│   │   │       ├── free-agents/
+│   │   │       │   └── page.tsx  # Free agent view (Sleeper)
+│   │   │       └── team/
+│   │   │           └── [rosterId]/
+│   │   │               └── page.tsx  # Individual team roster
+│   │   └── fleaflicker/
 │   │       └── [leagueId]/
-│   │           ├── page.tsx    # League dashboard (all teams ranked)
+│   │           ├── page.tsx          # Fleaflicker league dashboard
+│   │           ├── free-agents/
+│   │           │   └── page.tsx      # Free agent view (Fleaflicker)
 │   │           └── team/
-│   │               └── [rosterId]/
-│   │                   └── page.tsx  # Individual team roster
+│   │               └── [teamId]/
+│   │                   └── page.tsx  # Fleaflicker team roster
 │   ├── components/
-│   │   └── AppHeader.tsx       # Sticky navigation header
+│   │   ├── AppHeader.tsx       # Sticky navigation header (auth-aware)
+│   │   ├── FreeAgentTable.tsx  # Client component for Free Agent view (with filters & sorting)
+│   │   └── LeagueTable.tsx     # League dashboard table (sortable)
 │   ├── db/
 │   │   ├── index.ts            # Database connection (Drizzle + postgres.js)
 │   │   └── schema.ts           # Drizzle schema (players, leagues, rosters, values)
+│   ├── hooks/
+│   │   └── useUser.tsx         # AuthProvider & useAuth hook (localStorage-backed login)
 │   └── lib/
-│       └── sleeper.ts          # Sleeper API client (users, rosters)
+│       ├── sleeper.ts          # Sleeper API client (users, rosters, leagues)
+│       └── fleaflicker.ts      # Fleaflicker API client
 ├── drizzle.config.ts           # Drizzle Kit configuration
 ├── package.json
 └── tsconfig.json
@@ -118,11 +139,13 @@ The app uses five tables managed by Drizzle ORM:
 
 | Table             | Description                                            |
 | ----------------- | ------------------------------------------------------ |
-| `players`         | Master player list (name, position, team, age)         |
+| `players`         | Master player list (name, position, team, age, `years_exp`) |
 | `player_values`   | Dynasty trade values from FantasyCalc and KTC          |
 | `leagues`         | League metadata (platform, scoring, roster settings)   |
 | `rosters`         | Team rosters within a league (W/L record, points)      |
 | `roster_players`  | Join table linking rosters to players                  |
+
+> **Rookie identification:** The `players.years_exp` column (sourced from FantasyCalc's `maybeYoe` field) is used to flag rookies. Players with `years_exp === 0` are considered rookies.
 
 See [`src/db/schema.ts`](src/db/schema.ts) for the full schema definition.
 

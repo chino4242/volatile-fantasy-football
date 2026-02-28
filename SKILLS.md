@@ -248,7 +248,7 @@ Includes both player values and pick values in same response.
 
 ## Future Enhancements
 
-Potential improvements to the draft pick system:
+Potential improvements to the platform:
 
 1. **Pick Trading:** Allow users to simulate trades directly in the UI
 2. **Historical Tracking:** Show pick value changes over time
@@ -258,3 +258,110 @@ Potential improvements to the draft pick system:
 6. **Export Trades:** Generate trade proposals to share with league
 7. **Value Gap Trends:** Track how market vs. analysis gaps change over time
 8. **Gap Filtering:** Filter roster by BUY/SELL/HOLD recommendations
+9. **Cross-device Login:** Persist Soft Login via database instead of localStorage
+10. **Fleaflicker league listing:** Source user's Fleaflicker leagues via API or manual add
+
+---
+
+## Free Agent View
+
+### Overview
+The Free Agent view is available at:
+- Sleeper: `/league/[leagueId]/free-agents`
+- Fleaflicker: `/fleaflicker/[leagueId]/free-agents`
+
+It shows all players currently not rostered in the specified league, ranked by dynasty value.
+
+### How it Works
+
+1. **Fetch all rostered players** from Sleeper or Fleaflicker API for the given league.
+2. **Query the database** for all active players (non-picks) with `fc_value`, `fc_rank`, `position`, `years_exp`.
+3. **Exclude rostered players** from results using a `NOT IN` filter via Drizzle's `notInArray()`.
+4. **Sort by value descending**, take the top 200.
+5. Render via the `FreeAgentTable` client component.
+
+### FreeAgentTable Component (`src/components/FreeAgentTable.tsx`)
+
+A client component with:
+- **Position tabs:** ALL / QB / RB / WR / TE / ROOKIES
+- **Sortable columns:** Rank, Player Name, Position, Value
+- **Graceful image fallback:** Shows player's first initial when Sleeper CDN doesn't have their headshot
+- **No-results state:** Displays a friendly empty state when no players match the filter
+
+```typescript
+// Rookies are identified client-side by years_exp
+const filteredPlayers = filterPosition === 'ROOKIES'
+    ? players.filter(p => p.years_exp === 0)
+    : players.filter(p => p.position === filterPosition);
+```
+
+---
+
+## Rookie Identification
+
+### Data Source
+FantasyCalc's API returns a `maybeYoe` (years of experience) field for each player. This is ingested and stored in the `players.years_exp` column.
+
+### Ingestion
+
+```typescript
+// In scripts/ingest-players.ts
+const playersBatch = sfData.map((item) => ({
+    sleeper_id: item.player.sleeperId,
+    years_exp: item.player.maybeYoe,   // <-- mapped here
+    // ...
+}));
+
+// Critically, must be included in onConflictDoUpdate to update existing rows:
+await db.insert(players).values(playersBatch).onConflictDoUpdate({
+    target: players.sleeper_id,
+    set: {
+        years_exp: sql.raw("excluded.years_exp"),
+        // ...
+    }
+});
+```
+
+> **Gotcha:** If `years_exp` is omitted from `onConflictDoUpdate.set`, Drizzle uses `INSERT ... ON CONFLICT DO UPDATE` but will **not** overwrite the column for existing rows. This means re-running the ingestion script will leave old players with `NULL` for `years_exp`.
+
+### Usage
+`years_exp === 0` → Rookie  
+`years_exp === null` → Unknown (player not in FantasyCalc dataset)
+
+---
+
+## Soft Login / Personalized Dashboard
+
+### Overview
+Users can connect their Sleeper account by entering their username. The app then shows a personalized dashboard of their leagues. No password, no database account required.
+
+### Implementation
+
+#### AuthProvider (`src/hooks/useUser.tsx`)
+
+A React Context Provider backed by `localStorage`:
+
+```typescript
+const AUTH_KEYS = {
+    sleeperUsername: 'vff_sleeper_username',
+    sleeperUserId:   'vff_sleeper_user_id',
+    fleaflickerUsername: 'vff_fleaflicker_username',
+};
+```
+
+- **`loginSleeper(username, userId)`** — Validates username via Sleeper API, saves both username and `user_id` to localStorage.
+- **`loginFleaflicker(email)`** — Saves email to localStorage. (Fleaflicker does not have a simple user lookup API, so this is purely optimistic.)
+- **`logout()`** — Clears all keys from localStorage.
+- Wrapped app-wide via `providers.tsx` → `layout.tsx`.
+
+#### Login Flow
+
+1. User enters Sleeper username.
+2. Client calls `GET https://api.sleeper.app/v1/user/{username}` to validate.
+3. On success, saves `display_name` + `user_id` to localStorage via `loginSleeper()`.
+4. `useEffect` fires with the new `sleeperUserId` and calls `GET https://api.sleeper.app/v1/user/{userId}/leagues/nfl/2024`.
+5. Leagues are rendered as clickable cards navigating to `/league/[leagueId]`.
+
+#### AppHeader Auth Awareness
+
+The `AppHeader` component reads `sleeperUsername` / `fleaflickerUsername` from `useAuth()`. If logged in, the hardcoded nav links (Sleeper/Fleaflicker) are hidden; the user's personalized dashboard on `/` serves as the navigation hub instead.

@@ -23,10 +23,10 @@ describe('AppHeader Component', () => {
         const adminLink = screen.getByRole('link', { name: 'Admin' });
 
         expect(sleeperLink).toBeInTheDocument();
-        expect(sleeperLink).toHaveAttribute('href', '/league/1200992049558454272');
+        expect(sleeperLink).toHaveAttribute('href', '/league/your-league-id');
 
         expect(fleaflickerLink).toBeInTheDocument();
-        expect(fleaflickerLink).toHaveAttribute('href', '/fleaflicker/197269');
+        expect(fleaflickerLink).toHaveAttribute('href', '/fleaflicker/your-league-id');
 
         expect(playersLink).toBeInTheDocument();
         expect(playersLink).toHaveAttribute('href', '/players');
