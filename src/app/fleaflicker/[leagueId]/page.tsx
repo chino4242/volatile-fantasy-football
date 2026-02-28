@@ -25,10 +25,14 @@ interface TeamWithValue {
 
 export default async function FleaflickerLeaguePage({
     params,
+    searchParams,
 }: {
     params: Promise<{ leagueId: string }>;
+    searchParams: Promise<{ format?: string }>;
 }) {
     const { leagueId } = await params;
+    const { format: formatParam } = await searchParams;
+    const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
 
     try {
         const fleaflickerData = await getFleaflickerLeague(leagueId);
@@ -78,8 +82,8 @@ export default async function FleaflickerLeaguePage({
 
         // Create lookup maps
         const valueMap = new Map(
-            // Use 1QB values by default for Fleaflicker unless changed to SF
-            values.map(v => [v.sleeper_id, v.fc_value_1qb || 0])
+            // Use format from search params
+            values.map(v => [v.sleeper_id, (format === 'sf' ? v.fc_value_sf : v.fc_value_1qb) || 0])
         );
 
         const nameToPlayerMap = new Map(
@@ -146,7 +150,7 @@ export default async function FleaflickerLeaguePage({
                         <div className="flex gap-2">
                             <RefreshButton leagueId={leagueId} platform="fleaflicker" />
                             <Link
-                                href={`/fleaflicker/${leagueId}/free-agents`}
+                                href={`/fleaflicker/${leagueId}/free-agents?format=${format}`}
                                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 rounded-lg hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700 dark:hover:bg-zinc-700 transition-colors shadow-sm"
                             >
                                 View Free Agents
@@ -154,7 +158,7 @@ export default async function FleaflickerLeaguePage({
                         </div>
                     </div>
 
-                    <LeagueTable teams={teams} platform="fleaflicker" leagueId={leagueId} />
+                    <LeagueTable teams={teams} platform="fleaflicker" leagueId={leagueId} format={format} />
                 </div>
             </div>
         );

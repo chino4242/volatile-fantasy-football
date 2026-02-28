@@ -21,9 +21,9 @@ interface FleaflickerLeagueInfo {
 export default function Home() {
   const {
     sleeperUsername, sleeperUserId,
-    fleaflickerUsername, fleaflickerLeagueIds,
+    fleaflickerUsername, fleaflickerLeagueIds, fleaflickerLeagueFormats, sleeperLeagueFormats,
     loginSleeper, loginFleaflicker,
-    addFleaflickerLeague, removeFleaflickerLeague,
+    addFleaflickerLeague, removeFleaflickerLeague, setLeagueFormat,
     logout, isLoading,
   } = useAuth();
 
@@ -43,6 +43,7 @@ export default function Home() {
 
   // Add Fleaflicker league form
   const [addLeagueInput, setAddLeagueInput] = useState('');
+  const [addLeagueFormat, setAddLeagueFormat] = useState<'1qb' | 'sf'>('1qb');
   const [isAddingLeague, setIsAddingLeague] = useState(false);
   const [addLeagueError, setAddLeagueError] = useState('');
 
@@ -130,8 +131,9 @@ export default function Home() {
       if (!res.ok) throw new Error();
       const data = await res.json();
       if (!data.id) throw new Error();
-      addFleaflickerLeague(leagueId);
+      addFleaflickerLeague(leagueId, addLeagueFormat);
       setAddLeagueInput('');
+      setAddLeagueFormat('1qb');
     } catch {
       setAddLeagueError('Could not find a Fleaflicker league with that ID.');
     } finally {
@@ -263,18 +265,43 @@ export default function Home() {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {sleeperLeagues.map((league) => (
-                      <Link key={league.league_id} href={`/league/${league.league_id}`}
-                        className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all flex items-center gap-3 group">
-                        {league.avatar ? (
-                          <img src={`https://sleepercdn.com/avatars/thumbs/${league.avatar}`} className="w-10 h-10 rounded-full bg-zinc-100 object-cover flex-shrink-0" alt="" />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-bold text-zinc-400 flex-shrink-0">{league.name[0]}</div>
-                        )}
-                        <div className="min-w-0">
-                          <h4 className="font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{league.name}</h4>
-                          <p className="text-xs text-zinc-500">Dynasty · {league.status === 'in_season' ? 'Active' : 'Off-season'}</p>
+                      <div key={league.league_id} className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex flex-col gap-3">
+                        <Link href={`/league/${league.league_id}?format=${sleeperLeagueFormats[league.league_id] || '1qb'}`}
+                          className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all flex items-center gap-3 group -m-5 p-5 rounded-2xl">
+                          {league.avatar ? (
+                            <img src={`https://sleepercdn.com/avatars/thumbs/${league.avatar}`} className="w-10 h-10 rounded-full bg-zinc-100 object-cover flex-shrink-0" alt="" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-bold text-zinc-400 flex-shrink-0">{league.name[0]}</div>
+                          )}
+                          <div className="min-w-0">
+                            <h4 className="font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{league.name}</h4>
+                            <p className="text-xs text-zinc-500">Dynasty · {league.status === 'in_season' ? 'Active' : 'Off-season'}</p>
+                          </div>
+                        </Link>
+                        <div className="flex gap-2 items-center pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                          <span className="text-xs text-zinc-500 font-medium">Format:</span>
+                          <button
+                            onClick={() => setLeagueFormat(league.league_id, 'sleeper', '1qb')}
+                            className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                              (sleeperLeagueFormats[league.league_id] || '1qb') === '1qb'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                            }`}
+                          >
+                            1QB
+                          </button>
+                          <button
+                            onClick={() => setLeagueFormat(league.league_id, 'sleeper', 'sf')}
+                            className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                              sleeperLeagueFormats[league.league_id] === 'sf'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                            }`}
+                          >
+                            SF
+                          </button>
                         </div>
-                      </Link>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -290,24 +317,49 @@ export default function Home() {
               ) : ffLeagues.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                   {ffLeagues.map((league) => (
-                    <div key={league.id} className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex items-center gap-3 group">
-                      <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center font-bold text-blue-600 dark:text-blue-400 flex-shrink-0 text-sm">
-                        FF
+                    <div key={league.id} className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex flex-col gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center font-bold text-blue-600 dark:text-blue-400 flex-shrink-0 text-sm">
+                          FF
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <Link href={`/fleaflicker/${league.id}?format=${fleaflickerLeagueFormats[league.id] || '1qb'}`}
+                            className="font-semibold text-zinc-900 dark:text-zinc-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors truncate block">
+                            {league.name}
+                          </Link>
+                          <p className="text-xs text-zinc-500">Fleaflicker · #{league.id}</p>
+                        </div>
+                        <button
+                          onClick={() => removeFleaflickerLeague(league.id)}
+                          className="text-zinc-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 flex-shrink-0"
+                          title="Remove league"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <Link href={`/fleaflicker/${league.id}`}
-                          className="font-semibold text-zinc-900 dark:text-zinc-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors truncate block">
-                          {league.name}
-                        </Link>
-                        <p className="text-xs text-zinc-500">Fleaflicker · #{league.id}</p>
+                      <div className="flex gap-2 items-center pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                        <span className="text-xs text-zinc-500 font-medium">Format:</span>
+                        <button
+                          onClick={() => setLeagueFormat(league.id, 'fleaflicker', '1qb')}
+                          className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                            (fleaflickerLeagueFormats[league.id] || '1qb') === '1qb'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                          }`}
+                        >
+                          1QB
+                        </button>
+                        <button
+                          onClick={() => setLeagueFormat(league.id, 'fleaflicker', 'sf')}
+                          className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
+                            fleaflickerLeagueFormats[league.id] === 'sf'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                          }`}
+                        >
+                          SF
+                        </button>
                       </div>
-                      <button
-                        onClick={() => removeFleaflickerLeague(league.id)}
-                        className="text-zinc-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 flex-shrink-0"
-                        title="Remove league"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -315,24 +367,51 @@ export default function Home() {
 
               {/* Add Fleaflicker League Form */}
               <form onSubmit={handleAddFleaflickerLeague}
-                className="flex gap-2 items-start bg-white dark:bg-zinc-900 rounded-xl ring-1 ring-zinc-200 dark:ring-zinc-800 p-4">
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    value={addLeagueInput}
-                    onChange={(e) => { setAddLeagueInput(e.target.value); setAddLeagueError(''); }}
-                    placeholder="Enter Fleaflicker league ID (e.g. 123456)"
-                    className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100"
-                    disabled={isAddingLeague}
-                  />
-                  {addLeagueError && <p className="text-xs text-red-500 mt-1">{addLeagueError}</p>}
+                className="flex flex-col gap-3 bg-white dark:bg-zinc-900 rounded-xl ring-1 ring-zinc-200 dark:ring-zinc-800 p-4">
+                <div className="flex gap-2 items-start">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={addLeagueInput}
+                      onChange={(e) => { setAddLeagueInput(e.target.value); setAddLeagueError(''); }}
+                      placeholder="Enter Fleaflicker league ID (e.g. 123456)"
+                      className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100"
+                      disabled={isAddingLeague}
+                    />
+                    {addLeagueError && <p className="text-xs text-red-500 mt-1">{addLeagueError}</p>}
+                  </div>
+                  <button type="submit"
+                    disabled={isAddingLeague || !addLeagueInput.trim()}
+                    className="flex-shrink-0 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                    {isAddingLeague ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    Add
+                  </button>
                 </div>
-                <button type="submit"
-                  disabled={isAddingLeague || !addLeagueInput.trim()}
-                  className="flex-shrink-0 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                  {isAddingLeague ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  Add
-                </button>
+                <div className="flex gap-2 items-center">
+                  <label className="text-xs text-zinc-500 font-medium">Format:</label>
+                  <button
+                    type="button"
+                    onClick={() => setAddLeagueFormat('1qb')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      addLeagueFormat === '1qb'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                    }`}
+                  >
+                    1QB
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddLeagueFormat('sf')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      addLeagueFormat === 'sf'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                    }`}
+                  >
+                    Superflex
+                  </button>
+                </div>
               </form>
               <p className="text-xs text-zinc-400 mt-2 px-1">Find your league ID in the Fleaflicker URL: fleaflicker.com/nfl/leagues/<strong>123456</strong></p>
             </section>

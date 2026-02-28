@@ -7,14 +7,17 @@ interface AuthState {
     sleeperUserId: string | null;
     fleaflickerUsername: string | null;
     fleaflickerLeagueIds: string[];
+    fleaflickerLeagueFormats: Record<string, '1qb' | 'sf'>; // leagueId -> format
+    sleeperLeagueFormats: Record<string, '1qb' | 'sf'>; // leagueId -> format
     isLoading: boolean;
 }
 
 interface AuthContextType extends AuthState {
     loginSleeper: (username: string, userId: string) => void;
     loginFleaflicker: (username: string) => void;
-    addFleaflickerLeague: (leagueId: string) => void;
+    addFleaflickerLeague: (leagueId: string, format: '1qb' | 'sf') => void;
     removeFleaflickerLeague: (leagueId: string) => void;
+    setLeagueFormat: (leagueId: string, platform: 'sleeper' | 'fleaflicker', format: '1qb' | 'sf') => void;
     logout: () => void;
 }
 
@@ -25,6 +28,8 @@ const STORAGE_KEYS = {
     sleeperUserId: 'vff_sleeper_user_id',
     fleaflickerUsername: 'vff_fleaflicker_username',
     fleaflickerLeagueIds: 'vff_fleaflicker_league_ids',
+    fleaflickerLeagueFormats: 'vff_fleaflicker_league_formats',
+    sleeperLeagueFormats: 'vff_sleeper_league_formats',
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -33,6 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sleeperUserId: null,
         fleaflickerUsername: null,
         fleaflickerLeagueIds: [],
+        fleaflickerLeagueFormats: {},
+        sleeperLeagueFormats: {},
         isLoading: true,
     });
 
@@ -42,12 +49,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const sId = localStorage.getItem(STORAGE_KEYS.sleeperUserId);
             const fUser = localStorage.getItem(STORAGE_KEYS.fleaflickerUsername);
             const fLeagues = localStorage.getItem(STORAGE_KEYS.fleaflickerLeagueIds);
+            const fFormats = localStorage.getItem(STORAGE_KEYS.fleaflickerLeagueFormats);
+            const sFormats = localStorage.getItem(STORAGE_KEYS.sleeperLeagueFormats);
 
             setState({
                 sleeperUsername: sUser,
                 sleeperUserId: sId,
                 fleaflickerUsername: fUser,
                 fleaflickerLeagueIds: fLeagues ? JSON.parse(fLeagues) : [],
+                fleaflickerLeagueFormats: fFormats ? JSON.parse(fFormats) : {},
+                sleeperLeagueFormats: sFormats ? JSON.parse(sFormats) : {},
                 isLoading: false,
             });
         } catch (err) {
@@ -75,13 +86,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const addFleaflickerLeague = (leagueId: string) => {
+    const addFleaflickerLeague = (leagueId: string, format: '1qb' | 'sf' = '1qb') => {
         try {
             setState(prev => {
                 if (prev.fleaflickerLeagueIds.includes(leagueId)) return prev;
-                const next = [...prev.fleaflickerLeagueIds, leagueId];
-                localStorage.setItem(STORAGE_KEYS.fleaflickerLeagueIds, JSON.stringify(next));
-                return { ...prev, fleaflickerLeagueIds: next };
+                const nextIds = [...prev.fleaflickerLeagueIds, leagueId];
+                const nextFormats = { ...prev.fleaflickerLeagueFormats, [leagueId]: format };
+                localStorage.setItem(STORAGE_KEYS.fleaflickerLeagueIds, JSON.stringify(nextIds));
+                localStorage.setItem(STORAGE_KEYS.fleaflickerLeagueFormats, JSON.stringify(nextFormats));
+                return { ...prev, fleaflickerLeagueIds: nextIds, fleaflickerLeagueFormats: nextFormats };
             });
         } catch (err) {
             console.error('Failed to add fleaflicker league', err);
@@ -91,12 +104,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const removeFleaflickerLeague = (leagueId: string) => {
         try {
             setState(prev => {
-                const next = prev.fleaflickerLeagueIds.filter(id => id !== leagueId);
-                localStorage.setItem(STORAGE_KEYS.fleaflickerLeagueIds, JSON.stringify(next));
-                return { ...prev, fleaflickerLeagueIds: next };
+                const nextIds = prev.fleaflickerLeagueIds.filter(id => id !== leagueId);
+                const nextFormats = { ...prev.fleaflickerLeagueFormats };
+                delete nextFormats[leagueId];
+                localStorage.setItem(STORAGE_KEYS.fleaflickerLeagueIds, JSON.stringify(nextIds));
+                localStorage.setItem(STORAGE_KEYS.fleaflickerLeagueFormats, JSON.stringify(nextFormats));
+                return { ...prev, fleaflickerLeagueIds: nextIds, fleaflickerLeagueFormats: nextFormats };
             });
         } catch (err) {
             console.error('Failed to remove fleaflicker league', err);
+        }
+    };
+
+    const setLeagueFormat = (leagueId: string, platform: 'sleeper' | 'fleaflicker', format: '1qb' | 'sf') => {
+        try {
+            setState(prev => {
+                if (platform === 'sleeper') {
+                    const nextFormats = { ...prev.sleeperLeagueFormats, [leagueId]: format };
+                    localStorage.setItem(STORAGE_KEYS.sleeperLeagueFormats, JSON.stringify(nextFormats));
+                    return { ...prev, sleeperLeagueFormats: nextFormats };
+                } else {
+                    const nextFormats = { ...prev.fleaflickerLeagueFormats, [leagueId]: format };
+                    localStorage.setItem(STORAGE_KEYS.fleaflickerLeagueFormats, JSON.stringify(nextFormats));
+                    return { ...prev, fleaflickerLeagueFormats: nextFormats };
+                }
+            });
+        } catch (err) {
+            console.error('Failed to set league format', err);
         }
     };
 
@@ -108,6 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 sleeperUserId: null,
                 fleaflickerUsername: null,
                 fleaflickerLeagueIds: [],
+                fleaflickerLeagueFormats: {},
+                sleeperLeagueFormats: {},
                 isLoading: false,
             });
         } catch (err) {
@@ -116,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ ...state, loginSleeper, loginFleaflicker, addFleaflickerLeague, removeFleaflickerLeague, logout }}>
+        <AuthContext.Provider value={{ ...state, loginSleeper, loginFleaflicker, addFleaflickerLeague, removeFleaflickerLeague, setLeagueFormat, logout }}>
             {children}
         </AuthContext.Provider>
     );

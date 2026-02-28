@@ -13,8 +13,10 @@ interface PageProps {
     params: Promise<{ leagueId: string }>;
 }
 
-export default async function LeagueSummaryPage({ params }: PageProps) {
+export default async function LeagueSummaryPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string }> }) {
     const { leagueId } = await params;
+    const { format: formatParam } = await searchParams;
+    const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
 
     try {
         // 1. Fetch live Sleeper data
@@ -27,11 +29,11 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
         // 3. Collect all player IDs
         const allSleeperIds = rosters.flatMap((r) => r.players || []);
 
-        // 4. Fetch values from DB
+        // 4. Fetch values from DB using the specified format
         const dbPlayers = await db
             .select({
                 sleeper_id: players.sleeper_id,
-                fc_value: playerValues.fc_value,
+                fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
                 position: players.position,
             })
             .from(players)
@@ -102,14 +104,14 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
                         <div className="flex gap-2">
                             <RefreshButton leagueId={leagueId} platform="sleeper" />
                             <Link
-                                href={`/league/${leagueId}/free-agents`}
+                                href={`/league/${leagueId}/free-agents?format=${format}`}
                                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 rounded-lg hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700 dark:hover:bg-zinc-700 transition-colors shadow-sm"
                             >
                                 View Free Agents
                             </Link>
                         </div>
                     </div>
-                    <LeagueTable teams={teamStats.map(t => ({ id: t.rosterId, ...t }))} platform="sleeper" leagueId={leagueId} />
+                    <LeagueTable teams={teamStats.map(t => ({ id: t.rosterId, ...t }))} platform="sleeper" leagueId={leagueId} format={format} />
                 </div>
             </div>
         );

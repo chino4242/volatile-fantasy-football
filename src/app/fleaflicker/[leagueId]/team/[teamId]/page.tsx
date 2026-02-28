@@ -10,10 +10,15 @@ export const dynamic = "force-dynamic";
 
 export default async function FleaflickerTeamPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ leagueId: string; teamId: string }>;
+    searchParams: Promise<{ format?: string }>;
 }) {
     const { leagueId, teamId } = await params;
+    const { format: formatParam } = await searchParams;
+    const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
+    
     const fleaflickerData = await getFleaflickerLeague(leagueId);
 
     const roster = fleaflickerData.rosters.find(r => r.id === parseInt(teamId));
@@ -75,8 +80,8 @@ export default async function FleaflickerTeamPage({
                 full_name: player.full_name,
                 position: dbPlayer.position,
                 team: player.team || dbPlayer.team,
-                fc_value: valueData?.fc_value_1qb || null,
-                fc_rank: valueData?.fc_rank_1qb || null,
+                fc_value: format === 'sf' ? (valueData?.fc_value_sf || null) : (valueData?.fc_value_1qb || null),
+                fc_rank: format === 'sf' ? (valueData?.fc_rank_sf || null) : (valueData?.fc_rank_1qb || null),
                 fc_rank_sf: valueData?.fc_rank_sf || null,
                 fc_rank_1qb: valueData?.fc_rank_1qb || null,
                 rank_1qb_overall: valueData?.rank_1qb_overall || null,
@@ -109,7 +114,7 @@ export default async function FleaflickerTeamPage({
             full_name: `${pick.season} Round ${pick.round}.${pick.slot} #${pick.overall}${ownerName ? ` (${ownerName})` : ''}`,
             position: 'PICK',
             team: null,
-            fc_value: pickValue?.fc_value_1qb || 0,
+            fc_value: format === 'sf' ? (pickValue?.fc_value_sf || 0) : (pickValue?.fc_value_1qb || 0),
             fc_rank: null,
             fc_rank_sf: null,
             fc_rank_1qb: null,
@@ -147,7 +152,7 @@ export default async function FleaflickerTeamPage({
             full_name: players.full_name,
             position: players.position,
             team: players.team,
-            fc_value: playerValues.fc_value_1qb,
+            fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
             fc_rank: playerValues.fc_rank,
             fc_rank_sf: playerValues.fc_rank_sf,
             fc_rank_1qb: playerValues.fc_rank_1qb,

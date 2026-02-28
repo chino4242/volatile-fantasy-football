@@ -22,12 +22,13 @@ interface LeagueTableProps {
     teams: LeagueTeamStat[];
     platform: 'sleeper' | 'fleaflicker';
     leagueId: string;
+    format?: '1qb' | 'sf';
 }
 
 type SortColumn = 'totalValue' | 'qbValue' | 'rbValue' | 'wrValue' | 'teValue' | 'pickValue';
 type SortDirection = 'asc' | 'desc';
 
-export function LeagueTable({ teams, platform, leagueId }: LeagueTableProps) {
+export function LeagueTable({ teams, platform, leagueId, format }: LeagueTableProps) {
     const [sortColumn, setSortColumn] = useState<SortColumn>('totalValue');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
@@ -59,8 +60,9 @@ export function LeagueTable({ teams, platform, leagueId }: LeagueTableProps) {
     };
 
     const getTeamLink = (teamId: string | number) => {
-        if (platform === 'sleeper') return `/league/${leagueId}/team/${teamId}`;
-        return `/fleaflicker/${leagueId}/team/${teamId}`;
+        const formatParam = format ? `?format=${format}` : '';
+        if (platform === 'sleeper') return `/league/${leagueId}/team/${teamId}${formatParam}`;
+        return `/fleaflicker/${leagueId}/team/${teamId}${formatParam}`;
     };
 
     return (

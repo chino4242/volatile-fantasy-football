@@ -11,8 +11,10 @@ interface PageProps {
     params: Promise<{ leagueId: string }>;
 }
 
-export default async function FleaflickerFreeAgentsPage({ params }: PageProps) {
+export default async function FleaflickerFreeAgentsPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string }> }) {
     const { leagueId } = await params;
+    const { format: formatParam } = await searchParams;
+    const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
 
     try {
         // 1. Fetch live Fleaflicker data
@@ -34,7 +36,7 @@ export default async function FleaflickerFreeAgentsPage({ params }: PageProps) {
             });
         });
 
-        // 3. Query DB for top valued players
+        // 3. Query DB for top valued players using the specified format
         const dbPlayers = await db
             .select({
                 sleeper_id: players.sleeper_id,
@@ -42,8 +44,8 @@ export default async function FleaflickerFreeAgentsPage({ params }: PageProps) {
                 position: players.position,
                 team: players.team,
                 years_exp: players.years_exp,
-                fc_value: playerValues.fc_value,
-                fc_rank: playerValues.fc_rank_sf,
+                fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
+                fc_rank: format === 'sf' ? playerValues.fc_rank_sf : playerValues.fc_rank_1qb,
             })
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -53,7 +55,7 @@ export default async function FleaflickerFreeAgentsPage({ params }: PageProps) {
                     inArray(players.position, ['QB', 'RB', 'WR', 'TE'])
                 )
             )
-            .orderBy(desc(playerValues.fc_value))
+            .orderBy(desc(format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb))
             .limit(1000); // Fetch enough to ensure we have 200 after filtering
 
         // 4. Filter out rostered players using normalized name matching
@@ -72,7 +74,7 @@ export default async function FleaflickerFreeAgentsPage({ params }: PageProps) {
                         <div className="flex items-center gap-4 sm:gap-6 bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                             <div className="min-w-0">
                                 <h1 className="text-xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-50 truncate">Top Free Agents</h1>
-                                <div className="text-xs sm:text-base text-zinc-500 mt-0.5 sm:mt-1">Available in league (Top 200 by SF Value)</div>
+                                <div className="text-xs sm:text-base text-zinc-500 mt-0.5 sm:mt-1">Available in league (Top 200 by {format === 'sf' ? 'SF' : '1QB'} Value)</div>
                             </div>
                         </div>
                     </div>
