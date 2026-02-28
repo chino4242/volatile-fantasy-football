@@ -34,7 +34,7 @@ export async function ingestPlayers() {
 
         const sfData = await sfResponse.json();
         const qbData = await qbResponse.json();
-        
+
         console.log(`Fetched ${sfData.length} SF records and ${qbData.length} 1QB records. Processing...`);
 
         // Create map of 1QB values by sleeper_id
@@ -57,12 +57,12 @@ export async function ingestPlayers() {
 
         for (const item of sfData) {
             const p = item.player;
-            
+
             // Debug: log items without sleeperId to see pick format
             if (!p.sleeperId && p.name) {
                 console.log(`No sleeperId: "${p.name}"`);
             }
-            
+
             // Handle draft picks - FantasyCalc format is like "2026 Pick 1.01"
             // Convert to our format: FP_2026_1.01
             if (!p.sleeperId && p.name && p.name.match(/^\d{4} Pick \d+\.\d+$/)) {
@@ -70,10 +70,10 @@ export async function ingestPlayers() {
                 if (match) {
                     const [_, year, round, slot] = match;
                     const pickId = `FP_${year}_${round}.${slot}`;
-                    
+
                     // Find matching 1QB pick value
                     const qbItem = qbData.find((qb: any) => qb.player.name === p.name);
-                    
+
                     valuesBatch.push({
                         sleeper_id: pickId,
                         fc_value_sf: item.value,
@@ -86,19 +86,19 @@ export async function ingestPlayers() {
                         redraft_value: item.redraftValue,
                         updated_at: new Date(),
                     });
-                    
+
                     picksCount++;
                     continue;
                 }
             }
-            
+
             if (!p.sleeperId) {
                 skippedCount++;
                 continue;
             }
 
             const sleeperId = String(p.sleeperId);
-            const qbValues = qbValueMap.get(sleeperId);
+            const qbValues = qbValueMap.get(sleeperId) as { value: number; rank: number } | undefined;
 
             playersBatch.push({
                 sleeper_id: sleeperId,
@@ -115,8 +115,8 @@ export async function ingestPlayers() {
                 sleeper_id: sleeperId,
                 fc_value_sf: item.value,
                 fc_rank_sf: item.overallRank,
-                fc_value_1qb: qbValues?.value || null,
-                fc_rank_1qb: qbValues?.rank || null,
+                fc_value_1qb: qbValues ? qbValues.value : null,
+                fc_rank_1qb: qbValues ? qbValues.rank : null,
                 fc_value: item.value, // Legacy field (SF)
                 fc_rank: item.overallRank,
                 fc_trend_30_day: item.trend30Day,

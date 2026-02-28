@@ -33,16 +33,39 @@ export interface FleaflickerLeagueData {
 const BASE_URL = "https://www.fleaflicker.com/api";
 
 export async function getFleaflickerLeague(leagueId: string): Promise<FleaflickerLeagueData> {
-    const response = await fetch(`${BASE_URL}/FetchLeagueRosters?sport=NFL&league_id=${leagueId}`);
-    
-    if (!response.ok) {
-        const text = await response.text();
-        console.error('Fleaflicker API error:', response.status, text);
-        throw new Error(`Failed to fetch Fleaflicker rosters: ${response.status} - ${text.substring(0, 200)}`);
+    const [rostersResponse, standingsResponse] = await Promise.all([
+        fetch(`${BASE_URL}/FetchLeagueRosters?sport=NFL&league_id=${leagueId}`),
+        fetch(`${BASE_URL}/FetchLeagueStandings?sport=NFL&league_id=${leagueId}`)
+    ]);
+
+    if (!rostersResponse.ok || !standingsResponse.ok) {
+        const text = await rostersResponse.text();
+        console.error('Fleaflicker API error:', rostersResponse.status, text);
+        throw new Error(`Failed to fetch Fleaflicker data: ${rostersResponse.status} - ${text.substring(0, 200)}`);
     }
-    
-    const data = await response.json();
-    
+
+    const [data, standingsData] = await Promise.all([
+        rostersResponse.json(),
+        standingsResponse.json()
+    ]);
+
+    const ownerMap = new Map<number, string>();
+    if (standingsData.divisions) {
+        standingsData.divisions.forEach((d: any) => {
+            (d.teams || []).forEach((t: any) => {
+                if (t.owners && t.owners[0]) {
+                    ownerMap.set(t.id, t.owners[0].displayName);
+                }
+            });
+        });
+    } else if (standingsData.teams) {
+        standingsData.teams.forEach((t: any) => {
+            if (t.owners && t.owners[0]) {
+                ownerMap.set(t.id, t.owners[0].displayName);
+            }
+        });
+    }
+
     // Extract all unique players from rosters
     const allPlayers = new Set<string>();
     const rosters = await Promise.all((data.rosters || []).map(async (r: any) => {
@@ -56,17 +79,18 @@ export async function getFleaflickerLeague(leagueId: string): Promise<Fleaflicke
             if (player.full_name) allPlayers.add(player.full_name);
             return player;
         });
-        
+
         // Fetch draft picks for this team
         const draftPicks = await getFleaflickerTeamPicks(leagueId, teamId);
-        
+
         return {
             id: teamId,
             name: r.team?.name || '',
             owners: [{
-                display_name: r.team?.owners?.[0]?.displayName || 
-                             r.owners?.[0]?.displayName || 
-                             'Unknown'
+                display_name: ownerMap.get(teamId) ||
+                    r.team?.owners?.[0]?.displayName ||
+                    r.owners?.[0]?.displayName ||
+                    'Unknown'
             }],
             players,
             draftPicks
@@ -82,14 +106,14 @@ export async function getFleaflickerLeague(leagueId: string): Promise<Fleaflicke
 async function getFleaflickerTeamPicks(leagueId: string, teamId: number): Promise<FleaflickerDraftPick[]> {
     try {
         const response = await fetch(`${BASE_URL}/FetchTeamPicks?sport=NFL&league_id=${leagueId}&team_id=${teamId}`);
-        
+
         if (!response.ok) {
             console.warn(`Failed to fetch picks for team ${teamId}`);
             return [];
         }
-        
+
         const data = await response.json();
-        
+
         return (data.picks || []).map((pick: any) => ({
             season: pick.season || 0,
             round: pick.slot?.round || 0,

@@ -29,19 +29,24 @@ interface TeamRosterTableProps {
         position: string | null;
         team: string | null;
         fc_value: number | null;
+        fc_rank: number | null;
         fc_rank_sf: number | null;
         fc_rank_1qb: number | null;
         rank_1qb_overall: number | null;
+        rank_1qb_pos: number | null;
+        rank_1qb_tier: number | null;
         rank_sf_overall: number | null;
+        rank_sf_pos: number | null;
+        rank_sf_tier: number | null;
     }>;
     playerOwnershipMap: Map<string, number>;
     rosterToOwnerMap: Map<number, string>;
     currentRosterId: number;
 }
 
-export function TeamRosterTable({ 
-    players, 
-    scoringFormat = 'sf', 
+export function TeamRosterTable({
+    players,
+    scoringFormat = 'sf',
     positionValues,
     allLeaguePlayers,
     playerOwnershipMap,
@@ -61,9 +66,9 @@ export function TeamRosterTable({
     const getValueGap = (player: PlayerData, format: '1qb' | 'sf') => {
         const marketRank = format === '1qb' ? player.fc_rank_1qb : player.fc_rank_sf;
         const analysisRank = format === '1qb' ? player.rank_1qb_overall : player.rank_sf_overall;
-        
+
         if (!marketRank || !analysisRank) return null;
-        
+
         // Positive gap = player ranked higher in analysis than market (BUY)
         // Negative gap = player ranked lower in analysis than market (SELL)
         return marketRank - analysisRank;
@@ -71,7 +76,7 @@ export function TeamRosterTable({
 
     const getValueGapLabel = (gap: number | null) => {
         if (gap === null) return null;
-        
+
         if (gap >= 20) return { label: 'STRONG BUY', color: 'bg-green-600 text-white' };
         if (gap >= 10) return { label: 'BUY', color: 'bg-green-500 text-white' };
         if (gap <= -20) return { label: 'STRONG SELL', color: 'bg-red-600 text-white' };
@@ -100,10 +105,10 @@ export function TeamRosterTable({
             .filter(p => {
                 const value = p.fc_value || 0;
                 const ownerId = playerOwnershipMap.get(p.sleeper_id);
-                return value >= minValue && 
-                       value <= maxValue && 
-                       ownerId !== currentRosterId &&
-                       p.position !== 'PICK';
+                return value >= minValue &&
+                    value <= maxValue &&
+                    ownerId !== currentRosterId &&
+                    p.position !== 'PICK';
             })
             .sort((a, b) => Math.abs((a.fc_value || 0) - pickValue) - Math.abs((b.fc_value || 0) - pickValue));
 
@@ -177,20 +182,17 @@ export function TeamRosterTable({
                         <button
                             key={pos}
                             onClick={() => togglePosition(pos)}
-                            className={`px-2 sm:px-4 py-2 rounded-lg text-center sm:text-left transition-all ${
-                                isActive
+                            className={`px-2 sm:px-4 py-2 rounded-lg text-center sm:text-left transition-all ${isActive
                                     ? colors[pos]
                                     : 'bg-zinc-100 dark:bg-zinc-800 opacity-40 hover:opacity-60'
-                            }`}
+                                }`}
                         >
-                            <div className={`text-[10px] sm:text-xs font-semibold ${
-                                isActive ? 'text-zinc-900' : 'text-zinc-500'
-                            }`}>
+                            <div className={`text-[10px] sm:text-xs font-semibold ${isActive ? 'text-zinc-900' : 'text-zinc-500'
+                                }`}>
                                 {pos}
                             </div>
-                            <div className={`font-mono font-medium text-xs sm:text-base ${
-                                isActive ? 'text-zinc-900' : 'text-zinc-900 dark:text-zinc-100'
-                            }`}>
+                            <div className={`font-mono font-medium text-xs sm:text-base ${isActive ? 'text-zinc-900' : 'text-zinc-900 dark:text-zinc-100'
+                                }`}>
                                 {positionValues[pos]?.toLocaleString() || 0}
                             </div>
                         </button>
@@ -250,8 +252,8 @@ export function TeamRosterTable({
                     </thead>
                     <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                         {filteredPlayers.map((player) => (
-                            <tr 
-                                key={player.sleeper_id} 
+                            <tr
+                                key={player.sleeper_id}
                                 className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBgClass(player.position)} ${player.position === 'PICK' ? 'cursor-pointer' : ''}`}
                                 onClick={() => player.position === 'PICK' ? (setSelectedPick(player), setTradeTargetOffset(0)) : null}
                             >
@@ -359,7 +361,7 @@ export function TeamRosterTable({
                                     <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{selectedPick.full_name}</h2>
                                     <p className="text-sm text-zinc-500 mt-1">Value: {selectedPick.fc_value?.toLocaleString()} pts</p>
                                 </div>
-                                <button 
+                                <button
                                     onClick={() => setSelectedPick(null)}
                                     className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
                                 >
@@ -374,11 +376,10 @@ export function TeamRosterTable({
                                     <button
                                         key={t}
                                         onClick={() => setTolerance(t)}
-                                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                                            tolerance === t
+                                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${tolerance === t
                                                 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
                                                 : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
-                                        }`}
+                                            }`}
                                     >
                                         {(t * 100).toFixed(0)}%
                                     </button>
@@ -386,27 +387,25 @@ export function TeamRosterTable({
                                 <span className="text-xs font-medium text-zinc-500 uppercase ml-4">View:</span>
                                 <button
                                     onClick={() => setViewMode('position')}
-                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                                        viewMode === 'position'
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${viewMode === 'position'
                                             ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
                                             : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
-                                    }`}
+                                        }`}
                                 >
                                     By Position
                                 </button>
                                 <button
                                     onClick={() => setViewMode('team')}
-                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                                        viewMode === 'team'
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${viewMode === 'team'
                                             ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
                                             : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
-                                    }`}
+                                        }`}
                                 >
                                     By Team
                                 </button>
                             </div>
                         </div>
-                        
+
                         <div className="p-4 sm:p-6 space-y-6">
                             <div className="flex items-center justify-between">
                                 <p className="text-sm text-zinc-600 dark:text-zinc-400">Trade targets within {(tolerance * 100).toFixed(0)}% of pick value:</p>
@@ -417,7 +416,7 @@ export function TeamRosterTable({
                                     Show More
                                 </button>
                             </div>
-                            
+
                             {Object.entries(getTradeTargets(selectedPick.fc_value || 0, tradeTargetOffset)).map(([groupName, targets]) => (
                                 targets.length > 0 && (
                                     <div key={groupName}>

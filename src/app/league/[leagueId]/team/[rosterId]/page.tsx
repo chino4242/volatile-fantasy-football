@@ -71,10 +71,15 @@ export default async function TeamPage({ params }: PageProps) {
             position: players.position,
             team: players.team,
             fc_value: playerValues.fc_value_sf,
+            fc_rank: playerValues.fc_rank,
             fc_rank_sf: playerValues.fc_rank_sf,
             fc_rank_1qb: playerValues.fc_rank_1qb,
             rank_1qb_overall: playerValues.rank_1qb_overall,
+            rank_1qb_pos: playerValues.rank_1qb_pos,
+            rank_1qb_tier: playerValues.rank_1qb_tier,
             rank_sf_overall: playerValues.rank_sf_overall,
+            rank_sf_pos: playerValues.rank_sf_pos,
+            rank_sf_tier: playerValues.rank_sf_tier,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -102,10 +107,10 @@ export default async function TeamPage({ params }: PageProps) {
     const enrichedPicks = rosterPicks.map(pick => {
         const pickId = getPickFantasyCalcId(pick.season, pick.round);
         const pickData = playerMap.get(pickId);
-        const ownerName = pick.originalOwner !== Number(rosterId) 
-            ? rosterToOwnerMap.get(pick.originalOwner) 
+        const ownerName = pick.originalOwner !== Number(rosterId)
+            ? rosterToOwnerMap.get(pick.originalOwner)
             : null;
-        
+
         return {
             sleeper_id: pickId,
             full_name: `${pick.season} Round ${pick.round}${ownerName ? ` (${ownerName})` : ''}`,
@@ -113,6 +118,8 @@ export default async function TeamPage({ params }: PageProps) {
             team: null,
             fc_value: pickData?.fc_value || 0,
             fc_rank: null,
+            fc_rank_sf: null,
+            fc_rank_1qb: null,
             rank_1qb_overall: null,
             rank_1qb_pos: null,
             rank_1qb_tier: null,
@@ -169,9 +176,9 @@ export default async function TeamPage({ params }: PageProps) {
                     </div>
                 </div>
 
-                <TeamRosterTable 
-                    players={allAssets} 
-                    scoringFormat="sf" 
+                <TeamRosterTable
+                    players={allAssets}
+                    scoringFormat="sf"
                     positionValues={positionValues}
                     allLeaguePlayers={allLeaguePlayers}
                     playerOwnershipMap={playerOwnershipMap}

@@ -27,17 +27,17 @@ export default async function FleaflickerTeamPage({
         .filter(Boolean);
 
     // Get pick IDs - try both specific slot and round-level
-    const specificPickIds = roster.draftPicks.map(pick => 
+    const specificPickIds = roster.draftPicks.map(pick =>
         `FP_${pick.season}_${pick.round}.${pick.slot.toString().padStart(2, '0')}`
     );
-    const roundPickIds = roster.draftPicks.map(pick => 
+    const roundPickIds = roster.draftPicks.map(pick =>
         getPickFantasyCalcId(pick.season.toString(), pick.round)
     );
     const pickIds = [...new Set([...specificPickIds, ...roundPickIds])];
 
     // Fetch from DB
     const allPlayers = await db.select().from(players);
-    const matchedPlayers = allPlayers.filter(p => 
+    const matchedPlayers = allPlayers.filter(p =>
         playerNames.includes(p.full_name.toLowerCase())
     );
 
@@ -58,9 +58,9 @@ export default async function FleaflickerTeamPage({
         .map(player => {
             const dbPlayer = nameToPlayerMap.get(player.full_name.toLowerCase());
             if (!dbPlayer) return null;
-            
+
             const valueData = valueMap.get(dbPlayer.sleeper_id);
-            
+
             return {
                 sleeper_id: dbPlayer.sleeper_id,
                 full_name: player.full_name,
@@ -86,15 +86,15 @@ export default async function FleaflickerTeamPage({
         const specificPickId = `FP_${pick.season}_${pick.round}.${pick.slot.toString().padStart(2, '0')}`;
         // Fall back to round-level ID (e.g., FP_2026_1)
         const roundPickId = getPickFantasyCalcId(pick.season.toString(), pick.round);
-        
+
         const specificValue = valueMap.get(specificPickId);
         const roundValue = valueMap.get(roundPickId);
         const pickValue = specificValue || roundValue;
-        
+
         const isTraded = pick.originalOwner !== pick.currentOwner;
         const originalOwnerRoster = fleaflickerData.rosters.find(r => r.id === pick.originalOwner);
         const ownerName = isTraded && originalOwnerRoster ? originalOwnerRoster.name : null;
-        
+
         return {
             sleeper_id: specificPickId,
             full_name: `${pick.season} Round ${pick.round}.${pick.slot} #${pick.overall}${ownerName ? ` (${ownerName})` : ''}`,
@@ -124,14 +124,14 @@ export default async function FleaflickerTeamPage({
     positionValues['PICK'] = enrichedPicks.reduce((sum, p) => sum + (p.fc_value || 0), 0);
 
     // Fetch all league players for trade targets
-    const allLeaguePlayerNames = fleaflickerData.rosters.flatMap(r => 
+    const allLeaguePlayerNames = fleaflickerData.rosters.flatMap(r =>
         r.players.map(p => p.full_name.toLowerCase())
     );
-    const allLeaguePlayers = allPlayers.filter(p => 
+    const allLeaguePlayers = allPlayers.filter(p =>
         allLeaguePlayerNames.includes(p.full_name.toLowerCase())
     );
     const allLeaguePlayerIds = allLeaguePlayers.map(p => p.sleeper_id);
-    
+
     const allLeagueValues = await db
         .select({
             sleeper_id: players.sleeper_id,
@@ -139,10 +139,15 @@ export default async function FleaflickerTeamPage({
             position: players.position,
             team: players.team,
             fc_value: playerValues.fc_value_1qb,
+            fc_rank: playerValues.fc_rank,
             fc_rank_sf: playerValues.fc_rank_sf,
             fc_rank_1qb: playerValues.fc_rank_1qb,
             rank_1qb_overall: playerValues.rank_1qb_overall,
+            rank_1qb_pos: playerValues.rank_1qb_pos,
+            rank_1qb_tier: playerValues.rank_1qb_tier,
             rank_sf_overall: playerValues.rank_sf_overall,
+            rank_sf_pos: playerValues.rank_sf_pos,
+            rank_sf_tier: playerValues.rank_sf_tier,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -184,9 +189,9 @@ export default async function FleaflickerTeamPage({
                     </p>
                 </div>
 
-                <TeamRosterTable 
-                    players={allAssets} 
-                    scoringFormat="1qb" 
+                <TeamRosterTable
+                    players={allAssets}
+                    scoringFormat="1qb"
                     positionValues={positionValues}
                     allLeaguePlayers={allLeagueValues}
                     playerOwnershipMap={playerOwnershipMap}
