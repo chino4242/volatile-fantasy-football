@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { players, playerValues } from "@/db/schema";
-import { getLeagueData } from "@/lib/sleeper";
+import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from "@/lib/sleeper";
 import { desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
@@ -17,12 +17,16 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
 
     try {
         // 1. Fetch live Sleeper data
-        const { users, rosters } = await getLeagueData(leagueId);
+        const { users, rosters, tradedPicks } = await getLeagueData(leagueId);
 
-        // 2. Collect all player IDs
+        // 2. Get all draft picks (original + traded)
+        const allPicks = getAllDraftPicks(rosters, tradedPicks);
+        const pickIds = [...new Set(allPicks.map(pick => getPickFantasyCalcId(pick.season, pick.round)))];
+
+        // 3. Collect all player IDs
         const allSleeperIds = rosters.flatMap((r) => r.players || []);
 
-        // 3. Fetch values from DB
+        // 4. Fetch values from DB
         const dbPlayers = await db
             .select({
                 sleeper_id: players.sleeper_id,
@@ -31,15 +35,28 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
             })
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
-            .where(inArray(players.sleeper_id, allSleeperIds));
+            .where(inArray(players.sleeper_id, [...allSleeperIds, ...pickIds]));
 
-        // 4. Create lookup map
+        // 5. Create lookup map
         const playerMap = new Map(dbPlayers.map((p) => [p.sleeper_id, p]));
         const userMap = new Map(users.map((u) => [u.user_id, u]));
 
-        // 5. Aggregate data per team
+        // 6. Build draft pick ownership map with values
+        const picksByRoster = new Map<number, { count: number, totalValue: number }>();
+        allPicks.forEach(pick => {
+            const pickId = getPickFantasyCalcId(pick.season, pick.round);
+            const pickValue = playerMap.get(pickId)?.fc_value || 0;
+            const existing = picksByRoster.get(pick.currentOwner) || { count: 0, totalValue: 0 };
+            picksByRoster.set(pick.currentOwner, {
+                count: existing.count + 1,
+                totalValue: existing.totalValue + pickValue
+            });
+        });
+
+        // 7. Aggregate data per team
         const teamStats = rosters.map((roster) => {
             const owner = userMap.get(roster.owner_id);
+            const pickData = picksByRoster.get(roster.roster_id) || { count: 0, totalValue: 0 };
 
             const stats = {
                 rosterId: roster.roster_id,
@@ -50,6 +67,8 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
                 rbValue: 0,
                 wrValue: 0,
                 teValue: 0,
+                pickValue: pickData.totalValue,
+                pickCount: pickData.count,
             };
 
             (roster.players || []).forEach((pid) => {
@@ -63,6 +82,8 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
                     else if (p.position === 'TE') stats.teValue += val;
                 }
             });
+
+            stats.totalValue += stats.pickValue;
 
             return stats;
         }).sort((a, b) => b.totalValue - a.totalValue);
@@ -90,6 +111,7 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
                                             <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">RB</th>
                                             <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">WR</th>
                                             <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">TE</th>
+                                            <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider hidden md:table-cell">Picks</th>
                                             <th scope="col" className="relative px-2 sm:px-3 py-3">
                                                 <span className="sr-only">View</span>
                                             </th>
@@ -137,6 +159,9 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
                                                 </td>
                                                 <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 hidden sm:table-cell">
                                                     {team.teValue.toLocaleString()}
+                                                </td>
+                                                <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 hidden md:table-cell">
+                                                    {team.pickValue.toLocaleString()}
                                                 </td>
                                                 <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium">
                                                     <ChevronRight className="h-5 w-5 text-zinc-400 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors" />

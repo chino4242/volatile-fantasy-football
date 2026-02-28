@@ -5,7 +5,8 @@ console.log("DB URL:", process.env.DATABASE_URL ? process.env.DATABASE_URL.repla
 
 // Dynamic imports will be used inside the function
 
-const FANTASY_CALC_URL = "https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=2&numTeams=12&ppr=0.5";
+const FANTASY_CALC_SF_URL = "https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=2&numTeams=12&ppr=0.5";
+const FANTASY_CALC_1QB_URL = "https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=1&numTeams=12&ppr=0.5";
 
 export async function ingestPlayers() {
     console.log("--- Starting Player Ingestion ---");
@@ -14,29 +15,57 @@ export async function ingestPlayers() {
     const { players, playerValues } = await import("../src/db/schema");
     const { sql } = await import("drizzle-orm");
 
-    console.log(`Fetching data from: ${FANTASY_CALC_URL}`);
+    console.log(`Fetching Superflex data from: ${FANTASY_CALC_SF_URL}`);
+    console.log(`Fetching 1QB data from: ${FANTASY_CALC_1QB_URL}`);
 
     try {
-        const response = await fetch(FANTASY_CALC_URL);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch: ${response.statusText}`);
+        // Fetch both SF and 1QB data
+        const [sfResponse, qbResponse] = await Promise.all([
+            fetch(FANTASY_CALC_SF_URL),
+            fetch(FANTASY_CALC_1QB_URL)
+        ]);
+
+        if (!sfResponse.ok) {
+            throw new Error(`Failed to fetch SF: ${sfResponse.statusText}`);
         }
-        const data = await response.json();
-        console.log(`Fetched ${data.length} records. Processing...`);
+        if (!qbResponse.ok) {
+            throw new Error(`Failed to fetch 1QB: ${qbResponse.statusText}`);
+        }
+
+        const sfData = await sfResponse.json();
+        const qbData = await qbResponse.json();
+        
+        console.log(`Fetched ${sfData.length} SF records and ${qbData.length} 1QB records. Processing...`);
+
+        // Create map of 1QB values by sleeper_id
+        const qbValueMap = new Map(
+            qbData
+                .filter((item: any) => item.player.sleeperId)
+                .map((item: any) => [
+                    String(item.player.sleeperId),
+                    {
+                        value: item.value,
+                        rank: item.overallRank
+                    }
+                ])
+        );
 
         const playersBatch = [];
         const valuesBatch = [];
         let skippedCount = 0;
 
-        for (const item of data) {
+        for (const item of sfData) {
             const p = item.player;
             if (!p.sleeperId) {
                 skippedCount++;
                 continue;
             }
 
+            const sleeperId = String(p.sleeperId);
+            const qbValues = qbValueMap.get(sleeperId);
+
             playersBatch.push({
-                sleeper_id: String(p.sleeperId),
+                sleeper_id: sleeperId,
                 full_name: p.name,
                 first_name: p.mflId ? p.name.split(" ")[0] : null,
                 last_name: p.mflId ? p.name.split(" ").slice(1).join(" ") : null,
@@ -47,8 +76,12 @@ export async function ingestPlayers() {
             });
 
             valuesBatch.push({
-                sleeper_id: String(p.sleeperId),
-                fc_value: item.value,
+                sleeper_id: sleeperId,
+                fc_value_sf: item.value,
+                fc_rank_sf: item.overallRank,
+                fc_value_1qb: qbValues?.value || null,
+                fc_rank_1qb: qbValues?.rank || null,
+                fc_value: item.value, // Legacy field (SF)
                 fc_rank: item.overallRank,
                 fc_trend_30_day: item.trend30Day,
                 redraft_value: item.redraftValue,
@@ -75,6 +108,10 @@ export async function ingestPlayers() {
         await db.insert(playerValues).values(valuesBatch).onConflictDoUpdate({
             target: playerValues.sleeper_id,
             set: {
+                fc_value_sf: sql.raw("excluded.fc_value_sf"),
+                fc_rank_sf: sql.raw("excluded.fc_rank_sf"),
+                fc_value_1qb: sql.raw("excluded.fc_value_1qb"),
+                fc_rank_1qb: sql.raw("excluded.fc_rank_1qb"),
                 fc_value: sql.raw("excluded.fc_value"),
                 fc_rank: sql.raw("excluded.fc_rank"),
                 fc_trend_30_day: sql.raw("excluded.fc_trend_30_day"),

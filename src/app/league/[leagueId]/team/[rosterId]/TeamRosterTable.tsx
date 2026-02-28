@@ -8,6 +8,7 @@ interface PlayerData {
     position: string | null;
     team: string | null;
     fc_value: number | null;
+    fc_rank: number | null;
     rank_1qb_overall: number | null;
     rank_1qb_pos: number | null;
     rank_1qb_tier: number | null;
@@ -18,11 +19,74 @@ interface PlayerData {
 
 interface TeamRosterTableProps {
     players: PlayerData[];
+    scoringFormat?: '1qb' | 'sf';
+    positionValues: Record<string, number>;
+    allLeaguePlayers: Array<{
+        sleeper_id: string;
+        full_name: string;
+        position: string | null;
+        team: string | null;
+        fc_value: number | null;
+    }>;
+    playerOwnershipMap: Map<string, number>;
+    rosterToOwnerMap: Map<number, string>;
+    currentRosterId: number;
 }
 
-export function TeamRosterTable({ players }: TeamRosterTableProps) {
+export function TeamRosterTable({ 
+    players, 
+    scoringFormat = 'sf', 
+    positionValues,
+    allLeaguePlayers,
+    playerOwnershipMap,
+    rosterToOwnerMap,
+    currentRosterId
+}: TeamRosterTableProps) {
     const [show1Qb, setShow1Qb] = useState(false);
     const [showSf, setShowSf] = useState(false);
+    const [activePositions, setActivePositions] = useState<Set<string>>(
+        new Set(['QB', 'RB', 'WR', 'TE'])
+    );
+    const [selectedPick, setSelectedPick] = useState<PlayerData | null>(null);
+
+    const togglePosition = (pos: string) => {
+        const newSet = new Set(activePositions);
+        if (newSet.has(pos)) {
+            newSet.delete(pos);
+        } else {
+            newSet.add(pos);
+        }
+        setActivePositions(newSet);
+    };
+
+    const filteredPlayers = players.filter(p => activePositions.has(p.position || ''));
+    const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'PICK'];
+
+    const getTradeTargets = (pickValue: number) => {
+        const tolerance = 0.05; // 5%
+        const minValue = pickValue * (1 - tolerance);
+        const maxValue = pickValue * (1 + tolerance);
+
+        const targets = allLeaguePlayers
+            .filter(p => {
+                const value = p.fc_value || 0;
+                const ownerId = playerOwnershipMap.get(p.sleeper_id);
+                return value >= minValue && 
+                       value <= maxValue && 
+                       ownerId !== currentRosterId &&
+                       p.position !== 'PICK';
+            })
+            .sort((a, b) => Math.abs((a.fc_value || 0) - pickValue) - Math.abs((b.fc_value || 0) - pickValue));
+
+        const byPosition: Record<string, typeof targets> = {
+            QB: targets.filter(p => p.position === 'QB').slice(0, 3),
+            RB: targets.filter(p => p.position === 'RB').slice(0, 3),
+            WR: targets.filter(p => p.position === 'WR').slice(0, 3),
+            TE: targets.filter(p => p.position === 'TE').slice(0, 3),
+        };
+
+        return byPosition;
+    };
 
     const getValueColorClass = (value: number | null) => {
         if (!value) return "text-zinc-900 dark:text-zinc-100";
@@ -41,8 +105,54 @@ export function TeamRosterTable({ players }: TeamRosterTableProps) {
         return "text-zinc-500 dark:text-zinc-400";
     };
 
+    const getPositionBgClass = (position: string | null) => {
+        const colors: Record<string, string> = {
+            QB: 'bg-[#9de89f]/30',
+            RB: 'bg-[#ffadad]/30',
+            WR: 'bg-[#9bf6ff]/30',
+            TE: 'bg-[#ffd6a5]/30',
+            PICK: 'bg-[#6fffe9]/30'
+        };
+        return colors[position || ''] || '';
+    };
+
     return (
         <div className="space-y-4">
+            <div className="grid grid-cols-5 gap-2 sm:gap-3">
+                {POSITIONS.map(pos => {
+                    const isActive = activePositions.has(pos);
+                    const colors: Record<string, string> = {
+                        QB: 'bg-[#9de89f] text-zinc-900',
+                        RB: 'bg-[#ffadad] text-zinc-900',
+                        WR: 'bg-[#9bf6ff] text-zinc-900',
+                        TE: 'bg-[#ffd6a5] text-zinc-900',
+                        PICK: 'bg-[#6fffe9] text-zinc-900'
+                    };
+                    return (
+                        <button
+                            key={pos}
+                            onClick={() => togglePosition(pos)}
+                            className={`px-2 sm:px-4 py-2 rounded-lg text-center sm:text-left transition-all ${
+                                isActive
+                                    ? colors[pos]
+                                    : 'bg-zinc-100 dark:bg-zinc-800 opacity-40 hover:opacity-60'
+                            }`}
+                        >
+                            <div className={`text-[10px] sm:text-xs font-semibold ${
+                                isActive ? 'text-zinc-900' : 'text-zinc-500'
+                            }`}>
+                                {pos}
+                            </div>
+                            <div className={`font-mono font-medium text-xs sm:text-base ${
+                                isActive ? 'text-zinc-900' : 'text-zinc-900 dark:text-zinc-100'
+                            }`}>
+                                {positionValues[pos]?.toLocaleString() || 0}
+                            </div>
+                        </button>
+                    );
+                })}
+            </div>
+
             <div className="flex flex-wrap gap-3 items-center px-2 sm:px-0">
                 <span className="text-sm font-medium text-zinc-500 uppercase tracking-wider">Columns:</span>
                 <button
@@ -92,8 +202,12 @@ export function TeamRosterTable({ players }: TeamRosterTableProps) {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                        {players.map((player) => (
-                            <tr key={player.sleeper_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                        {filteredPlayers.map((player) => (
+                            <tr 
+                                key={player.sleeper_id} 
+                                className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBgClass(player.position)} ${player.position === 'PICK' ? 'cursor-pointer' : ''}`}
+                                onClick={() => player.position === 'PICK' ? setSelectedPick(player) : null}
+                            >
                                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                                     <div className="text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100">
                                         {player.full_name}
@@ -166,6 +280,61 @@ export function TeamRosterTable({ players }: TeamRosterTableProps) {
                     </tbody>
                 </table>
             </div>
+
+            {selectedPick && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedPick(null)}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                        <div className="sticky top-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 p-4 sm:p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{selectedPick.full_name}</h2>
+                                    <p className="text-sm text-zinc-500 mt-1">Value: {selectedPick.fc_value?.toLocaleString()} pts</p>
+                                </div>
+                                <button 
+                                    onClick={() => setSelectedPick(null)}
+                                    className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="p-4 sm:p-6 space-y-6">
+                            <p className="text-sm text-zinc-600 dark:text-zinc-400">Trade targets within 5% of pick value:</p>
+                            
+                            {Object.entries(getTradeTargets(selectedPick.fc_value || 0)).map(([position, targets]) => (
+                                targets.length > 0 && (
+                                    <div key={position}>
+                                        <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">{position}</h3>
+                                        <div className="space-y-2">
+                                            {targets.map(target => {
+                                                const ownerId = playerOwnershipMap.get(target.sleeper_id);
+                                                const ownerName = ownerId ? rosterToOwnerMap.get(ownerId) : 'Unknown';
+                                                return (
+                                                    <div key={target.sleeper_id} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
+                                                        <div>
+                                                            <div className="font-medium text-zinc-900 dark:text-zinc-100">{target.full_name}</div>
+                                                            <div className="text-xs text-zinc-500">{target.team || 'FA'} · {ownerName}</div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="font-mono font-medium text-zinc-900 dark:text-zinc-100">{target.fc_value?.toLocaleString()}</div>
+                                                            <div className="text-xs text-zinc-500">
+                                                                {((Math.abs((target.fc_value || 0) - (selectedPick.fc_value || 0)) / (selectedPick.fc_value || 1)) * 100).toFixed(1)}% diff
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

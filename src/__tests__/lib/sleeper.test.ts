@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getLeagueUsers, getLeagueRosters, getLeagueData } from '@/lib/sleeper';
+import { getLeagueUsers, getLeagueRosters, getTradedPicks, getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from '@/lib/sleeper';
 
 // Mock the global fetch
 global.fetch = vi.fn();
@@ -65,19 +65,87 @@ describe('Sleeper API Library', () => {
     });
 
     describe('getLeagueData', () => {
-        it('should return both users and rosters', async () => {
+        it('should return users, rosters, and traded picks', async () => {
             const mockUsers = [{ user_id: '1', display_name: 'User 1', avatar: 'a' }];
             const mockRosters = [{ roster_id: 1, owner_id: '1', players: [], starters: [], settings: { wins: 0, losses: 0, ties: 0, fpts: 0 } }];
+            const mockTradedPicks = [{ season: '2025', round: 1, roster_id: 1, previous_owner_id: 2, owner_id: 1 }];
 
-            // First call is users, second is rosters (due to Promise.all order in the implementation)
             (fetch as any)
                 .mockResolvedValueOnce({ ok: true, json: async () => mockUsers })
-                .mockResolvedValueOnce({ ok: true, json: async () => mockRosters });
+                .mockResolvedValueOnce({ ok: true, json: async () => mockRosters })
+                .mockResolvedValueOnce({ ok: true, json: async () => mockTradedPicks });
 
             const result = await getLeagueData(mockLeagueId);
 
-            expect(result).toEqual({ users: mockUsers, rosters: mockRosters });
-            expect(fetch).toHaveBeenCalledTimes(2);
+            expect(result).toEqual({ users: mockUsers, rosters: mockRosters, tradedPicks: mockTradedPicks });
+            expect(fetch).toHaveBeenCalledTimes(3);
+        });
+    });
+
+    describe('getTradedPicks', () => {
+        it('should fetch and return traded picks successfully', async () => {
+            const mockPicks = [
+                { season: '2025', round: 1, roster_id: 1, previous_owner_id: 2, owner_id: 1 },
+                { season: '2026', round: 3, roster_id: 2, previous_owner_id: 1, owner_id: 2 }
+            ];
+
+            (fetch as any).mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockPicks
+            });
+
+            const result = await getTradedPicks(mockLeagueId);
+            expect(result).toEqual(mockPicks);
+            expect(fetch).toHaveBeenCalledWith(`https://api.sleeper.app/v1/league/${mockLeagueId}/traded_picks`);
+        });
+
+        it('should throw an error on failed fetch', async () => {
+            (fetch as any).mockResolvedValueOnce({
+                ok: false,
+                statusText: 'Not Found'
+            });
+
+            await expect(getTradedPicks(mockLeagueId)).rejects.toThrow('Failed to fetch traded picks');
+        });
+    });
+
+    describe('getPickFantasyCalcId', () => {
+        it('should generate correct FantasyCalc ID for draft picks', () => {
+            expect(getPickFantasyCalcId('2025', 1)).toBe('FP_2025_1');
+            expect(getPickFantasyCalcId('2026', 3)).toBe('FP_2026_3');
+            expect(getPickFantasyCalcId('2027', 5)).toBe('FP_2027_5');
+        });
+    });
+
+    describe('getAllDraftPicks', () => {
+        it('should generate all picks for all teams', () => {
+            const rosters = [
+                { roster_id: 1, owner_id: 'u1', players: [], starters: [], settings: { wins: 0, losses: 0, ties: 0, fpts: 0 } },
+                { roster_id: 2, owner_id: 'u2', players: [], starters: [], settings: { wins: 0, losses: 0, ties: 0, fpts: 0 } }
+            ];
+            const tradedPicks: any[] = [];
+            
+            const picks = getAllDraftPicks(rosters, tradedPicks, 2026);
+            
+            // 2 teams * 5 rounds * 3 years = 30 picks
+            expect(picks.length).toBe(30);
+            expect(picks.filter(p => p.currentOwner === 1).length).toBe(15);
+            expect(picks.filter(p => p.currentOwner === 2).length).toBe(15);
+        });
+
+        it('should apply trades correctly', () => {
+            const rosters = [
+                { roster_id: 1, owner_id: 'u1', players: [], starters: [], settings: { wins: 0, losses: 0, ties: 0, fpts: 0 } },
+                { roster_id: 2, owner_id: 'u2', players: [], starters: [], settings: { wins: 0, losses: 0, ties: 0, fpts: 0 } }
+            ];
+            const tradedPicks = [
+                { season: '2026', round: 1, roster_id: 1, previous_owner_id: 1, owner_id: 2 }
+            ];
+            
+            const picks = getAllDraftPicks(rosters, tradedPicks, 2026);
+            
+            const tradedPick = picks.find(p => p.season === '2026' && p.round === 1 && p.originalOwner === 1);
+            expect(tradedPick?.currentOwner).toBe(2);
         });
     });
 });

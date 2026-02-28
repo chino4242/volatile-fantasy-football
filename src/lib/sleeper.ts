@@ -17,9 +17,25 @@ export interface SleeperRoster {
     };
 }
 
+export interface SleeperTradedPick {
+    season: string;
+    round: number;
+    roster_id: number;
+    previous_owner_id: number;
+    owner_id: number;
+}
+
+export interface DraftPick {
+    season: string;
+    round: number;
+    originalOwner: number;
+    currentOwner: number;
+}
+
 export interface LeagueData {
     users: SleeperUser[];
     rosters: SleeperRoster[];
+    tradedPicks: SleeperTradedPick[];
 }
 
 const BASE_URL = "https://api.sleeper.app/v1";
@@ -36,10 +52,57 @@ export async function getLeagueRosters(leagueId: string): Promise<SleeperRoster[
     return res.json();
 }
 
+export async function getTradedPicks(leagueId: string): Promise<SleeperTradedPick[]> {
+    const res = await fetch(`${BASE_URL}/league/${leagueId}/traded_picks`);
+    if (!res.ok) throw new Error("Failed to fetch traded picks");
+    return res.json();
+}
+
 export async function getLeagueData(leagueId: string): Promise<LeagueData> {
-    const [users, rosters] = await Promise.all([
+    const [users, rosters, tradedPicks] = await Promise.all([
         getLeagueUsers(leagueId),
         getLeagueRosters(leagueId),
+        getTradedPicks(leagueId),
     ]);
-    return { users, rosters };
+    return { users, rosters, tradedPicks };
+}
+
+export function getPickFantasyCalcId(season: string, round: number): string {
+    return `FP_${season}_${round}`;
+}
+
+export function getAllDraftPicks(rosters: SleeperRoster[], tradedPicks: SleeperTradedPick[], currentYear: number = 2026): DraftPick[] {
+    const picks: DraftPick[] = [];
+    const numTeams = rosters.length;
+    const numRounds = 5; // Standard dynasty draft rounds
+    const yearsAhead = 3; // Show picks for next 3 years
+    
+    // Generate all picks for each team for the next few years
+    for (let yearOffset = 0; yearOffset < yearsAhead; yearOffset++) {
+        const season = (currentYear + yearOffset).toString();
+        for (let round = 1; round <= numRounds; round++) {
+            rosters.forEach(roster => {
+                picks.push({
+                    season,
+                    round,
+                    originalOwner: roster.roster_id,
+                    currentOwner: roster.roster_id
+                });
+            });
+        }
+    }
+    
+    // Apply trades
+    tradedPicks.forEach(trade => {
+        const pick = picks.find(p => 
+            p.season === trade.season && 
+            p.round === trade.round && 
+            p.originalOwner === trade.roster_id
+        );
+        if (pick) {
+            pick.currentOwner = trade.owner_id;
+        }
+    });
+    
+    return picks;
 }

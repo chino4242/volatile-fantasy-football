@@ -51,10 +51,15 @@ describe('Player Ingestion Script', () => {
             }
         ];
 
-        (fetch as any).mockResolvedValueOnce({
-            ok: true,
-            json: async () => mockFantasyCalcData
-        });
+        (fetch as any)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockFantasyCalcData
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => mockFantasyCalcData
+            });
 
         const mockOnConflictDoUpdatePlayers = vi.fn();
         const mockOnConflictDoUpdateValues = vi.fn();
@@ -91,7 +96,11 @@ describe('Player Ingestion Script', () => {
             {
                 sleeper_id: '123',
                 fc_value: 9999,
+                fc_value_sf: 9999,
+                fc_value_1qb: 9999,
                 fc_rank: 1,
+                fc_rank_sf: 1,
+                fc_rank_1qb: 1,
                 fc_trend_30_day: 42,
                 redraft_value: 9000,
                 updated_at: expect.any(Date)

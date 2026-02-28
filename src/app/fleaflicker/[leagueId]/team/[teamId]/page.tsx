@@ -55,7 +55,8 @@ export default async function FleaflickerTeamPage({
                 full_name: player.full_name,
                 position: dbPlayer.position,
                 team: player.team || dbPlayer.team,
-                fc_value: valueData?.fc_value || null,
+                fc_value: valueData?.fc_value_1qb || null, // Use 1QB values for Fleaflicker
+                fc_rank: valueData?.fc_rank_1qb || null,
                 rank_1qb_overall: valueData?.rank_1qb_overall || null,
                 rank_1qb_pos: valueData?.rank_1qb_pos || null,
                 rank_1qb_tier: valueData?.rank_1qb_tier || null,
@@ -90,7 +91,7 @@ export default async function FleaflickerTeamPage({
                     </p>
                 </div>
 
-                <TeamRosterTable players={playersWithData} />
+                <TeamRosterTable players={playersWithData} scoringFormat="1qb" />
             </div>
         </div>
     );

@@ -4,8 +4,11 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 
 ## Features
 
-- **League Dashboard** — View all teams in a Sleeper league ranked by total dynasty value
+- **League Dashboard** — View all teams in a Sleeper league ranked by total dynasty value (players + draft picks)
 - **Team Rosters** — Drill into any team to see their full roster with per-player valuations
+- **Draft Capital** — All draft picks (next 3 years) are displayed with FantasyCalc values and integrated into team valuations
+- **Position Filters** — Interactive position filters on team pages to toggle between viewing players and draft picks
+- **Trade Target Finder** — Click any draft pick to see trade targets from other teams within 5% value range
 - **Player Rankings** — Browse the top 50 dynasty players by FantasyCalc value
 - **Live Sleeper Integration** — Roster data is fetched in real-time from the [Sleeper API](https://docs.sleeper.com/)
 - **FantasyCalc Valuations** — Player trade values sourced from [FantasyCalc](https://fantasycalc.com/)
@@ -129,7 +132,10 @@ Roster and user data is fetched **at request time** from the Sleeper API. No Sle
 
 - **Endpoint:** `https://api.sleeper.app/v1/league/{leagueId}/users`
 - **Endpoint:** `https://api.sleeper.app/v1/league/{leagueId}/rosters`
+- **Endpoint:** `https://api.sleeper.app/v1/league/{leagueId}/traded_picks`
 - **Client:** [`src/lib/sleeper.ts`](src/lib/sleeper.ts)
+
+**Draft Picks:** The app generates all draft picks for each team (next 3 years, 5 rounds per year) and applies trades from the Sleeper API to show complete draft capital ownership.
 
 ### FantasyCalc API (Ingested)
 Player valuations are fetched via the ingestion script and stored in PostgreSQL for fast lookups.
@@ -137,6 +143,8 @@ Player valuations are fetched via the ingestion script and stored in PostgreSQL 
 - **Endpoint:** `https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=2&numTeams=12&ppr=0.5`
 - **Script:** [`scripts/ingest-players.ts`](scripts/ingest-players.ts)
 - **Run:** `npx tsx scripts/ingest-players.ts`
+
+**Draft Pick Values:** FantasyCalc provides values for draft picks (e.g., `FP_2026_1` for 2026 1st round) which are stored alongside player values and used for trade analysis.
 
 ## Available Scripts
 

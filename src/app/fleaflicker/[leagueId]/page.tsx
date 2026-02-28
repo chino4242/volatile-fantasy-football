@@ -42,7 +42,7 @@ export default async function FleaflickerLeaguePage({
         .where(inArray(playerValues.sleeper_id, playerIds));
 
     const valueMap = new Map(
-        values.map(v => [v.sleeper_id, v.fc_value || 0])
+        values.map(v => [v.sleeper_id, v.fc_value_1qb || 0]) // Use 1QB values
     );
 
     const nameToIdMap = new Map(

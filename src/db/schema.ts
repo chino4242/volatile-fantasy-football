@@ -22,6 +22,7 @@ export const players = pgTable("players", {
 export const leagues = pgTable("leagues", {
     league_id: text("league_id").primaryKey(),
     platform: text("platform").notNull(), // 'sleeper' or 'fleaflicker'
+    scoring_format: text("scoring_format").notNull().default('sf'), // '1qb' or 'sf'
     name: text("name"),
     avatar: text("avatar"),
     total_rosters: integer("total_rosters"),
@@ -63,9 +64,18 @@ export const rosterPlayers = pgTable("roster_players", {
 export const playerValues = pgTable("player_values", {
     sleeper_id: text("sleeper_id").primaryKey().references(() => players.sleeper_id, { onDelete: "cascade" }),
 
-    // FantasyCalc Data
+    // FantasyCalc Data - Superflex
+    fc_value_sf: integer("fc_value_sf"),
+    fc_rank_sf: integer("fc_rank_sf"),
+    
+    // FantasyCalc Data - 1QB
+    fc_value_1qb: integer("fc_value_1qb"),
+    fc_rank_1qb: integer("fc_rank_1qb"),
+    
+    // Legacy field (keep for backward compatibility, will use SF)
     fc_value: integer("fc_value"),
     fc_rank: integer("fc_rank"),
+    
     fc_trend_30_day: integer("fc_trend_30_day"),
     redraft_value: integer("redraft_value"),
 
@@ -84,7 +94,8 @@ export const playerValues = pgTable("player_values", {
     updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => {
     return {
-        valueIdx: index("idx_player_values_fc_value").on(table.fc_value),
+        valueSfIdx: index("idx_player_values_fc_value_sf").on(table.fc_value_sf),
+        value1qbIdx: index("idx_player_values_fc_value_1qb").on(table.fc_value_1qb),
         rankSfIdx: index("idx_player_values_rank_sf").on(table.rank_sf_overall),
     };
 });
