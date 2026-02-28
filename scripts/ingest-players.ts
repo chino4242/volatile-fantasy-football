@@ -94,6 +94,7 @@ export async function ingestPlayers() {
                     position: 'PICK',
                     team: null,
                     age: null,
+                    years_exp: null,
                     status: "Active",
                 });
 
@@ -130,6 +131,7 @@ export async function ingestPlayers() {
                 position: p.position,
                 team: p.maybeTeam,
                 age: p.maybeAge ? Math.round(p.maybeAge) : null,
+                years_exp: typeof p.maybeYoe === 'number' ? p.maybeYoe : null,
                 status: "Active",
             });
 
@@ -158,6 +160,7 @@ export async function ingestPlayers() {
                 position: sql.raw("excluded.position"),
                 team: sql.raw("excluded.team"),
                 age: sql.raw("excluded.age"),
+                years_exp: sql.raw("excluded.years_exp"),
                 updated_at: new Date(),
             }
         });

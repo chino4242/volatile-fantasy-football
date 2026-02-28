@@ -172,12 +172,20 @@ export default async function FleaflickerTeamPage({
         <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 p-4 md:p-8">
             <div className="mx-auto max-w-7xl">
                 <div className="mb-6">
-                    <Link
-                        href={`/fleaflicker/${leagueId}`}
-                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                        ← Back to League
-                    </Link>
+                    <div className="flex items-center justify-between mb-4">
+                        <Link
+                            href={`/fleaflicker/${leagueId}`}
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                            ← Back to League
+                        </Link>
+                        <Link
+                            href={`/fleaflicker/${leagueId}/free-agents`}
+                            className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+                        >
+                            View Free Agents →
+                        </Link>
+                    </div>
                 </div>
 
                 <div className="mb-6">

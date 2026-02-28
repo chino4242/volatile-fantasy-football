@@ -149,9 +149,17 @@ export default async function TeamPage({ params }: PageProps) {
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
             <div className="max-w-4xl mx-auto">
                 <div className="mb-6 sm:mb-8">
-                    <Link href={`/league/${leagueId}`} className="text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 mb-4 inline-block">
-                        ← Back to League
-                    </Link>
+                    <div className="flex items-center justify-between mb-4">
+                        <Link href={`/league/${leagueId}`} className="text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300">
+                            ← Back to League
+                        </Link>
+                        <Link
+                            href={`/league/${leagueId}/free-agents`}
+                            className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+                        >
+                            View Free Agents →
+                        </Link>
+                    </div>
 
                     <div className="flex items-center gap-4 sm:gap-6 bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                         {owner?.avatar ? (

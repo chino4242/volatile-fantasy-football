@@ -10,6 +10,7 @@ export const players = pgTable("players", {
     position: text("position"), // QB, RB, WR, TE, K, DEF
     team: text("team"), // NFL Team (e.g., MIN, KC)
     age: integer("age"),
+    years_exp: integer("years_exp"),
     status: text("status"), // Active, Injured, etc.
     updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => {
@@ -67,15 +68,15 @@ export const playerValues = pgTable("player_values", {
     // FantasyCalc Data - Superflex
     fc_value_sf: integer("fc_value_sf"),
     fc_rank_sf: integer("fc_rank_sf"),
-    
+
     // FantasyCalc Data - 1QB
     fc_value_1qb: integer("fc_value_1qb"),
     fc_rank_1qb: integer("fc_rank_1qb"),
-    
+
     // Legacy field (keep for backward compatibility, will use SF)
     fc_value: integer("fc_value"),
     fc_rank: integer("fc_rank"),
-    
+
     fc_trend_30_day: integer("fc_trend_30_day"),
     redraft_value: integer("redraft_value"),
 

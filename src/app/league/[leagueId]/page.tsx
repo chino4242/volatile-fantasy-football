@@ -3,6 +3,7 @@ import { players, playerValues } from "@/db/schema";
 import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from "@/lib/sleeper";
 import { desc, eq, inArray } from "drizzle-orm";
 import { LeagueTable } from "@/components/LeagueTable";
+import Link from "next/link";
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -90,11 +91,19 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
         return (
             <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
                 <div className="max-w-7xl mx-auto">
-                    <div className="mb-6">
-                        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-                            League Dashboard
-                        </h1>
-                        <p className="text-sm text-zinc-500">ID: {leagueId}</p>
+                    <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                                League Dashboard
+                            </h1>
+                            <p className="text-sm text-zinc-500">ID: {leagueId}</p>
+                        </div>
+                        <Link
+                            href={`/league/${leagueId}/free-agents`}
+                            className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 rounded-lg hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700 dark:hover:bg-zinc-700 transition-colors shadow-sm"
+                        >
+                            View Free Agents
+                        </Link>
                     </div>
                     <LeagueTable teams={teamStats.map(t => ({ id: t.rosterId, ...t }))} platform="sleeper" leagueId={leagueId} />
                 </div>
