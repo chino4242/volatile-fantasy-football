@@ -55,6 +55,8 @@ export function TeamRosterTable({
     );
     const [selectedPick, setSelectedPick] = useState<PlayerData | null>(null);
     const [tradeTargetOffset, setTradeTargetOffset] = useState(0);
+    const [tolerance, setTolerance] = useState(0.05);
+    const [viewMode, setViewMode] = useState<'position' | 'team'>('position');
 
     const getValueGap = (player: PlayerData, format: '1qb' | 'sf') => {
         const marketRank = format === '1qb' ? player.fc_rank_1qb : player.fc_rank_sf;
@@ -91,7 +93,6 @@ export function TeamRosterTable({
     const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'PICK'];
 
     const getTradeTargets = (pickValue: number, offset: number = 0) => {
-        const tolerance = 0.05; // 5%
         const minValue = pickValue * (1 - tolerance);
         const maxValue = pickValue * (1 + tolerance);
 
@@ -105,6 +106,22 @@ export function TeamRosterTable({
                        p.position !== 'PICK';
             })
             .sort((a, b) => Math.abs((a.fc_value || 0) - pickValue) - Math.abs((b.fc_value || 0) - pickValue));
+
+        if (viewMode === 'team') {
+            // Group by team
+            const byTeam: Record<string, typeof targets> = {};
+            targets.forEach(target => {
+                const ownerId = playerOwnershipMap.get(target.sleeper_id);
+                const teamName = ownerId ? rosterToOwnerMap.get(ownerId) || 'Unknown' : 'Unknown';
+                if (!byTeam[teamName]) byTeam[teamName] = [];
+                byTeam[teamName].push(target);
+            });
+            // Limit each team to show
+            Object.keys(byTeam).forEach(team => {
+                byTeam[team] = byTeam[team].slice(0, 3 + offset);
+            });
+            return byTeam;
+        }
 
         const byPosition: Record<string, typeof targets> = {
             QB: targets.filter(p => p.position === 'QB').slice(0, 3 + offset),
@@ -337,7 +354,7 @@ export function TeamRosterTable({
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedPick(null)}>
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                         <div className="sticky top-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 p-4 sm:p-6">
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between mb-4">
                                 <div>
                                     <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{selectedPick.full_name}</h2>
                                     <p className="text-sm text-zinc-500 mt-1">Value: {selectedPick.fc_value?.toLocaleString()} pts</p>
@@ -351,11 +368,48 @@ export function TeamRosterTable({
                                     </svg>
                                 </button>
                             </div>
+                            <div className="flex flex-wrap gap-3 items-center">
+                                <span className="text-xs font-medium text-zinc-500 uppercase">Reach:</span>
+                                {[0.05, 0.10, 0.15].map(t => (
+                                    <button
+                                        key={t}
+                                        onClick={() => setTolerance(t)}
+                                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                                            tolerance === t
+                                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                                        }`}
+                                    >
+                                        {(t * 100).toFixed(0)}%
+                                    </button>
+                                ))}
+                                <span className="text-xs font-medium text-zinc-500 uppercase ml-4">View:</span>
+                                <button
+                                    onClick={() => setViewMode('position')}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                                        viewMode === 'position'
+                                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                            : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                                    }`}
+                                >
+                                    By Position
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('team')}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                                        viewMode === 'team'
+                                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                            : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                                    }`}
+                                >
+                                    By Team
+                                </button>
+                            </div>
                         </div>
                         
                         <div className="p-4 sm:p-6 space-y-6">
                             <div className="flex items-center justify-between">
-                                <p className="text-sm text-zinc-600 dark:text-zinc-400">Trade targets within 5% of pick value:</p>
+                                <p className="text-sm text-zinc-600 dark:text-zinc-400">Trade targets within {(tolerance * 100).toFixed(0)}% of pick value:</p>
                                 <button
                                     onClick={() => setTradeTargetOffset(prev => prev + 3)}
                                     className="px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
@@ -364,10 +418,10 @@ export function TeamRosterTable({
                                 </button>
                             </div>
                             
-                            {Object.entries(getTradeTargets(selectedPick.fc_value || 0, tradeTargetOffset)).map(([position, targets]) => (
+                            {Object.entries(getTradeTargets(selectedPick.fc_value || 0, tradeTargetOffset)).map(([groupName, targets]) => (
                                 targets.length > 0 && (
-                                    <div key={position}>
-                                        <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">{position}</h3>
+                                    <div key={groupName}>
+                                        <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">{groupName}</h3>
                                         <div className="space-y-2">
                                             {targets.map(target => {
                                                 const ownerId = playerOwnershipMap.get(target.sleeper_id);
@@ -378,7 +432,11 @@ export function TeamRosterTable({
                                                     <div key={target.sleeper_id} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
                                                         <div className="flex-1">
                                                             <div className="font-medium text-zinc-900 dark:text-zinc-100">{target.full_name}</div>
-                                                            <div className="text-xs text-zinc-500">{target.team || 'FA'} · {ownerName}</div>
+                                                            <div className="text-xs text-zinc-500">
+                                                                {target.position} · {target.team || 'FA'}
+                                                                {viewMode === 'team' && ` · ${ownerName}`}
+                                                                {viewMode === 'position' && ` · ${ownerName}`}
+                                                            </div>
                                                         </div>
                                                         <div className="flex items-center gap-3">
                                                             {gapLabel && (

@@ -53,9 +53,45 @@ export async function ingestPlayers() {
         const playersBatch = [];
         const valuesBatch = [];
         let skippedCount = 0;
+        let picksCount = 0;
 
         for (const item of sfData) {
             const p = item.player;
+            
+            // Debug: log items without sleeperId to see pick format
+            if (!p.sleeperId && p.name) {
+                console.log(`No sleeperId: "${p.name}"`);
+            }
+            
+            // Handle draft picks - FantasyCalc format is like "2026 Pick 1.01"
+            // Convert to our format: FP_2026_1.01
+            if (!p.sleeperId && p.name && p.name.match(/^\d{4} Pick \d+\.\d+$/)) {
+                const match = p.name.match(/^(\d{4}) Pick (\d+)\.(\d+)$/);
+                if (match) {
+                    const [_, year, round, slot] = match;
+                    const pickId = `FP_${year}_${round}.${slot}`;
+                    
+                    // Find matching 1QB pick value
+                    const qbItem = qbData.find((qb: any) => qb.player.name === p.name);
+                    
+                    valuesBatch.push({
+                        sleeper_id: pickId,
+                        fc_value_sf: item.value,
+                        fc_rank_sf: item.overallRank,
+                        fc_value_1qb: qbItem?.value || null,
+                        fc_rank_1qb: qbItem?.overallRank || null,
+                        fc_value: item.value,
+                        fc_rank: item.overallRank,
+                        fc_trend_30_day: item.trend30Day,
+                        redraft_value: item.redraftValue,
+                        updated_at: new Date(),
+                    });
+                    
+                    picksCount++;
+                    continue;
+                }
+            }
+            
             if (!p.sleeperId) {
                 skippedCount++;
                 continue;
@@ -90,7 +126,7 @@ export async function ingestPlayers() {
 
         }
 
-        console.log(`Prepared ${playersBatch.length} records for batch insert...`);
+        console.log(`Prepared ${playersBatch.length} players and ${picksCount} picks for batch insert...`);
 
         // 1. Batch Upsert Players
         await db.insert(players).values(playersBatch).onConflictDoUpdate({
@@ -121,7 +157,8 @@ export async function ingestPlayers() {
         });
 
         console.log("--- Ingestion Complete ---");
-        console.log(`✅ Upserted: ${playersBatch.length}`);
+        console.log(`✅ Upserted Players: ${playersBatch.length}`);
+        console.log(`✅ Upserted Picks: ${picksCount}`);
         console.log(`⚠️  Skipped (No Sleeper ID): ${skippedCount}`);
 
     } catch (error) {

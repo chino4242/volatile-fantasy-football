@@ -8,7 +8,8 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 - **Team Rosters** — Drill into any team to see their full roster with per-player valuations
 - **Draft Capital** — All draft picks (next 3 years) are displayed with FantasyCalc values and integrated into team valuations
 - **Position Filters** — Interactive position filters on team pages to toggle between viewing players and draft picks
-- **Trade Target Finder** — Click any draft pick to see trade targets from other teams within 5% value range
+- **Market Value Gap Analysis** — BUY/SELL/HOLD indicators comparing FantasyCalc market rankings vs. proprietary analysis rankings for both 1QB and Superflex formats
+- **Trade Target Finder** — Click any draft pick to see trade targets from other teams within 5% value range, with value gap indicators and expandable results
 - **Player Rankings** — Browse the top 50 dynasty players by FantasyCalc value
 - **Live Sleeper Integration** — Roster data is fetched in real-time from the [Sleeper API](https://docs.sleeper.com/)
 - **FantasyCalc Valuations** — Player trade values sourced from [FantasyCalc](https://fantasycalc.com/)

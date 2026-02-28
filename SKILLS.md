@@ -39,12 +39,57 @@ When clicking a draft pick, the system:
 3. Excludes players on the current team
 4. Groups results by position (QB, RB, WR, TE)
 5. Shows top 3 targets per position, sorted by value proximity
+6. Displays Market Value Gap indicators (BUY/SELL/HOLD) for each target
+7. "Show More" button loads additional targets (3 more per position)
 
 ```typescript
 const tolerance = 0.05; // 5%
 const minValue = pickValue * (1 - tolerance);
 const maxValue = pickValue * (1 + tolerance);
 ```
+
+## Market Value Gap Analysis
+
+### Overview
+Compares FantasyCalc market rankings against proprietary analysis rankings to identify buy-low and sell-high opportunities.
+
+### Implementation
+
+#### Gap Calculation
+
+```typescript
+const getValueGap = (player: PlayerData, format: '1qb' | 'sf') => {
+    const marketRank = format === '1qb' ? player.fc_rank_1qb : player.fc_rank_sf;
+    const analysisRank = format === '1qb' ? player.rank_1qb_overall : player.rank_sf_overall;
+    
+    if (!marketRank || !analysisRank) return null;
+    
+    // Positive gap = player ranked higher in analysis than market (BUY)
+    // Negative gap = player ranked lower in analysis than market (SELL)
+    return marketRank - analysisRank;
+};
+```
+
+#### Gap Labels
+
+- **STRONG BUY** (gap ≥ 20): Market significantly undervalues player
+- **BUY** (gap ≥ 10): Market undervalues player
+- **HOLD** (gap between -9 and 9): Market fairly values player
+- **SELL** (gap ≤ -10): Market overvalues player
+- **STRONG SELL** (gap ≤ -20): Market significantly overvalues player
+
+### Display Locations
+
+1. **Team Roster Table:** Value Gap column appears when 1QB or SF rankings are toggled on
+2. **Trade Target Modal:** Value Gap badge shown for each trade target
+
+### Data Requirements
+
+Requires both market and analysis rankings:
+- Market: `fc_rank_1qb`, `fc_rank_sf` from FantasyCalc
+- Analysis: `rank_1qb_overall`, `rank_sf_overall` from proprietary rankings
+
+Players missing either ranking show "-" instead of a gap indicator.
 
 ## Interactive Position Filters
 
@@ -95,6 +140,8 @@ Team pages are Server Components that:
 `TeamRosterTable.tsx` handles:
 - Position filter state
 - Trade target modal state
+- Trade target pagination (Show More functionality)
+- Value gap calculations and display
 - User interactions (clicks, toggles)
 - Dynamic filtering of player/pick list
 
@@ -117,7 +164,16 @@ export const playerValues = pgTable("player_values", {
   fc_value: integer("fc_value"),
   fc_value_sf: integer("fc_value_sf"),
   fc_value_1qb: integer("fc_value_1qb"),
-  // ... ranking fields
+  fc_rank: integer("fc_rank"),
+  fc_rank_sf: integer("fc_rank_sf"),
+  fc_rank_1qb: integer("fc_rank_1qb"),
+  rank_1qb_overall: integer("rank_1qb_overall"),
+  rank_1qb_pos: integer("rank_1qb_pos"),
+  rank_1qb_tier: integer("rank_1qb_tier"),
+  rank_sf_overall: integer("rank_sf_overall"),
+  rank_sf_pos: integer("rank_sf_pos"),
+  rank_sf_tier: integer("rank_sf_tier"),
+  // ... other fields
 });
 ```
 
@@ -200,3 +256,5 @@ Potential improvements to the draft pick system:
 4. **Multi-Pick Packages:** Analyze value of pick combinations
 5. **Custom Tolerance:** Let users adjust the 5% trade target range
 6. **Export Trades:** Generate trade proposals to share with league
+7. **Value Gap Trends:** Track how market vs. analysis gaps change over time
+8. **Gap Filtering:** Filter roster by BUY/SELL/HOLD recommendations
