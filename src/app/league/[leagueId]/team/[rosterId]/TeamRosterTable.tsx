@@ -9,6 +9,8 @@ interface PlayerData {
     team: string | null;
     fc_value: number | null;
     fc_rank: number | null;
+    fc_rank_sf: number | null;
+    fc_rank_1qb: number | null;
     rank_1qb_overall: number | null;
     rank_1qb_pos: number | null;
     rank_1qb_tier: number | null;
@@ -48,6 +50,27 @@ export function TeamRosterTable({
         new Set(['QB', 'RB', 'WR', 'TE'])
     );
     const [selectedPick, setSelectedPick] = useState<PlayerData | null>(null);
+
+    const getValueGap = (player: PlayerData, format: '1qb' | 'sf') => {
+        const marketRank = format === '1qb' ? player.fc_rank_1qb : player.fc_rank_sf;
+        const analysisRank = format === '1qb' ? player.rank_1qb_overall : player.rank_sf_overall;
+        
+        if (!marketRank || !analysisRank) return null;
+        
+        // Positive gap = player ranked higher in analysis than market (BUY)
+        // Negative gap = player ranked lower in analysis than market (SELL)
+        return marketRank - analysisRank;
+    };
+
+    const getValueGapLabel = (gap: number | null) => {
+        if (gap === null) return null;
+        
+        if (gap >= 20) return { label: 'STRONG BUY', color: 'bg-green-600 text-white' };
+        if (gap >= 10) return { label: 'BUY', color: 'bg-green-500 text-white' };
+        if (gap <= -20) return { label: 'STRONG SELL', color: 'bg-red-600 text-white' };
+        if (gap <= -10) return { label: 'SELL', color: 'bg-red-500 text-white' };
+        return { label: 'HOLD', color: 'bg-zinc-400 text-white' };
+    };
 
     const togglePosition = (pos: string) => {
         const newSet = new Set(activePositions);
@@ -189,6 +212,7 @@ export function TeamRosterTable({
                                     <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20">1QB Rank</th>
                                     <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20 hidden md:table-cell">1QB Pos Rank</th>
                                     <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20 hidden lg:table-cell">1QB Tier</th>
+                                    <th className="px-3 sm:px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20">Value Gap</th>
                                 </>
                             )}
 
@@ -197,6 +221,7 @@ export function TeamRosterTable({
                                     <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-purple-50/50 dark:bg-purple-950/20">SF Rank</th>
                                     <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-purple-50/50 dark:bg-purple-950/20 hidden md:table-cell">SF Pos Rank</th>
                                     <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-purple-50/50 dark:bg-purple-950/20 hidden lg:table-cell">SF Tier</th>
+                                    <th className="px-3 sm:px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider bg-purple-50/50 dark:bg-purple-950/20">Value Gap</th>
                                 </>
                             )}
                         </tr>
@@ -249,6 +274,17 @@ export function TeamRosterTable({
                                         <td className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right font-mono text-sm sm:text-base bg-blue-50/20 dark:bg-blue-950/10 hidden lg:table-cell ${getTierColorClass(player.rank_1qb_tier)}`}>
                                             {player.rank_1qb_tier || '-'}
                                         </td>
+                                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-center bg-blue-50/20 dark:bg-blue-950/10">
+                                            {(() => {
+                                                const gap = getValueGap(player, '1qb');
+                                                const label = gap !== null ? getValueGapLabel(gap) : null;
+                                                return label ? (
+                                                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ${label.color}`}>
+                                                        {label.label}
+                                                    </span>
+                                                ) : '-';
+                                            })()}
+                                        </td>
                                     </>
                                 )}
 
@@ -272,6 +308,17 @@ export function TeamRosterTable({
                                         </td>
                                         <td className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right font-mono text-sm sm:text-base bg-purple-50/20 dark:bg-purple-950/10 hidden lg:table-cell ${getTierColorClass(player.rank_sf_tier)}`}>
                                             {player.rank_sf_tier || '-'}
+                                        </td>
+                                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-center bg-purple-50/20 dark:bg-purple-950/10">
+                                            {(() => {
+                                                const gap = getValueGap(player, 'sf');
+                                                const label = gap !== null ? getValueGapLabel(gap) : null;
+                                                return label ? (
+                                                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ${label.color}`}>
+                                                        {label.label}
+                                                    </span>
+                                                ) : '-';
+                                            })()}
                                         </td>
                                     </>
                                 )}
