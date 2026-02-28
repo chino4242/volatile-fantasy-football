@@ -38,24 +38,44 @@ export interface LeagueData {
     tradedPicks: SleeperTradedPick[];
 }
 
+import { cache, TTL } from './cache';
+
 const BASE_URL = "https://api.sleeper.app/v1";
 
 export async function getLeagueUsers(leagueId: string): Promise<SleeperUser[]> {
+    const cacheKey = `sleeper:users:${leagueId}`;
+    const cached = cache.get<SleeperUser[]>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+
     const res = await fetch(`${BASE_URL}/league/${leagueId}/users`);
     if (!res.ok) throw new Error("Failed to fetch users");
-    return res.json();
+    const data = await res.json();
+    cache.set(cacheKey, data);
+    return data;
 }
 
 export async function getLeagueRosters(leagueId: string): Promise<SleeperRoster[]> {
+    const cacheKey = `sleeper:rosters:${leagueId}`;
+    const cached = cache.get<SleeperRoster[]>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+
     const res = await fetch(`${BASE_URL}/league/${leagueId}/rosters`);
     if (!res.ok) throw new Error("Failed to fetch rosters");
-    return res.json();
+    const data = await res.json();
+    cache.set(cacheKey, data);
+    return data;
 }
 
 export async function getTradedPicks(leagueId: string): Promise<SleeperTradedPick[]> {
+    const cacheKey = `sleeper:picks:${leagueId}`;
+    const cached = cache.get<SleeperTradedPick[]>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+
     const res = await fetch(`${BASE_URL}/league/${leagueId}/traded_picks`);
     if (!res.ok) throw new Error("Failed to fetch traded picks");
-    return res.json();
+    const data = await res.json();
+    cache.set(cacheKey, data);
+    return data;
 }
 
 export async function getLeagueData(leagueId: string): Promise<LeagueData> {

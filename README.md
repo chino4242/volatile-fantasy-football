@@ -19,6 +19,7 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 - **Live Sleeper Integration** — Roster data is fetched in real-time from the [Sleeper API](https://docs.sleeper.com/)
 - **FantasyCalc Valuations** — Player trade values sourced from [FantasyCalc](https://fantasycalc.com/)
 - **Mobile-Responsive** — Optimized table layouts for phones and tablets
+- **Smart Caching** — In-memory cache with 10-minute TTL for external API calls, with manual refresh option for instant updates
 
 ## Tech Stack
 

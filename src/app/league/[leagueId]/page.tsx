@@ -3,6 +3,7 @@ import { players, playerValues } from "@/db/schema";
 import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from "@/lib/sleeper";
 import { desc, eq, inArray } from "drizzle-orm";
 import { LeagueTable } from "@/components/LeagueTable";
+import { RefreshButton } from "@/components/RefreshButton";
 import Link from "next/link";
 
 // Force dynamic rendering
@@ -98,12 +99,15 @@ export default async function LeagueSummaryPage({ params }: PageProps) {
                             </h1>
                             <p className="text-sm text-zinc-500">ID: {leagueId}</p>
                         </div>
-                        <Link
-                            href={`/league/${leagueId}/free-agents`}
-                            className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 rounded-lg hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700 dark:hover:bg-zinc-700 transition-colors shadow-sm"
-                        >
-                            View Free Agents
-                        </Link>
+                        <div className="flex gap-2">
+                            <RefreshButton leagueId={leagueId} platform="sleeper" />
+                            <Link
+                                href={`/league/${leagueId}/free-agents`}
+                                className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 rounded-lg hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700 dark:hover:bg-zinc-700 transition-colors shadow-sm"
+                            >
+                                View Free Agents
+                            </Link>
+                        </div>
                     </div>
                     <LeagueTable teams={teamStats.map(t => ({ id: t.rosterId, ...t }))} platform="sleeper" leagueId={leagueId} />
                 </div>

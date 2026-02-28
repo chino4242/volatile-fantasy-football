@@ -30,9 +30,15 @@ export interface FleaflickerLeagueData {
     rosters: FleaflickerRoster[];
 }
 
+import { cache, TTL } from './cache';
+
 const BASE_URL = "https://www.fleaflicker.com/api";
 
 export async function getFleaflickerLeague(leagueId: string): Promise<FleaflickerLeagueData> {
+    const cacheKey = `fleaflicker:league:${leagueId}`;
+    const cached = cache.get<FleaflickerLeagueData>(cacheKey, TTL.FLEAFLICKER_LEAGUE);
+    if (cached) return cached;
+
     const [rostersResponse, standingsResponse] = await Promise.all([
         fetch(`${BASE_URL}/FetchLeagueRosters?sport=NFL&league_id=${leagueId}`),
         fetch(`${BASE_URL}/FetchLeagueStandings?sport=NFL&league_id=${leagueId}`)
@@ -97,13 +103,20 @@ export async function getFleaflickerLeague(leagueId: string): Promise<Fleaflicke
         };
     }));
 
-    return {
+    const result = {
         master_player_list: Array.from(allPlayers).map(name => ({ id: '', full_name: name })),
         rosters
     };
+
+    cache.set(cacheKey, result);
+    return result;
 }
 
-async function getFleaflickerTeamPicks(leagueId: string, teamId: number): Promise<FleaflickerDraftPick[]> {
+export async function getFleaflickerTeamPicks(leagueId: string, teamId: number): Promise<FleaflickerDraftPick[]> {
+    const cacheKey = `fleaflicker:picks:${leagueId}:${teamId}`;
+    const cached = cache.get<FleaflickerDraftPick[]>(cacheKey, TTL.FLEAFLICKER_ROSTERS);
+    if (cached) return cached;
+
     try {
         const response = await fetch(`${BASE_URL}/FetchTeamPicks?sport=NFL&league_id=${leagueId}&team_id=${teamId}`);
 
@@ -114,7 +127,7 @@ async function getFleaflickerTeamPicks(leagueId: string, teamId: number): Promis
 
         const data = await response.json();
 
-        return (data.picks || [])
+        const picks = (data.picks || [])
             .filter((pick: any) => (pick.ownedBy?.id || teamId) === teamId) // Only keep picks currently owned by this team
             .map((pick: any) => ({
                 season: pick.season || 0,
@@ -124,6 +137,9 @@ async function getFleaflickerTeamPicks(leagueId: string, teamId: number): Promis
                 originalOwner: pick.originalOwner?.id || teamId,
                 currentOwner: pick.ownedBy?.id || teamId
             }));
+
+        cache.set(cacheKey, picks);
+        return picks;
     } catch (error) {
         console.warn(`Error fetching picks for team ${teamId}:`, error);
         return [];
