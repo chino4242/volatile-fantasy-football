@@ -29,6 +29,10 @@ interface TeamRosterTableProps {
         position: string | null;
         team: string | null;
         fc_value: number | null;
+        fc_rank_sf: number | null;
+        fc_rank_1qb: number | null;
+        rank_1qb_overall: number | null;
+        rank_sf_overall: number | null;
     }>;
     playerOwnershipMap: Map<string, number>;
     rosterToOwnerMap: Map<number, string>;
@@ -50,6 +54,7 @@ export function TeamRosterTable({
         new Set(['QB', 'RB', 'WR', 'TE'])
     );
     const [selectedPick, setSelectedPick] = useState<PlayerData | null>(null);
+    const [tradeTargetOffset, setTradeTargetOffset] = useState(0);
 
     const getValueGap = (player: PlayerData, format: '1qb' | 'sf') => {
         const marketRank = format === '1qb' ? player.fc_rank_1qb : player.fc_rank_sf;
@@ -85,7 +90,7 @@ export function TeamRosterTable({
     const filteredPlayers = players.filter(p => activePositions.has(p.position || ''));
     const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'PICK'];
 
-    const getTradeTargets = (pickValue: number) => {
+    const getTradeTargets = (pickValue: number, offset: number = 0) => {
         const tolerance = 0.05; // 5%
         const minValue = pickValue * (1 - tolerance);
         const maxValue = pickValue * (1 + tolerance);
@@ -102,10 +107,10 @@ export function TeamRosterTable({
             .sort((a, b) => Math.abs((a.fc_value || 0) - pickValue) - Math.abs((b.fc_value || 0) - pickValue));
 
         const byPosition: Record<string, typeof targets> = {
-            QB: targets.filter(p => p.position === 'QB').slice(0, 3),
-            RB: targets.filter(p => p.position === 'RB').slice(0, 3),
-            WR: targets.filter(p => p.position === 'WR').slice(0, 3),
-            TE: targets.filter(p => p.position === 'TE').slice(0, 3),
+            QB: targets.filter(p => p.position === 'QB').slice(0, 3 + offset),
+            RB: targets.filter(p => p.position === 'RB').slice(0, 3 + offset),
+            WR: targets.filter(p => p.position === 'WR').slice(0, 3 + offset),
+            TE: targets.filter(p => p.position === 'TE').slice(0, 3 + offset),
         };
 
         return byPosition;
@@ -231,7 +236,7 @@ export function TeamRosterTable({
                             <tr 
                                 key={player.sleeper_id} 
                                 className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBgClass(player.position)} ${player.position === 'PICK' ? 'cursor-pointer' : ''}`}
-                                onClick={() => player.position === 'PICK' ? setSelectedPick(player) : null}
+                                onClick={() => player.position === 'PICK' ? (setSelectedPick(player), setTradeTargetOffset(0)) : null}
                             >
                                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                                     <div className="text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -349,9 +354,17 @@ export function TeamRosterTable({
                         </div>
                         
                         <div className="p-4 sm:p-6 space-y-6">
-                            <p className="text-sm text-zinc-600 dark:text-zinc-400">Trade targets within 5% of pick value:</p>
+                            <div className="flex items-center justify-between">
+                                <p className="text-sm text-zinc-600 dark:text-zinc-400">Trade targets within 5% of pick value:</p>
+                                <button
+                                    onClick={() => setTradeTargetOffset(prev => prev + 3)}
+                                    className="px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+                                >
+                                    Show More
+                                </button>
+                            </div>
                             
-                            {Object.entries(getTradeTargets(selectedPick.fc_value || 0)).map(([position, targets]) => (
+                            {Object.entries(getTradeTargets(selectedPick.fc_value || 0, tradeTargetOffset)).map(([position, targets]) => (
                                 targets.length > 0 && (
                                     <div key={position}>
                                         <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">{position}</h3>
@@ -359,16 +372,25 @@ export function TeamRosterTable({
                                             {targets.map(target => {
                                                 const ownerId = playerOwnershipMap.get(target.sleeper_id);
                                                 const ownerName = ownerId ? rosterToOwnerMap.get(ownerId) : 'Unknown';
+                                                const gap = getValueGap(target, scoringFormat);
+                                                const gapLabel = gap !== null ? getValueGapLabel(gap) : null;
                                                 return (
                                                     <div key={target.sleeper_id} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
-                                                        <div>
+                                                        <div className="flex-1">
                                                             <div className="font-medium text-zinc-900 dark:text-zinc-100">{target.full_name}</div>
                                                             <div className="text-xs text-zinc-500">{target.team || 'FA'} · {ownerName}</div>
                                                         </div>
-                                                        <div className="text-right">
-                                                            <div className="font-mono font-medium text-zinc-900 dark:text-zinc-100">{target.fc_value?.toLocaleString()}</div>
-                                                            <div className="text-xs text-zinc-500">
-                                                                {((Math.abs((target.fc_value || 0) - (selectedPick.fc_value || 0)) / (selectedPick.fc_value || 1)) * 100).toFixed(1)}% diff
+                                                        <div className="flex items-center gap-3">
+                                                            {gapLabel && (
+                                                                <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ${gapLabel.color}`}>
+                                                                    {gapLabel.label}
+                                                                </span>
+                                                            )}
+                                                            <div className="text-right">
+                                                                <div className="font-mono font-medium text-zinc-900 dark:text-zinc-100">{target.fc_value?.toLocaleString()}</div>
+                                                                <div className="text-xs text-zinc-500">
+                                                                    {((Math.abs((target.fc_value || 0) - (selectedPick.fc_value || 0)) / (selectedPick.fc_value || 1)) * 100).toFixed(1)}% diff
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>

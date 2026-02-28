@@ -71,6 +71,10 @@ export default async function TeamPage({ params }: PageProps) {
             position: players.position,
             team: players.team,
             fc_value: playerValues.fc_value_sf,
+            fc_rank_sf: playerValues.fc_rank_sf,
+            fc_rank_1qb: playerValues.fc_rank_1qb,
+            rank_1qb_overall: playerValues.rank_1qb_overall,
+            rank_sf_overall: playerValues.rank_sf_overall,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
