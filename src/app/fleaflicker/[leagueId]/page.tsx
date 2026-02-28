@@ -32,11 +32,20 @@ export default async function FleaflickerLeaguePage({
     try {
         const fleaflickerData = await getFleaflickerLeague(leagueId);
 
+        // Normalize: lowercase, strip punctuation + suffixes (Jr/Sr/II/III/IV)
+        // Fleaflicker drops suffixes, e.g. returns "Marvin Harrison" for "Marvin Harrison Jr"
+        const normalizeName = (name: string) =>
+            name.toLowerCase()
+                .replace(/[^a-z0-9 ]/g, '')
+                .replace(/\b(jr|sr|ii|iii|iv|v)\b/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+
         // 1. Get all unique player names from rosters
         const allPlayerNames = new Set<string>();
         fleaflickerData.rosters.forEach(roster => {
             roster.players.forEach(p => {
-                if (p.full_name) allPlayerNames.add(p.full_name.toLowerCase());
+                if (p.full_name) allPlayerNames.add(normalizeName(p.full_name));
             });
         });
 
@@ -50,7 +59,7 @@ export default async function FleaflickerLeaguePage({
 
         // 3. Fetch player data from DB to get Sleeper IDs and Positions
         const allPlayers = await db.select().from(players);
-        const playerMatches = allPlayers.filter(p => allPlayerNames.has(p.full_name.toLowerCase()));
+        const playerMatches = allPlayers.filter(p => allPlayerNames.has(normalizeName(p.full_name)));
 
         const playerIds = playerMatches.map(p => p.sleeper_id);
         const allLookupIds = [...playerIds, ...Array.from(allPickIds)];
@@ -73,7 +82,7 @@ export default async function FleaflickerLeaguePage({
         );
 
         const nameToPlayerMap = new Map(
-            playerMatches.map(p => [p.full_name.toLowerCase(), p])
+            playerMatches.map(p => [normalizeName(p.full_name), p])
         );
 
         // 5. Calculate team values
@@ -86,7 +95,7 @@ export default async function FleaflickerLeaguePage({
 
             // Calculate player values
             roster.players.forEach(player => {
-                const dbPlayer = nameToPlayerMap.get(player.full_name.toLowerCase());
+                const dbPlayer = nameToPlayerMap.get(normalizeName(player.full_name));
                 if (dbPlayer) {
                     const value = valueMap.get(dbPlayer.sleeper_id) || 0;
                     totalValue += value;

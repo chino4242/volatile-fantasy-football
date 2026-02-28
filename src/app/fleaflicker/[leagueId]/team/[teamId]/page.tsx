@@ -21,9 +21,18 @@ export default async function FleaflickerTeamPage({
         return <div className="p-8 text-center">Team not found</div>;
     }
 
+    // Normalize: lowercase, strip punctuation, strip Jr/Sr/II/III/IV suffixes
+    // Fleaflicker drops suffixes (e.g. returns "Marvin Harrison" for "Marvin Harrison Jr")
+    const normalizeName = (name: string) =>
+        name.toLowerCase()
+            .replace(/[^a-z0-9 ]/g, '')
+            .replace(/\b(jr|sr|ii|iii|iv|v)\b/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
     // Get player names
     const playerNames = roster.players
-        .map(p => p.full_name.toLowerCase())
+        .map(p => normalizeName(p.full_name))
         .filter(Boolean);
 
     // Get pick IDs - try both specific slot and round-level
@@ -38,7 +47,7 @@ export default async function FleaflickerTeamPage({
     // Fetch from DB
     const allPlayers = await db.select().from(players);
     const matchedPlayers = allPlayers.filter(p =>
-        playerNames.includes(p.full_name.toLowerCase())
+        playerNames.includes(normalizeName(p.full_name))
     );
 
     const playerIds = [...matchedPlayers.map(p => p.sleeper_id), ...pickIds];
@@ -49,14 +58,14 @@ export default async function FleaflickerTeamPage({
 
     const valueMap = new Map(values.map(v => [v.sleeper_id, v]));
     const nameToPlayerMap = new Map(
-        matchedPlayers.map(p => [p.full_name.toLowerCase(), p])
+        matchedPlayers.map(p => [normalizeName(p.full_name), p])
     );
     const playerMap = new Map(matchedPlayers.map(p => [p.sleeper_id, p]));
 
     // Transform players to TeamRosterTable format
     const playersWithData = roster.players
         .map(player => {
-            const dbPlayer = nameToPlayerMap.get(player.full_name.toLowerCase());
+            const dbPlayer = nameToPlayerMap.get(normalizeName(player.full_name));
             if (!dbPlayer) return null;
 
             const valueData = valueMap.get(dbPlayer.sleeper_id);
@@ -125,10 +134,10 @@ export default async function FleaflickerTeamPage({
 
     // Fetch all league players for trade targets
     const allLeaguePlayerNames = fleaflickerData.rosters.flatMap(r =>
-        r.players.map(p => p.full_name.toLowerCase())
+        r.players.map(p => normalizeName(p.full_name))
     );
     const allLeaguePlayers = allPlayers.filter(p =>
-        allLeaguePlayerNames.includes(p.full_name.toLowerCase())
+        allLeaguePlayerNames.includes(normalizeName(p.full_name))
     );
     const allLeaguePlayerIds = allLeaguePlayers.map(p => p.sleeper_id);
 
@@ -157,7 +166,7 @@ export default async function FleaflickerTeamPage({
     const playerOwnershipMap = new Map<string, number>();
     fleaflickerData.rosters.forEach(r => {
         r.players.forEach(p => {
-            const dbPlayer = nameToPlayerMap.get(p.full_name.toLowerCase());
+            const dbPlayer = nameToPlayerMap.get(normalizeName(p.full_name));
             if (dbPlayer) {
                 playerOwnershipMap.set(dbPlayer.sleeper_id, r.id);
             }

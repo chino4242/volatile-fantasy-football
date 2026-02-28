@@ -18,9 +18,14 @@ export default async function FleaflickerFreeAgentsPage({ params }: PageProps) {
         // 1. Fetch live Fleaflicker data
         const fleaflickerData = await getFleaflickerLeague(leagueId);
 
-        // 2. Get all unique player names from rosters (normalized to handle punctuation diffs like "Jr." vs "Jr")
+        // Normalize names: lowercase, strip punctuation, strip common suffixes (Jr/Sr/II/III/IV)
+        // This handles Fleaflicker returning "Marvin Harrison" while DB has "Marvin Harrison Jr"
         const normalizeName = (name: string) =>
-            name.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+            name.toLowerCase()
+                .replace(/[^a-z0-9 ]/g, '')       // strip punctuation
+                .replace(/\b(jr|sr|ii|iii|iv|v)\b/g, '') // strip suffixes
+                .replace(/\s+/g, ' ')               // collapse spaces
+                .trim();
 
         const allPlayerNames = new Set<string>();
         fleaflickerData.rosters.forEach(roster => {
