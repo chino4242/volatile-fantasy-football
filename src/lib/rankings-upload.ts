@@ -11,15 +11,24 @@ export interface RankingRow {
 
 export async function parseRankingsCSV(csvText: string): Promise<RankingRow[]> {
   const lines = csvText.trim().split('\n');
-  const headers = lines[0].split('\t').map(h => h.trim());
+  if (lines.length === 0) return [];
+  
+  // Auto-detect delimiter (tab or comma)
+  const delimiter = lines[0].includes('\t') ? '\t' : ',';
+  
+  const headers = lines[0].split(delimiter).map(h => h.trim());
   
   const rankIdx = headers.findIndex(h => h.toLowerCase() === 'rank');
   const playerIdx = headers.findIndex(h => h.toLowerCase() === 'player');
   const notesIdx = headers.findIndex(h => h.toLowerCase() === 'notes');
   const signalIdx = headers.findIndex(h => h.toLowerCase().includes('buy/sell'));
   
+  if (rankIdx === -1 || playerIdx === -1) {
+    throw new Error('CSV must have "Rank" and "Player" columns');
+  }
+  
   return lines.slice(1).map(line => {
-    const cols = line.split('\t').map(c => c.trim());
+    const cols = line.split(delimiter).map(c => c.trim());
     return {
       rank: parseInt(cols[rankIdx]),
       playerName: cols[playerIdx],
