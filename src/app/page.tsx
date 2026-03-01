@@ -53,7 +53,7 @@ export default function Home() {
     const fetch_ = async () => {
       setIsFetchingSleeperLeagues(true);
       try {
-        const res = await fetch(`https://api.sleeper.app/v1/user/${sleeperUserId}/leagues/nfl/2024`);
+        const res = await fetch(`https://api.sleeper.app/v1/user/${sleeperUserId}/leagues/nfl/2025`);
         if (res.ok) setSleeperLeagues(await res.json());
       } catch (err) {
         console.error("Failed to fetch Sleeper leagues", err);
@@ -261,7 +261,7 @@ export default function Home() {
                 {isFetchingSleeperLeagues ? (
                   <div className="py-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-zinc-400" /></div>
                 ) : sleeperLeagues.length === 0 ? (
-                  <p className="text-sm text-zinc-500">No active 2024 Sleeper leagues found.</p>
+                  <p className="text-sm text-zinc-500">No active 2025 Sleeper leagues found.</p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {sleeperLeagues.map((league) => (
