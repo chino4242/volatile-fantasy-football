@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { players, playerValues } from "@/db/schema";
 import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from "@/lib/sleeper";
+import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -160,6 +161,11 @@ export default async function TeamPage({ params }: PageProps) {
     });
     positionValues['PICK'] = pickValue;
 
+    // Fetch custom rankings
+    const customRankings = await getCustomRankings();
+    const rankingsMap = buildCustomRankingsMap(customRankings);
+    const activeSources = await getActiveSources();
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
             <div className="max-w-4xl mx-auto">
@@ -207,6 +213,8 @@ export default async function TeamPage({ params }: PageProps) {
                     playerOwnershipMap={playerOwnershipMap}
                     rosterToOwnerMap={rosterToOwnerMap}
                     currentRosterId={Number(rosterId)}
+                    customRankingsMap={rankingsMap}
+                    rankingSources={activeSources}
                 />
             </div>
         </div>

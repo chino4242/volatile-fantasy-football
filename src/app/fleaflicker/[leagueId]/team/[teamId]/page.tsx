@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getFleaflickerLeague } from "@/lib/fleaflicker";
 import { getPickFantasyCalcId } from "@/lib/sleeper";
+import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { db } from "@/db";
 import { players, playerValues } from "@/db/schema";
 import { inArray, eq } from "drizzle-orm";
@@ -147,6 +148,11 @@ export default async function FleaflickerTeamPage({
     });
     positionValues['PICK'] = enrichedPicks.reduce((sum, p) => sum + (p.fc_value || 0), 0);
 
+    // Fetch custom rankings
+    const customRankings = await getCustomRankings();
+    const rankingsMap = buildCustomRankingsMap(customRankings);
+    const activeSources = await getActiveSources();
+
     // Fetch all league players for trade targets
     const allLeaguePlayerNames = fleaflickerData.rosters.flatMap(r =>
         r.players.map(p => normalizeName(p.full_name))
@@ -234,6 +240,8 @@ export default async function FleaflickerTeamPage({
                     playerOwnershipMap={playerOwnershipMap}
                     rosterToOwnerMap={rosterToOwnerMap}
                     currentRosterId={parseInt(teamId)}
+                    customRankingsMap={rankingsMap}
+                    rankingSources={activeSources}
                 />
             </div>
         </div>

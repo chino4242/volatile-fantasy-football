@@ -104,3 +104,31 @@ export const playerValues = pgTable("player_values", {
         rankSfIdx: index("idx_player_values_rank_sf").on(table.rank_sf_overall),
     };
 });
+
+// 6. Ranking Sources Table
+export const rankingSources = pgTable("ranking_sources", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull().unique(),
+    display_name: text("display_name").notNull(),
+    description: text("description"),
+    is_active: boolean("is_active").default(true),
+    created_at: timestamp("created_at").defaultNow(),
+    updated_at: timestamp("updated_at").defaultNow(),
+});
+
+// 7. Custom Rankings Table
+export const customRankings = pgTable("custom_rankings", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    source_id: uuid("source_id").references(() => rankingSources.id, { onDelete: "cascade" }),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
+    rank: integer("rank"),
+    notes: text("notes"),
+    signal: text("signal"), // 'Super Buy', 'Buy', 'Hold', 'Sell', 'Super Sell'
+    created_at: timestamp("created_at").defaultNow(),
+    updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => {
+    return {
+        sourcePlayerIdx: index("idx_custom_rankings_source_player").on(table.source_id, table.sleeper_id),
+        rankIdx: index("idx_custom_rankings_rank").on(table.source_id, table.rank),
+    };
+});

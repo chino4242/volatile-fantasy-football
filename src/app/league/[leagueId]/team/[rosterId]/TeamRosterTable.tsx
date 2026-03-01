@@ -43,17 +43,18 @@ type ColKey =
     | 'internal_rank'
     | 'internal_pos'
     | 'tier'
-    | 'value_gap';
+    | 'value_gap'
+    | string; // Allow dynamic custom ranking keys
 
 interface ColDef {
-    key: ColKey;
+    key: string;
     label: string;
     description: string;
     defaultOn: boolean;
-    group: 'core' | 'fc' | 'internal';
+    group: 'core' | 'fc' | 'internal' | 'custom';
 }
 
-const COLUMNS: ColDef[] = [
+const BASE_COLUMNS: ColDef[] = [
     { key: 'market_value', label: 'Market Value', description: 'FantasyCalc dynasty trade value', defaultOn: true, group: 'core' },
     { key: 'fc_rank', label: 'FC Overall', description: 'FantasyCalc overall rank', defaultOn: true, group: 'fc' },
     { key: 'fc_pos_rank', label: 'FC Pos Rank', description: 'FantasyCalc position rank (e.g. RB5)', defaultOn: true, group: 'fc' },
@@ -76,6 +77,8 @@ interface TeamRosterTableProps {
     playerOwnershipMap: Map<string, number>;
     rosterToOwnerMap: Map<number, string>;
     currentRosterId: number;
+    customRankingsMap: Map<string, any[]>;
+    rankingSources: Array<{ id: string; name: string; display_name: string; description: string | null }>;
 }
 
 // ── Signal filter ──────────────────────────────────────────────────────────────
@@ -139,15 +142,18 @@ const getValueGapLabel = (gap: number | null) => {
 function ColumnPicker({
     visibleCols,
     onChange,
+    columns,
 }: {
-    visibleCols: Set<ColKey>;
-    onChange: (key: ColKey) => void;
+    visibleCols: Set<string>;
+    onChange: (key: string) => void;
+    columns: ColDef[];
 }) {
     const [open, setOpen] = useState(false);
     const groups: { id: ColDef['group']; label: string }[] = [
         { id: 'core', label: 'Core' },
         { id: 'fc', label: 'FantasyCalc' },
         { id: 'internal', label: 'VFF Rankings' },
+        { id: 'custom', label: 'Custom Rankings' },
     ];
 
     return (
@@ -177,7 +183,7 @@ function ColumnPicker({
                                 <div key={group.id}>
                                     <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5">{group.label}</div>
                                     <div className="space-y-1">
-                                        {COLUMNS.filter(c => c.group === group.id).map(col => (
+                                        {columns.filter((c: ColDef) => c.group === group.id).map((col: ColDef) => (
                                             <label
                                                 key={col.key}
                                                 className="flex items-start gap-2.5 px-2 py-1.5 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer group"
@@ -252,7 +258,21 @@ export function TeamRosterTable({
     playerOwnershipMap,
     rosterToOwnerMap,
     currentRosterId,
+    customRankingsMap,
+    rankingSources,
 }: TeamRosterTableProps) {
+    // Build dynamic columns including custom rankings
+    const COLUMNS = [
+        ...BASE_COLUMNS,
+        ...rankingSources.map(source => ({
+            key: `custom_${source.id}`,
+            label: source.display_name,
+            description: source.description || `${source.display_name} rankings`,
+            defaultOn: false,
+            group: 'custom' as const,
+        }))
+    ];
+
     const [activePositions, setActivePositions] = useState<Set<string>>(
         new Set(['QB', 'RB', 'WR', 'TE'])
     );
@@ -262,7 +282,7 @@ export function TeamRosterTable({
     const [viewMode, setViewMode] = useState<'position' | 'team'>('position');
 
     // Column visibility — default on columns
-    const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(
+    const [visibleCols, setVisibleCols] = useState<Set<string>>(
         new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key))
     );
     const toggleCol = (key: ColKey) => {
@@ -400,7 +420,7 @@ export function TeamRosterTable({
                 {/* Column picker toolbar */}
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/30">
                     <span className="text-xs text-zinc-500">{filteredPlayers.length} players</span>
-                    <ColumnPicker visibleCols={visibleCols} onChange={toggleCol} />
+                    <ColumnPicker visibleCols={visibleCols} onChange={toggleCol} columns={COLUMNS} />
                 </div>
 
                 <div className="overflow-x-auto">
@@ -460,6 +480,15 @@ export function TeamRosterTable({
                                         Signal
                                     </th>
                                 )}
+                                {/* Custom ranking columns */}
+                                {rankingSources.map(source => {
+                                    const colKey = `custom_${source.id}`;
+                                    return show(colKey) && (
+                                        <th key={colKey} className="px-3 sm:px-6 py-3 text-center text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20">
+                                            {source.display_name}
+                                        </th>
+                                    );
+                                })}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -572,6 +601,39 @@ export function TeamRosterTable({
                                                 ) : '–'}
                                             </td>
                                         )}
+
+                                        {/* Custom ranking columns */}
+                                        {rankingSources.map(source => {
+                                            const colKey = `custom_${source.id}`;
+                                            if (!show(colKey)) return null;
+                                            
+                                            const rankings = customRankingsMap.get(player.sleeper_id) || [];
+                                            const ranking = rankings.find(r => r.source_name === source.name);
+                                            
+                                            return (
+                                                <td key={colKey} className="px-3 sm:px-6 py-3 sm:py-4 text-center bg-blue-50/20 dark:bg-blue-950/10">
+                                                    {ranking ? (
+                                                        <div className="space-y-1">
+                                                            <div className="font-mono text-sm font-semibold">#{ranking.rank}</div>
+                                                            {ranking.signal && (
+                                                                <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                                                    ranking.signal.includes('Super Buy') ? 'bg-green-600 text-white' :
+                                                                    ranking.signal === 'Buy' ? 'bg-green-500 text-white' :
+                                                                    ranking.signal === 'Hold' ? 'bg-zinc-400 text-white' :
+                                                                    ranking.signal === 'Sell' ? 'bg-red-500 text-white' :
+                                                                    ranking.signal.includes('Super Sell') ? 'bg-red-600 text-white' :
+                                                                    'bg-zinc-600 text-white'
+                                                                }`}>
+                                                                    {ranking.signal}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-zinc-400">–</span>
+                                                    )}
+                                                </td>
+                                            );
+                                        })}
                                     </tr>
                                 );
                             })}
