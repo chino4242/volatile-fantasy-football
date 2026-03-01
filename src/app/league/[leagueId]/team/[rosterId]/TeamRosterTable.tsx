@@ -78,6 +78,19 @@ interface TeamRosterTableProps {
     currentRosterId: number;
 }
 
+// ── Signal filter ──────────────────────────────────────────────────────────────
+
+type SignalFilter = 'ALL' | 'STRONG BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG SELL';
+
+const SIGNAL_FILTERS: { label: SignalFilter; activeColor: string }[] = [
+    { label: 'ALL', activeColor: 'bg-zinc-700 text-white dark:bg-zinc-300 dark:text-zinc-900' },
+    { label: 'STRONG BUY', activeColor: 'bg-green-600 text-white' },
+    { label: 'BUY', activeColor: 'bg-green-500 text-white' },
+    { label: 'HOLD', activeColor: 'bg-zinc-400 text-white' },
+    { label: 'SELL', activeColor: 'bg-red-500 text-white' },
+    { label: 'STRONG SELL', activeColor: 'bg-red-600 text-white' },
+];
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 const getValueColorClass = (value: number | null) => {
@@ -261,6 +274,9 @@ export function TeamRosterTable({
     };
     const show = (key: ColKey) => visibleCols.has(key);
 
+    // Signal filter
+    const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
+
     const sf = scoringFormat === 'sf';
     const fmtLabel = sf ? 'SF' : '1QB';
 
@@ -272,7 +288,15 @@ export function TeamRosterTable({
         });
     };
 
-    const filteredPlayers = players.filter(p => activePositions.has(p.position || ''));
+    const filteredPlayers = players.filter(p => {
+        if (!activePositions.has(p.position || '')) return false;
+        if (signalFilter === 'ALL') return true;
+        // Picks have no signal — exclude from specific-signal views
+        if (p.position === 'PICK') return false;
+        const gap = getValueGap(p, scoringFormat);
+        const lbl = getValueGapLabel(gap);
+        return lbl?.label === signalFilter;
+    });
     const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'PICK'];
 
     const getTradeTargets = (pickValue: number, offset: number = 0) => {
@@ -326,6 +350,49 @@ export function TeamRosterTable({
                         </button>
                     );
                 })}
+            </div>
+
+            {/* Signal / Gap filter chips */}
+            <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest mr-1">Signal</span>
+                {SIGNAL_FILTERS.map(({ label, activeColor }) => {
+                    const isActive = signalFilter === label;
+                    // Count players matching this signal (for badges on non-ALL filters)
+                    const count = label === 'ALL' ? null : players.filter(p => {
+                        if (!activePositions.has(p.position || '')) return false;
+                        if (p.position === 'PICK') return false;
+                        const gap = getValueGap(p, scoringFormat);
+                        const lbl = getValueGapLabel(gap);
+                        return lbl?.label === label;
+                    }).length;
+
+                    return (
+                        <button
+                            key={label}
+                            onClick={() => setSignalFilter(isActive && label !== 'ALL' ? 'ALL' : label)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${isActive
+                                    ? activeColor
+                                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                                }`}
+                        >
+                            {label}
+                            {count !== null && count > 0 && (
+                                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${isActive ? 'bg-white/30' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'
+                                    }`}>
+                                    {count}
+                                </span>
+                            )}
+                        </button>
+                    );
+                })}
+                {signalFilter !== 'ALL' && (
+                    <button
+                        onClick={() => setSignalFilter('ALL')}
+                        className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 underline ml-1"
+                    >
+                        Clear
+                    </button>
+                )}
             </div>
 
             {/* Table + column picker */}
