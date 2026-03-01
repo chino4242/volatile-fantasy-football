@@ -45,7 +45,8 @@ export async function ingestPlayers() {
                     String(item.player.sleeperId),
                     {
                         value: item.value,
-                        rank: item.overallRank
+                        rank: item.overallRank,
+                        positionRank: item.positionRank,
                     }
                 ])
         );
@@ -102,11 +103,15 @@ export async function ingestPlayers() {
                     sleeper_id: pickId,
                     fc_value_sf: item.value,
                     fc_rank_sf: item.overallRank,
+                    fc_position_rank_sf: item.positionRank,
                     fc_value_1qb: qbItem?.value || null,
                     fc_rank_1qb: qbItem?.overallRank || null,
+                    fc_position_rank_1qb: qbItem?.positionRank || null,
                     fc_value: item.value,
                     fc_rank: item.overallRank,
                     fc_trend_30_day: item.trend30Day,
+                    fc_combined_value: item.combinedValue,
+                    fc_trade_frequency: item.maybeTradeFrequency,
                     redraft_value: item.redraftValue,
                     updated_at: new Date(),
                 });
@@ -121,7 +126,7 @@ export async function ingestPlayers() {
             }
 
             const sleeperId = String(p.sleeperId);
-            const qbValues = qbValueMap.get(sleeperId) as { value: number; rank: number } | undefined;
+            const qbValues = qbValueMap.get(sleeperId) as { value: number; rank: number; positionRank: number } | undefined;
 
             playersBatch.push({
                 sleeper_id: sleeperId,
@@ -139,11 +144,15 @@ export async function ingestPlayers() {
                 sleeper_id: sleeperId,
                 fc_value_sf: item.value,
                 fc_rank_sf: item.overallRank,
+                fc_position_rank_sf: item.positionRank,
                 fc_value_1qb: qbValues ? qbValues.value : null,
                 fc_rank_1qb: qbValues ? qbValues.rank : null,
+                fc_position_rank_1qb: qbValues ? qbValues.positionRank : null,
                 fc_value: item.value, // Legacy field (SF)
                 fc_rank: item.overallRank,
                 fc_trend_30_day: item.trend30Day,
+                fc_combined_value: item.combinedValue,
+                fc_trade_frequency: item.maybeTradeFrequency,
                 redraft_value: item.redraftValue,
                 updated_at: new Date(),
             });
@@ -171,11 +180,15 @@ export async function ingestPlayers() {
             set: {
                 fc_value_sf: sql.raw("excluded.fc_value_sf"),
                 fc_rank_sf: sql.raw("excluded.fc_rank_sf"),
+                fc_position_rank_sf: sql.raw("excluded.fc_position_rank_sf"),
                 fc_value_1qb: sql.raw("excluded.fc_value_1qb"),
                 fc_rank_1qb: sql.raw("excluded.fc_rank_1qb"),
+                fc_position_rank_1qb: sql.raw("excluded.fc_position_rank_1qb"),
                 fc_value: sql.raw("excluded.fc_value"),
                 fc_rank: sql.raw("excluded.fc_rank"),
                 fc_trend_30_day: sql.raw("excluded.fc_trend_30_day"),
+                fc_combined_value: sql.raw("excluded.fc_combined_value"),
+                fc_trade_frequency: sql.raw("excluded.fc_trade_frequency"),
                 redraft_value: sql.raw("excluded.redraft_value"),
                 updated_at: new Date(),
             }

@@ -52,6 +52,11 @@ export default async function TeamPage({ params }: PageProps) {
             fc_rank: playerValues.fc_rank,
             fc_rank_sf: playerValues.fc_rank_sf,
             fc_rank_1qb: playerValues.fc_rank_1qb,
+            fc_position_rank_sf: playerValues.fc_position_rank_sf,
+            fc_position_rank_1qb: playerValues.fc_position_rank_1qb,
+            fc_combined_value: playerValues.fc_combined_value,
+            fc_trade_frequency: playerValues.fc_trade_frequency,
+            fc_trend_30_day: playerValues.fc_trend_30_day,
             rank_1qb_overall: playerValues.rank_1qb_overall,
             rank_1qb_pos: playerValues.rank_1qb_pos,
             rank_1qb_tier: playerValues.rank_1qb_tier,
@@ -74,6 +79,11 @@ export default async function TeamPage({ params }: PageProps) {
             fc_rank: playerValues.fc_rank,
             fc_rank_sf: playerValues.fc_rank_sf,
             fc_rank_1qb: playerValues.fc_rank_1qb,
+            fc_position_rank_sf: playerValues.fc_position_rank_sf,
+            fc_position_rank_1qb: playerValues.fc_position_rank_1qb,
+            fc_combined_value: playerValues.fc_combined_value,
+            fc_trade_frequency: playerValues.fc_trade_frequency,
+            fc_trend_30_day: playerValues.fc_trend_30_day,
             rank_1qb_overall: playerValues.rank_1qb_overall,
             rank_1qb_pos: playerValues.rank_1qb_pos,
             rank_1qb_tier: playerValues.rank_1qb_tier,
@@ -120,6 +130,11 @@ export default async function TeamPage({ params }: PageProps) {
             fc_rank: null,
             fc_rank_sf: null,
             fc_rank_1qb: null,
+            fc_position_rank_sf: null,
+            fc_position_rank_1qb: null,
+            fc_combined_value: null,
+            fc_trade_frequency: null,
+            fc_trend_30_day: null,
             rank_1qb_overall: null,
             rank_1qb_pos: null,
             rank_1qb_tier: null,
@@ -185,10 +200,10 @@ export default async function TeamPage({ params }: PageProps) {
                 </div>
 
                 <TeamRosterTable
-                    players={allAssets}
+                    players={allAssets as any[]}
                     scoringFormat="sf"
                     positionValues={positionValues}
-                    allLeaguePlayers={allLeaguePlayers}
+                    allLeaguePlayers={allLeaguePlayers as any[]}
                     playerOwnershipMap={playerOwnershipMap}
                     rosterToOwnerMap={rosterToOwnerMap}
                     currentRosterId={Number(rosterId)}

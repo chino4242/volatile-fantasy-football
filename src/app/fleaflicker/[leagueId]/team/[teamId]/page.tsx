@@ -18,7 +18,7 @@ export default async function FleaflickerTeamPage({
     const { leagueId, teamId } = await params;
     const { format: formatParam } = await searchParams;
     const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
-    
+
     const fleaflickerData = await getFleaflickerLeague(leagueId);
 
     const roster = fleaflickerData.rosters.find(r => r.id === parseInt(teamId));
@@ -84,6 +84,11 @@ export default async function FleaflickerTeamPage({
                 fc_rank: format === 'sf' ? (valueData?.fc_rank_sf || null) : (valueData?.fc_rank_1qb || null),
                 fc_rank_sf: valueData?.fc_rank_sf || null,
                 fc_rank_1qb: valueData?.fc_rank_1qb || null,
+                fc_position_rank_sf: valueData?.fc_position_rank_sf || null,
+                fc_position_rank_1qb: valueData?.fc_position_rank_1qb || null,
+                fc_combined_value: valueData?.fc_combined_value || null,
+                fc_trade_frequency: valueData?.fc_trade_frequency ? Number(valueData.fc_trade_frequency) : null,
+                fc_trend_30_day: valueData?.fc_trend_30_day || null,
                 rank_1qb_overall: valueData?.rank_1qb_overall || null,
                 rank_1qb_pos: valueData?.rank_1qb_pos || null,
                 rank_1qb_tier: valueData?.rank_1qb_tier || null,
@@ -118,6 +123,11 @@ export default async function FleaflickerTeamPage({
             fc_rank: null,
             fc_rank_sf: null,
             fc_rank_1qb: null,
+            fc_position_rank_sf: null,
+            fc_position_rank_1qb: null,
+            fc_combined_value: null,
+            fc_trade_frequency: null,
+            fc_trend_30_day: null,
             rank_1qb_overall: null,
             rank_1qb_pos: null,
             rank_1qb_tier: null,
@@ -156,6 +166,11 @@ export default async function FleaflickerTeamPage({
             fc_rank: playerValues.fc_rank,
             fc_rank_sf: playerValues.fc_rank_sf,
             fc_rank_1qb: playerValues.fc_rank_1qb,
+            fc_position_rank_sf: playerValues.fc_position_rank_sf,
+            fc_position_rank_1qb: playerValues.fc_position_rank_1qb,
+            fc_combined_value: playerValues.fc_combined_value,
+            fc_trade_frequency: playerValues.fc_trade_frequency,
+            fc_trend_30_day: playerValues.fc_trend_30_day,
             rank_1qb_overall: playerValues.rank_1qb_overall,
             rank_1qb_pos: playerValues.rank_1qb_pos,
             rank_1qb_tier: playerValues.rank_1qb_tier,
@@ -212,10 +227,10 @@ export default async function FleaflickerTeamPage({
                 </div>
 
                 <TeamRosterTable
-                    players={allAssets}
-                    scoringFormat="1qb"
+                    players={allAssets as any[]}
+                    scoringFormat={format}
                     positionValues={positionValues}
-                    allLeaguePlayers={allLeagueValues}
+                    allLeaguePlayers={allLeagueValues as any[]}
                     playerOwnershipMap={playerOwnershipMap}
                     rosterToOwnerMap={rosterToOwnerMap}
                     currentRosterId={parseInt(teamId)}

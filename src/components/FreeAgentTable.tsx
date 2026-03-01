@@ -9,7 +9,7 @@ function PlayerAvatar({ sleeperId, name }: { sleeperId: string; name: string }) 
     const showImg = sleeperId && !sleeperId.includes('pick') && !imgError;
 
     return (
-        <div className="relative w-8 h-8 sm:w-10 sm:h-10 mr-3 flex-shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 text-xs sm:text-sm font-semibold overflow-hidden">
+        <div className="relative w-8 h-8 sm:w-10 sm:h-10 mr-3 flex-shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden border border-zinc-200 dark:border-zinc-700">
             {showImg ? (
                 <img
                     src={`https://sleepercdn.com/content/nfl/players/thumb/${sleeperId}.jpg`}
@@ -18,7 +18,7 @@ function PlayerAvatar({ sleeperId, name }: { sleeperId: string; name: string }) 
                     onError={() => setImgError(true)}
                 />
             ) : (
-                <span>{name?.[0] || '?'}</span>
+                <span className="text-[10px] sm:text-xs font-medium text-zinc-400 dark:text-zinc-500">{name?.[0] || '?'}</span>
             )}
         </div>
     );
