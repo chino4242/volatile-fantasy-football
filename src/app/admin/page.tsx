@@ -100,6 +100,7 @@ export default function AdminPage() {
             const fileInput = document.getElementById('custom-file-upload') as HTMLInputElement;
             if (fileInput) fileInput.value = '';
         } catch (err: any) {
+            console.error('Upload error:', err);
             setCustomError(err.message || 'An error occurred during upload.');
         } finally {
             setCustomLoading(false);

@@ -30,8 +30,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Rankings upload error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to upload rankings";
     return NextResponse.json(
-      { error: "Failed to upload rankings" },
+      { error: errorMessage, details: String(error) },
       { status: 500 }
     );
   }
