@@ -80,8 +80,8 @@ const getValueGap = (player: PlayerData, format: '1qb' | 'sf') => {
 
 ### Display Locations
 
-1. **Team Roster Table:** Value Gap column appears when 1QB or SF rankings are toggled on
-2. **Trade Target Modal:** Value Gap badge shown for each trade target
+1. **Team Roster Table:** "Signal" column always rendered (when toggled on via the column picker)
+2. **Trade Target Modal:** Value gap badge shown for each trade target
 
 ### Data Requirements
 
@@ -161,19 +161,30 @@ Stores both player and draft pick values:
 ```typescript
 export const playerValues = pgTable("player_values", {
   sleeper_id: text("sleeper_id").primaryKey(),
-  fc_value: integer("fc_value"),
+  // FantasyCalc — Superflex
   fc_value_sf: integer("fc_value_sf"),
-  fc_value_1qb: integer("fc_value_1qb"),
-  fc_rank: integer("fc_rank"),
   fc_rank_sf: integer("fc_rank_sf"),
+  fc_position_rank_sf: integer("fc_position_rank_sf"),   // e.g. 5 → "RB5"
+  // FantasyCalc — 1QB
+  fc_value_1qb: integer("fc_value_1qb"),
   fc_rank_1qb: integer("fc_rank_1qb"),
+  fc_position_rank_1qb: integer("fc_position_rank_1qb"),
+  // Shared FC metrics
+  fc_combined_value: integer("fc_combined_value"),        // dynasty + redraft
+  fc_trade_frequency: decimal("fc_trade_frequency", { precision: 6, scale: 4 }), // e.g. 0.0092
+  fc_trend_30_day: integer("fc_trend_30_day"),           // value delta last 30 days
+  redraft_value: integer("redraft_value"),
+  // Legacy (backward compat, mirrors SF)
+  fc_value: integer("fc_value"),
+  fc_rank: integer("fc_rank"),
+  // Proprietary ranks
   rank_1qb_overall: integer("rank_1qb_overall"),
   rank_1qb_pos: integer("rank_1qb_pos"),
   rank_1qb_tier: integer("rank_1qb_tier"),
   rank_sf_overall: integer("rank_sf_overall"),
   rank_sf_pos: integer("rank_sf_pos"),
   rank_sf_tier: integer("rank_sf_tier"),
-  // ... other fields
+  // ...
 });
 ```
 
@@ -246,6 +257,103 @@ Includes both player values and pick values in same response.
 - `md:` 768px - Show additional ranking columns
 - `lg:` 1024px - Show tier columns
 
+> **Note:** Optional columns toggled on by the user via the column picker are always visible regardless of viewport. Responsive hiding only applies to always-visible secondary columns (Position, Team).
+
+## Configurable Column Visibility (Team Roster Table)
+
+### Overview
+The `TeamRosterTable` component (`src/app/league/[leagueId]/team/[rosterId]/TeamRosterTable.tsx`) supports a user-controlled column picker that lets users choose exactly which data columns to display.
+
+### Column Groups
+
+| Group | Columns |
+|---|---|
+| **Core** | Market Value |
+| **FantasyCalc** | FC Overall Rank, FC Position Rank, Combined Value, 30-Day Trend, Trade Frequency |
+| **VFF Rankings** | VFF Overall Rank, VFF Position Rank, Tier, Signal (BUY/SELL/HOLD) |
+
+### Implementation
+
+```typescript
+type ColKey = 'market_value' | 'fc_rank' | 'fc_pos_rank' | 'combined_value'
+            | 'trend_30d' | 'trade_freq' | 'internal_rank' | 'internal_pos'
+            | 'tier' | 'value_gap';
+
+const COLUMNS: ColDef[] = [
+    { key: 'market_value', label: 'Market Value', defaultOn: true,  group: 'core' },
+    { key: 'fc_rank',      label: 'FC Overall',   defaultOn: true,  group: 'fc' },
+    { key: 'fc_pos_rank',  label: 'FC Pos Rank',  defaultOn: true,  group: 'fc' },
+    { key: 'combined_value',label:'Combined',     defaultOn: false, group: 'fc' },
+    { key: 'trend_30d',    label: '30d Trend',    defaultOn: true,  group: 'fc' },
+    { key: 'trade_freq',   label: 'Trade Freq',   defaultOn: false, group: 'fc' },
+    { key: 'internal_rank',label: 'VFF Rank',     defaultOn: false, group: 'internal' },
+    { key: 'internal_pos', label: 'VFF Pos',      defaultOn: false, group: 'internal' },
+    { key: 'tier',         label: 'Tier',         defaultOn: false, group: 'internal' },
+    { key: 'value_gap',    label: 'Signal',       defaultOn: true,  group: 'internal' },
+];
+```
+
+State is stored in a `Set<ColKey>` via `useState`. The header and every row cell are both conditionally rendered via `{show(key) && (<th/td>...)}`. This means column visibility is perfectly synchronized between headers and cells.
+
+### New FantasyCalc Fields (Ingested)
+
+| Field | Source | Usage |
+|---|---|---|
+| `fc_position_rank_sf` / `_1qb` | `item.positionRank` | Displayed as "RB5", "WR12", etc. |
+| `fc_combined_value` | `item.combinedValue` | Dynasty + redraft combined score |
+| `fc_trade_frequency` | `item.maybeTradeFrequency` | Shows as %, colored green/amber/grey |
+| `fc_trend_30_day` | `item.trend30Day` | Shown as ↑+100 / ↓-46 with color |
+
+Trade Frequency coloring:
+- **Green** (>1.5%) — highly liquid, frequently traded
+- **Amber** (0.5–1.5%) — moderate liquidity
+**Grey** (<0.5%) — rarely trades
+
+---
+
+## Scoring Format per League
+
+### Overview
+Each league (Sleeper or Fleaflicker) can be independently configured as **1QB** or **Superflex (SF)**. This affects all value and rank calculations across league, team, and free agent pages.
+
+### Storage
+
+Format preferences are stored in `localStorage` via `useUser.tsx`:
+
+```typescript
+fleaflickerLeagueFormats: Record<string, '1qb' | 'sf'>  // keyed by leagueId
+sleeperLeagueFormats:     Record<string, '1qb' | 'sf'>
+```
+
+Storage keys:
+- `vff_fleaflicker_league_formats`
+- `vff_sleeper_league_formats`
+
+### Dashboard UI
+
+Each league card on the home dashboard shows a **1QB / SF** toggle. Clicking updates the stored format immediately via `setLeagueFormat(leagueId, platform, format)`. League links are generated with `?format=sf` or `?format=1qb` query params.
+
+### Server Pages
+
+All league, team, and free agent pages read the `format` search param:
+
+```typescript
+const { format: formatParam } = await searchParams;
+const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
+```
+
+This controls:
+- Which `fc_value_*` column is queried from the DB
+- Which `fc_rank_*` and `fc_position_rank_*` columns are displayed
+- How the TeamRosterTable labels its rank columns ("1QB Rank" vs "SF Rank")
+- The order players appear in free agent views
+
+### Adding a New Fleaflicker League
+
+When a user adds a Fleaflicker league, they choose the format upfront via a 1QB/SF toggle. The format is stored alongside the league ID.
+
+---
+
 ## Future Enhancements
 
 Potential improvements to the platform:
@@ -259,7 +367,7 @@ Potential improvements to the platform:
 7. **Value Gap Trends:** Track how market vs. analysis gaps change over time
 8. **Gap Filtering:** Filter roster by BUY/SELL/HOLD recommendations
 9. **Cross-device Login:** Persist Soft Login via database instead of localStorage
-10. **Fleaflicker league listing:** Source user's Fleaflicker leagues via API or manual add
+10. ~~**Fleaflicker league listing:** Source user's Fleaflicker leagues via API or manual add~~ ✅ Done — users can manually add Fleaflicker leagues by ID from the dashboard
 
 ---
 
@@ -429,7 +537,7 @@ const AUTH_KEYS = {
 1. User enters Sleeper username.
 2. Client calls `GET https://api.sleeper.app/v1/user/{username}` to validate.
 3. On success, saves `display_name` + `user_id` to localStorage via `loginSleeper()`.
-4. `useEffect` fires with the new `sleeperUserId` and calls `GET https://api.sleeper.app/v1/user/{userId}/leagues/nfl/2024`.
+4. `useEffect` fires with the new `sleeperUserId` and calls `GET https://api.sleeper.app/v1/user/{userId}/leagues/nfl/2025`.
 5. Leagues are rendered as clickable cards navigating to `/league/[leagueId]`.
 
 #### AppHeader Auth Awareness
