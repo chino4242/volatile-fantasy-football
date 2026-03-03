@@ -1,9 +1,10 @@
-import { pgTable, text, integer, boolean, timestamp, jsonb, uuid, decimal, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, jsonb, uuid, varchar, numeric, decimal, index, unique, pgView } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // 1. Players Table (Master List)
 export const players = pgTable("players", {
     sleeper_id: text("sleeper_id").primaryKey(),
+    gsis_id: text("gsis_id").unique(),
     full_name: text("full_name").notNull(),
     first_name: text("first_name"),
     last_name: text("last_name"),
@@ -11,11 +12,13 @@ export const players = pgTable("players", {
     team: text("team"), // NFL Team (e.g., MIN, KC)
     age: integer("age"),
     years_exp: integer("years_exp"),
+    rookie_year: integer("rookie_year"),
     status: text("status"), // Active, Injured, etc.
     updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => {
     return {
         nameIdx: index("idx_players_name").on(table.full_name),
+        gsisIdx: index("idx_players_gsis").on(table.gsis_id),
     };
 });
 
@@ -132,3 +135,74 @@ export const customRankings = pgTable("custom_rankings", {
         rankIdx: index("idx_custom_rankings_rank").on(table.source_id, table.rank),
     };
 });
+
+// 8. Weekly Player Stats Table
+export const weeklyPlayerStats = pgTable("weekly_player_stats", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    gsis_id: text("gsis_id").notNull(),
+    season: integer("season").notNull(),
+    week: integer("week").notNull(),
+
+    // Opportunity Metrics
+    targets: integer("targets"),
+    air_yards: integer("air_yards"),
+    routes_run: integer("routes_run"),
+    snaps: integer("snaps"),
+
+    // High-Value Touches
+    red_zone_targets: integer("red_zone_targets"),
+    inside_five_rushes: integer("inside_five_rushes"),
+
+    // Production
+    receptions: integer("receptions"),
+    receiving_yards: integer("receiving_yards"),
+    receiving_tds: integer("receiving_tds"),
+    carries: integer("carries"),
+    rushing_yards: integer("rushing_yards"),
+    rushing_tds: integer("rushing_tds"),
+
+    // Passing
+    completions: integer("completions"),
+    attempts: integer("attempts"),
+    passing_yards: integer("passing_yards"),
+    passing_tds: integer("passing_tds"),
+    interceptions: integer("interceptions"),
+
+    // Expected Points
+    expected_fantasy_points: decimal("expected_fantasy_points", { precision: 6, scale: 2 }),
+
+    updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => {
+    return {
+        uniquePlayerWeek: unique("unique_player_week").on(table.gsis_id, table.season, table.week),
+        gsisIdx: index("idx_weekly_stats_gsis").on(table.gsis_id),
+        seasonWeekIdx: index("idx_weekly_stats_season_week").on(table.season, table.week),
+    };
+});
+
+// 9. Weekly Roster Snapshots Table
+export const weeklyRosterSnapshots = pgTable("weekly_roster_snapshots", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    roster_id: uuid("roster_id").references(() => rosters.id, { onDelete: "cascade" }),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
+    week: integer("week").notNull(),
+    is_starter: boolean("is_starter").default(false),
+    roster_slot: text("roster_slot"),
+    created_at: timestamp("created_at").defaultNow(),
+}, (table) => {
+    return {
+        uniqueSnapshot: unique("unique_weekly_snapshot").on(table.roster_id, table.sleeper_id, table.week),
+    };
+});
+
+// View: Receiver Opportunity (WOPR calculation)
+export const receiverOpportunity = pgView("v_receiver_opportunity", {
+    gsis_id: varchar("gsis_id"), // It's safer to use varchar to match your players table
+    season: integer("season"),
+    week: integer("week"),
+    targets: integer("targets"),
+    air_yards: numeric("air_yards"),
+    target_share: numeric("target_share"),
+    air_yard_share: numeric("air_yard_share"),
+    wopr: numeric("wopr"),
+}).existing();

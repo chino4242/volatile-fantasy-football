@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Settings2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { PlayerStatsModal } from '@/components/PlayerStatsModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -280,6 +281,9 @@ export function TeamRosterTable({
     const [tradeTargetOffset, setTradeTargetOffset] = useState(0);
     const [tolerance, setTolerance] = useState(0.05);
     const [viewMode, setViewMode] = useState<'position' | 'team'>('position');
+    const [selectedPlayer, setSelectedPlayer] = useState<PlayerData | null>(null);
+    const [playerStats, setPlayerStats] = useState<any>(null);
+    const [loadingStats, setLoadingStats] = useState(false);
 
     // Column visibility — default on columns
     const [visibleCols, setVisibleCols] = useState<Set<string>>(
@@ -299,6 +303,29 @@ export function TeamRosterTable({
 
     const sf = scoringFormat === 'sf';
     const fmtLabel = sf ? 'SF' : '1QB';
+
+    const handlePlayerClick = async (player: PlayerData) => {
+        if (player.position === 'PICK') {
+            setSelectedPick(player);
+            setTradeTargetOffset(0);
+            return;
+        }
+        
+        setSelectedPlayer(player);
+        setLoadingStats(true);
+        
+        try {
+            const res = await fetch(`/api/player-stats?sleeperId=${player.sleeper_id}`);
+            if (res.ok) {
+                const data = await res.json();
+                setPlayerStats(data);
+            }
+        } catch (error) {
+            console.error('Failed to load player stats:', error);
+        } finally {
+            setLoadingStats(false);
+        }
+    };
 
     const togglePosition = (pos: string) => {
         setActivePositions(prev => {
@@ -503,8 +530,8 @@ export function TeamRosterTable({
                                 return (
                                     <tr
                                         key={player.sleeper_id}
-                                        className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBgClass(player.position)} ${player.position === 'PICK' ? 'cursor-pointer' : ''}`}
-                                        onClick={() => player.position === 'PICK' ? (setSelectedPick(player), setTradeTargetOffset(0)) : undefined}
+                                        className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer ${getPositionBgClass(player.position)}`}
+                                        onClick={() => handlePlayerClick(player)}
                                     >
                                         {/* Player name */}
                                         <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
@@ -724,6 +751,20 @@ export function TeamRosterTable({
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Player Stats Modal */}
+            {selectedPlayer && playerStats && (
+                <PlayerStatsModal
+                    playerName={selectedPlayer.full_name}
+                    position={selectedPlayer.position || 'N/A'}
+                    team={selectedPlayer.team}
+                    weeklyStats={playerStats.stats}
+                    onClose={() => {
+                        setSelectedPlayer(null);
+                        setPlayerStats(null);
+                    }}
+                />
             )}
         </div>
     );

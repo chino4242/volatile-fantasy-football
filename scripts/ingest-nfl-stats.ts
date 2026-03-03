@@ -4,7 +4,7 @@ dotenv.config({ path: ".env.local" });
 async function main() {
   const { importWeeklyData, importSeasonalRosters } = await import("@camfleety/nfl-data-js");
   const { db } = await import("../src/db/index.js");
-  const { players, nflStats } = await import("../src/db/schema.js");
+  const { players, weeklyPlayerStats } = await import("../src/db/schema.js");
   const { eq, and } = await import("drizzle-orm");
   
   const season = 2024;
@@ -56,7 +56,7 @@ async function main() {
   
   for (const stat of weeklyData) {
     // Try to match by player_name (e.g., "A.Rodgers")
-    const sleeperId = nameMap.get(stat.player_name?.toLowerCase());
+    const sleeperId = nameMap.get((stat as any).player_name?.toLowerCase());
     
     if (!sleeperId) {
       skipped++;
@@ -67,47 +67,43 @@ async function main() {
     
     // Check if already exists
     const existing = await db.select()
-      .from(nflStats)
+      .from(weeklyPlayerStats)
       .where(and(
-        eq(nflStats.sleeper_id, sleeperId),
-        eq(nflStats.season, stat.season),
-        eq(nflStats.week, stat.week)
+        eq(weeklyPlayerStats.gsis_id, (stat as any).player_id),
+        eq(weeklyPlayerStats.season, (stat as any).season),
+        eq(weeklyPlayerStats.week, (stat as any).week)
       ))
       .limit(1);
     
     const statData = {
-      sleeper_id: sleeperId,
-      season: stat.season,
-      week: stat.week,
-      completions: stat.completions || null,
-      attempts: stat.attempts || null,
-      passing_yards: stat.passing_yards || null,
-      passing_tds: stat.passing_tds || null,
-      interceptions: stat.interceptions || null,
-      sacks: stat.sacks || null,
-      sack_yards: stat.sack_yards || null,
-      carries: stat.carries || null,
-      rushing_yards: stat.rushing_yards || null,
-      rushing_tds: stat.rushing_tds || null,
-      targets: stat.targets || null,
-      receptions: stat.receptions || null,
-      receiving_yards: stat.receiving_yards || null,
-      receiving_tds: stat.receiving_tds || null,
-      target_share: stat.target_share ? String(stat.target_share) : null,
-      air_yards_share: stat.air_yards_share ? String(stat.air_yards_share) : null,
-      wopr: stat.wopr ? String(stat.wopr) : null,
-      racr: stat.racr ? String(stat.racr) : null,
-      fantasy_points: stat.fantasy_points ? String(stat.fantasy_points) : null,
-      fantasy_points_ppr: stat.fantasy_points_ppr ? String(stat.fantasy_points_ppr) : null,
+      gsis_id: (stat as any).player_id,
+      season: (stat as any).season,
+      week: (stat as any).week,
+      completions: (stat as any).completions || null,
+      attempts: (stat as any).attempts || null,
+      passing_yards: (stat as any).passing_yards || null,
+      passing_tds: (stat as any).passing_tds || null,
+      interceptions: (stat as any).interceptions || null,
+      carries: (stat as any).carries || null,
+      rushing_yards: (stat as any).rushing_yards || null,
+      rushing_tds: (stat as any).rushing_tds || null,
+      targets: (stat as any).targets || null,
+      receptions: (stat as any).receptions || null,
+      receiving_yards: (stat as any).receiving_yards || null,
+      receiving_tds: (stat as any).receiving_tds || null,
+      air_yards: (stat as any).receiving_air_yards || null,
+      routes_run: (stat as any).routes || null,
+      red_zone_targets: (stat as any).red_zone_targets || null,
+      expected_fantasy_points: (stat as any).fantasy_points ? String((stat as any).fantasy_points) : null,
       updated_at: new Date(),
     };
     
     if (existing.length > 0) {
-      await db.update(nflStats)
+      await db.update(weeklyPlayerStats)
         .set(statData)
-        .where(eq(nflStats.id, existing[0].id));
+        .where(eq(weeklyPlayerStats.id, existing[0].id));
     } else {
-      await db.insert(nflStats).values(statData);
+      await db.insert(weeklyPlayerStats).values(statData);
     }
     
     imported++;
