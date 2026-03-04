@@ -125,7 +125,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
             : null;
 
         return {
-            sleeper_id: pickId,
+            sleeper_id: `${pickId}_${pick.originalOwner}`, // Make unique by including original owner
             full_name: `${pick.season} Round ${pick.round}${ownerName ? ` (${ownerName})` : ''}`,
             position: 'PICK',
             team: null,
