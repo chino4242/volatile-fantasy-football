@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const sleeperId = searchParams.get("sleeperId");
+  const season = parseInt(searchParams.get("season") || "2024");
 
   if (!sleeperId) {
     return NextResponse.json({ error: "sleeperId required" }, { status: 400 });
@@ -33,11 +34,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       player: player[0],
       stats: [],
+      season,
       message: "No NFL stats available for this player"
     });
   }
 
-  // Get 2024 weekly stats
+  // Get weekly stats for selected season
   const stats = await db
     .select({
       week: weeklyPlayerStats.week,
@@ -48,15 +50,24 @@ export async function GET(request: NextRequest) {
       carries: weeklyPlayerStats.carries,
       rushing_yards: weeklyPlayerStats.rushing_yards,
       rushing_tds: weeklyPlayerStats.rushing_tds,
-      air_yards: weeklyPlayerStats.air_yards,
-      routes_run: weeklyPlayerStats.routes_run,
-      red_zone_targets: weeklyPlayerStats.red_zone_targets,
+      completions: weeklyPlayerStats.completions,
+      attempts: weeklyPlayerStats.attempts,
+      passing_yards: weeklyPlayerStats.passing_yards,
+      passing_tds: weeklyPlayerStats.passing_tds,
+      interceptions: weeklyPlayerStats.interceptions,
+      // Advanced metrics from nfl_data_py
+      target_share: weeklyPlayerStats.target_share,
+      air_yards_share: weeklyPlayerStats.air_yards_share,
+      wopr: weeklyPlayerStats.wopr,
+      racr: weeklyPlayerStats.racr,
+      fantasy_points: weeklyPlayerStats.fantasy_points,
+      fantasy_points_ppr: weeklyPlayerStats.fantasy_points_ppr,
     })
     .from(weeklyPlayerStats)
     .where(
       and(
         eq(weeklyPlayerStats.gsis_id, player[0].gsis_id),
-        eq(weeklyPlayerStats.season, 2024)
+        eq(weeklyPlayerStats.season, season)
       )
     )
     .orderBy(weeklyPlayerStats.week);
@@ -64,5 +75,6 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     player: player[0],
     stats,
+    season,
   });
 }

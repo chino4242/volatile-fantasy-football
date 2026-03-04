@@ -168,6 +168,14 @@ export const weeklyPlayerStats = pgTable("weekly_player_stats", {
     passing_tds: integer("passing_tds"),
     interceptions: integer("interceptions"),
 
+    // Advanced Metrics (from nfl_data_py)
+    target_share: decimal("target_share", { precision: 5, scale: 4 }),
+    air_yards_share: decimal("air_yards_share", { precision: 5, scale: 4 }),
+    wopr: decimal("wopr", { precision: 5, scale: 4 }),  // Weighted Opportunity Rating
+    racr: decimal("racr", { precision: 6, scale: 2 }),  // Receiver Air Conversion Ratio
+    fantasy_points: decimal("fantasy_points", { precision: 6, scale: 2 }),
+    fantasy_points_ppr: decimal("fantasy_points_ppr", { precision: 6, scale: 2 }),
+
     // Expected Points
     expected_fantasy_points: decimal("expected_fantasy_points", { precision: 6, scale: 2 }),
 

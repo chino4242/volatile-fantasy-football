@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 type WeeklyStat = {
   week: number;
@@ -12,16 +12,25 @@ type WeeklyStat = {
   carries: number | null;
   rushing_yards: number | null;
   rushing_tds: number | null;
-  air_yards: number | null;
-  routes_run: number | null;
-  red_zone_targets: number | null;
+  completions: number | null;
+  attempts: number | null;
+  passing_yards: number | null;
+  passing_tds: number | null;
+  interceptions: number | null;
+  // Advanced metrics
+  target_share: string | null;
+  air_yards_share: string | null;
+  wopr: string | null;
+  racr: string | null;
+  fantasy_points: string | null;
+  fantasy_points_ppr: string | null;
 };
 
 type PlayerStatsModalProps = {
   playerName: string;
   position: string;
   team: string | null;
-  weeklyStats: WeeklyStat[];
+  sleeperId: string;
   onClose: () => void;
 };
 
@@ -29,9 +38,31 @@ export function PlayerStatsModal({
   playerName,
   position,
   team,
-  weeklyStats,
+  sleeperId,
   onClose,
 }: PlayerStatsModalProps) {
+  const [selectedSeason, setSelectedSeason] = useState(2024);
+  const [weeklyStats, setWeeklyStats] = useState<WeeklyStat[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch stats when season changes
+  useEffect(() => {
+    const fetchStats = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/player-stats?sleeperId=${sleeperId}&season=${selectedSeason}`);
+        if (res.ok) {
+          const data = await res.json();
+          setWeeklyStats(data.stats || []);
+        }
+      } catch (error) {
+        console.error('Failed to load stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
+  }, [sleeperId, selectedSeason]);
   const seasonTotals = useMemo(() => {
     return weeklyStats.reduce(
       (acc, week) => ({
@@ -42,9 +73,12 @@ export function PlayerStatsModal({
         carries: acc.carries + (week.carries || 0),
         rushing_yards: acc.rushing_yards + (week.rushing_yards || 0),
         rushing_tds: acc.rushing_tds + (week.rushing_tds || 0),
-        air_yards: acc.air_yards + (week.air_yards || 0),
-        routes_run: acc.routes_run + (week.routes_run || 0),
-        red_zone_targets: acc.red_zone_targets + (week.red_zone_targets || 0),
+        completions: acc.completions + (week.completions || 0),
+        attempts: acc.attempts + (week.attempts || 0),
+        passing_yards: acc.passing_yards + (week.passing_yards || 0),
+        passing_tds: acc.passing_tds + (week.passing_tds || 0),
+        interceptions: acc.interceptions + (week.interceptions || 0),
+        fantasy_points_ppr: acc.fantasy_points_ppr + (parseFloat(week.fantasy_points_ppr || '0')),
         games: acc.games + 1,
       }),
       {
@@ -55,9 +89,12 @@ export function PlayerStatsModal({
         carries: 0,
         rushing_yards: 0,
         rushing_tds: 0,
-        air_yards: 0,
-        routes_run: 0,
-        red_zone_targets: 0,
+        completions: 0,
+        attempts: 0,
+        passing_yards: 0,
+        passing_tds: 0,
+        interceptions: 0,
+        fantasy_points_ppr: 0,
         games: 0,
       }
     );
@@ -86,6 +123,46 @@ export function PlayerStatsModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b px-4 sm:px-6 py-4 z-10">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">{playerName}</h2>
+              <p className="text-sm sm:text-base text-gray-700">
+                {position} {team && `• ${team}`}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+          
+          {/* Season Selector */}
+          <div className="flex gap-2">
+            {[2024, 2023, 2022, 2021, 2020].map(year => (
+              <button
+                key={year}
+                onClick={() => setSelectedSeason(year)}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                  selectedSeason === year
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {year}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="px-4 sm:px-6 py-8 text-center text-gray-500">
+            Loading stats...
+          </div>
+        ) : (
+          <>
         {/* Header */}
         <div className="sticky top-0 bg-white border-b px-4 sm:px-6 py-4 flex items-center justify-between z-10">
           <div>
@@ -137,25 +214,6 @@ export function PlayerStatsModal({
                   <StatCard label="Rush TDs" value={seasonTotals.rushing_tds} />
                 </>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* Opportunity Metrics - Show derived metrics */}
-        {hasStats && isReceiver && seasonTotals.air_yards > 0 && (
-          <div className="px-4 sm:px-6 py-4 border-b">
-            <h3 className="text-base sm:text-lg font-semibold mb-3 text-gray-900">Opportunity Metrics</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-              <StatCard label="Air Yards" value={seasonTotals.air_yards} />
-              <StatCard 
-                label="Catch Rate" 
-                value={seasonTotals.targets > 0 ? Math.round((seasonTotals.receptions / seasonTotals.targets) * 100) : 0}
-                perGame="%" 
-              />
-              <StatCard 
-                label="Yards/Target" 
-                value={seasonTotals.targets > 0 ? parseFloat((seasonTotals.receiving_yards / seasonTotals.targets).toFixed(1)) : 0}
-              />
             </div>
           </div>
         )}
@@ -271,6 +329,8 @@ export function PlayerStatsModal({
               </table>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

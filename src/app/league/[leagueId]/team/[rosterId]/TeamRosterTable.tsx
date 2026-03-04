@@ -282,8 +282,6 @@ export function TeamRosterTable({
     const [tolerance, setTolerance] = useState(0.05);
     const [viewMode, setViewMode] = useState<'position' | 'team'>('position');
     const [selectedPlayer, setSelectedPlayer] = useState<PlayerData | null>(null);
-    const [playerStats, setPlayerStats] = useState<any>(null);
-    const [loadingStats, setLoadingStats] = useState(false);
 
     // Column visibility — load from localStorage
     const [visibleCols, setVisibleCols] = useState<Set<string>>(() => {
@@ -323,19 +321,6 @@ export function TeamRosterTable({
         }
         
         setSelectedPlayer(player);
-        setLoadingStats(true);
-        
-        try {
-            const res = await fetch(`/api/player-stats?sleeperId=${player.sleeper_id}`);
-            if (res.ok) {
-                const data = await res.json();
-                setPlayerStats(data);
-            }
-        } catch (error) {
-            console.error('Failed to load player stats:', error);
-        } finally {
-            setLoadingStats(false);
-        }
     };
 
     const togglePosition = (pos: string) => {
@@ -765,16 +750,13 @@ export function TeamRosterTable({
             )}
 
             {/* Player Stats Modal */}
-            {selectedPlayer && playerStats && (
+            {selectedPlayer && (
                 <PlayerStatsModal
                     playerName={selectedPlayer.full_name}
                     position={selectedPlayer.position || 'N/A'}
                     team={selectedPlayer.team}
-                    weeklyStats={playerStats.stats}
-                    onClose={() => {
-                        setSelectedPlayer(null);
-                        setPlayerStats(null);
-                    }}
+                    sleeperId={selectedPlayer.sleeper_id}
+                    onClose={() => setSelectedPlayer(null)}
                 />
             )}
         </div>
