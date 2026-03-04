@@ -13,8 +13,10 @@ interface PageProps {
     params: Promise<{ leagueId: string; rosterId: string }>;
 }
 
-export default async function TeamPage({ params }: PageProps) {
+export default async function TeamPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string }> }) {
     const { leagueId, rosterId } = await params;
+    const { format: formatParam } = await searchParams;
+    const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
 
     // 1. Fetch league data (we need it to find the owner and players)
     const { users, rosters, tradedPicks } = await getLeagueData(leagueId);
@@ -49,7 +51,7 @@ export default async function TeamPage({ params }: PageProps) {
             full_name: players.full_name,
             position: players.position,
             team: players.team,
-            fc_value: playerValues.fc_value_sf,
+            fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
             fc_rank: playerValues.fc_rank,
             fc_rank_sf: playerValues.fc_rank_sf,
             fc_rank_1qb: playerValues.fc_rank_1qb,
@@ -76,7 +78,7 @@ export default async function TeamPage({ params }: PageProps) {
             full_name: players.full_name,
             position: players.position,
             team: players.team,
-            fc_value: playerValues.fc_value_sf,
+            fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
             fc_rank: playerValues.fc_rank,
             fc_rank_sf: playerValues.fc_rank_sf,
             fc_rank_1qb: playerValues.fc_rank_1qb,
@@ -171,11 +173,11 @@ export default async function TeamPage({ params }: PageProps) {
             <div className="max-w-4xl mx-auto">
                 <div className="mb-6 sm:mb-8">
                     <div className="flex items-center justify-between mb-4">
-                        <Link href={`/league/${leagueId}`} className="text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300">
+                        <Link href={`/league/${leagueId}?format=${format}`} className="text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300">
                             ← Back to League
                         </Link>
                         <Link
-                            href={`/league/${leagueId}/free-agents`}
+                            href={`/league/${leagueId}/free-agents?format=${format}`}
                             className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
                         >
                             View Free Agents →
@@ -207,7 +209,7 @@ export default async function TeamPage({ params }: PageProps) {
 
                 <TeamRosterTable
                     players={allAssets as any[]}
-                    scoringFormat="sf"
+                    scoringFormat={format}
                     positionValues={positionValues}
                     allLeaguePlayers={allLeaguePlayers as any[]}
                     playerOwnershipMap={playerOwnershipMap}
