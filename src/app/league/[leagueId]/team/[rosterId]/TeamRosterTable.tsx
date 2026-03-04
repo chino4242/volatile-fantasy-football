@@ -285,14 +285,25 @@ export function TeamRosterTable({
     const [playerStats, setPlayerStats] = useState<any>(null);
     const [loadingStats, setLoadingStats] = useState(false);
 
-    // Column visibility — default on columns
-    const [visibleCols, setVisibleCols] = useState<Set<string>>(
-        new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key))
-    );
+    // Column visibility — load from localStorage
+    const [visibleCols, setVisibleCols] = useState<Set<string>>(() => {
+        if (typeof window === 'undefined') return new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key));
+        const saved = localStorage.getItem('vff_column_visibility');
+        if (saved) {
+            try {
+                return new Set(JSON.parse(saved));
+            } catch {
+                return new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key));
+            }
+        }
+        return new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key));
+    });
     const toggleCol = (key: ColKey) => {
         setVisibleCols(prev => {
             const next = new Set(prev);
             next.has(key) ? next.delete(key) : next.add(key);
+            // Save to localStorage
+            localStorage.setItem('vff_column_visibility', JSON.stringify([...next]));
             return next;
         });
     };

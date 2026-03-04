@@ -76,9 +76,21 @@ const getValueGapLabel = (gap: number | null) => {
 export function PlayersTable({ players, format }: PlayersTableProps) {
     const [activePositions, setActivePositions] = useState<Set<string>>(new Set(['QB', 'RB', 'WR', 'TE']));
     const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
-    const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(
-        new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key))
-    );
+    
+    // Load column visibility from localStorage
+    const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => {
+        if (typeof window === 'undefined') return new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key));
+        const saved = localStorage.getItem('vff_column_visibility');
+        if (saved) {
+            try {
+                return new Set(JSON.parse(saved));
+            } catch {
+                return new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key));
+            }
+        }
+        return new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key));
+    });
+    
     const [showColumnPicker, setShowColumnPicker] = useState(false);
 
     const togglePosition = (pos: string) => {
@@ -93,6 +105,8 @@ export function PlayersTable({ players, format }: PlayersTableProps) {
         setVisibleCols(prev => {
             const next = new Set(prev);
             next.has(key) ? next.delete(key) : next.add(key);
+            // Save to localStorage
+            localStorage.setItem('vff_column_visibility', JSON.stringify([...next]));
             return next;
         });
     };
