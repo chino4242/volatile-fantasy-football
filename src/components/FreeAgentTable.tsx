@@ -242,6 +242,9 @@ export function FreeAgentTable({ players }: FreeAgentTableProps) {
                 <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                     <thead className="bg-zinc-50 dark:bg-zinc-950/50 select-none">
                         <tr>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider w-12">
+                                #
+                            </th>
                             {show('fc_rank') && (
                                 <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">
                                     FC Rank
@@ -299,10 +302,13 @@ export function FreeAgentTable({ players }: FreeAgentTableProps) {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
-                        {sortedPlayers.map((player) => {
+                        {sortedPlayers.map((player, index) => {
                             const valueGap = getValueGapLabel(player);
                             return (
                                 <tr key={player.sleeper_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                                    <td className="px-3 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-zinc-400 dark:text-zinc-500 font-mono">
+                                        {index + 1}
+                                    </td>
                                     {show('fc_rank') && (
                                         <td className="px-3 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-mono">
                                             {player.fc_rank ? `#${player.fc_rank}` : '-'}

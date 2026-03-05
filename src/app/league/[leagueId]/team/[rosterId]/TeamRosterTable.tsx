@@ -452,6 +452,7 @@ export function TeamRosterTable({
                     <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                         <thead className="bg-zinc-50 dark:bg-zinc-950/50">
                             <tr>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider w-12">#</th>
                                 {/* Always-visible: Player */}
                                 <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Player</th>
                                 <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">Pos</th>
@@ -537,6 +538,10 @@ export function TeamRosterTable({
                                         className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer ${getPositionBgClass(player.position)}`}
                                         onClick={() => handlePlayerClick(player)}
                                     >
+                                        {/* Row number */}
+                                        <td className="px-3 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-zinc-400 dark:text-zinc-500 font-mono">
+                                            {index + 1}
+                                        </td>
                                         {/* Player name */}
                                         <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                                             <div className="text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100">{player.full_name}</div>

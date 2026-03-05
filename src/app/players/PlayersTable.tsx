@@ -216,6 +216,7 @@ export function PlayersTable({ players, format }: PlayersTableProps) {
                     <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                         <thead className="bg-zinc-50 dark:bg-zinc-950/50">
                             <tr>
+                                <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase w-12">#</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Player</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Pos</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Team</th>
@@ -232,13 +233,16 @@ export function PlayersTable({ players, format }: PlayersTableProps) {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                            {filteredPlayers.map(player => {
+                            {filteredPlayers.map((player, index) => {
                                 const gap = getValueGap(player);
                                 const gapLabel = getValueGapLabel(gap);
                                 const trend = player.fc_trend_30_day;
 
                                 return (
                                     <tr key={player.sleeper_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                                        <td className="px-3 py-4 whitespace-nowrap text-sm text-zinc-400 dark:text-zinc-500 font-mono">
+                                            {index + 1}
+                                        </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-zinc-900 dark:text-zinc-100">
                                             {player.full_name}
                                         </td>
