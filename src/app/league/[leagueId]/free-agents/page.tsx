@@ -36,6 +36,13 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
                 years_exp: players.years_exp,
                 fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
                 fc_rank: format === 'sf' ? playerValues.fc_rank_sf : playerValues.fc_rank_1qb,
+                fc_position_rank: format === 'sf' ? playerValues.fc_position_rank_sf : playerValues.fc_position_rank_1qb,
+                fc_combined_value: playerValues.fc_combined_value,
+                fc_trend_30_day: playerValues.fc_trend_30_day,
+                fc_trade_frequency: playerValues.fc_trade_frequency,
+                rank_overall: format === 'sf' ? playerValues.rank_sf_overall : playerValues.rank_1qb_overall,
+                rank_pos: format === 'sf' ? playerValues.rank_sf_pos : playerValues.rank_1qb_pos,
+                rank_tier: format === 'sf' ? playerValues.rank_sf_tier : playerValues.rank_1qb_tier,
             })
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))

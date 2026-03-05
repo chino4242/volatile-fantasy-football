@@ -10,7 +10,7 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 - **Draft Capital** — All draft picks (next 3 years) are displayed with FantasyCalc values and integrated into team valuations
 - **Specific Pick Values** — Individual pick slots (e.g., 1.02 vs 1.09) are valued using real FantasyCalc pick data, not generic round averages
 - **Position Filters** — Interactive position filters on team pages to toggle between viewing players and draft picks
-- **Configurable Columns** — Users can toggle which data columns are visible on the team roster table, grouped into Core, FantasyCalc, and VFF Rankings sections. Includes: Market Value, FC Overall Rank, FC Position Rank, Combined Value, 30-Day Trend, Trade Frequency, VFF Rank, VFF Position, Tier, and Signal
+- **Configurable Columns** — Users can toggle which data columns are visible on team roster and free agent tables, grouped into Core, FantasyCalc, and VFF Rankings sections. Includes: Market Value, FC Overall Rank, FC Position Rank, Combined Value, 30-Day Trend, Trade Frequency, VFF Rank, VFF Position, Tier, and Signal
 - **Scoring Format per League** — Each league on the dashboard can be independently set to 1QB or Superflex (SF). The format is stored in localStorage and passed through all league, team, and free agent pages
 - **Market Value Gap Analysis** — BUY/SELL/HOLD indicators comparing FantasyCalc market rankings vs. proprietary analysis rankings for both 1QB and Superflex formats
 - **Trade Target Finder** — Click any draft pick to see trade targets from other teams within 5% value range, with value gap indicators and expandable results

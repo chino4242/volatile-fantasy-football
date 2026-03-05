@@ -259,16 +259,27 @@ Includes both player values and pick values in same response.
 
 > **Note:** Optional columns toggled on by the user via the column picker are always visible regardless of viewport. Responsive hiding only applies to always-visible secondary columns (Position, Team).
 
-## Configurable Column Visibility (Team Roster Table)
+## Configurable Column Visibility
 
 ### Overview
-The `TeamRosterTable` component (`src/app/league/[leagueId]/team/[rosterId]/TeamRosterTable.tsx`) supports a user-controlled column picker that lets users choose exactly which data columns to display.
+The `TeamRosterTable` and `FreeAgentTable` components support user-controlled column pickers that let users choose exactly which data columns to display.
+
+### Implementations
+
+**Team Roster Table** (`src/app/league/[leagueId]/team/[rosterId]/TeamRosterTable.tsx`)
+- Includes "Market Value" in Core group
+- Persists to `vff_team_roster_columns`
+
+**Free Agent Table** (`src/components/FreeAgentTable.tsx`)
+- Excludes "Market Value" (always shown as "Value" column)
+- Persists to `vff_free_agent_columns`
+- Settings icon button next to position filters
 
 ### Column Groups
 
 | Group | Columns |
 |---|---|
-| **Core** | Market Value |
+| **Core** | Market Value (Team Roster only) |
 | **FantasyCalc** | FC Overall Rank, FC Position Rank, Combined Value, 30-Day Trend, Trade Frequency |
 | **VFF Rankings** | VFF Overall Rank, VFF Position Rank, Tier, Signal (BUY/SELL/HOLD) |
 
