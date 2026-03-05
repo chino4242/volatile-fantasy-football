@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Settings2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Settings2, TrendingUp, TrendingDown, Minus, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { PlayerStatsModal } from '@/components/PlayerStatsModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -284,6 +284,8 @@ export function TeamRosterTable({
     const [tolerance, setTolerance] = useState(0.05);
     const [viewMode, setViewMode] = useState<'position' | 'team'>('position');
     const [selectedPlayer, setSelectedPlayer] = useState<PlayerData | null>(null);
+    const [sortColumn, setSortColumn] = useState<string>('fc_value');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
     // Column visibility — load from localStorage
     const [visibleCols, setVisibleCols] = useState<Set<string>>(() => {
@@ -308,6 +310,23 @@ export function TeamRosterTable({
         });
     };
     const show = (key: ColKey) => visibleCols.has(key);
+
+    // Sorting
+    const handleSort = (column: string) => {
+        if (sortColumn === column) {
+            setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
+        } else {
+            setSortColumn(column);
+            setSortDirection('desc');
+        }
+    };
+
+    const SortIcon = ({ column }: { column: string }) => {
+        if (sortColumn !== column) return <ArrowUpDown className="ml-1 h-3 w-3 inline-block opacity-40 group-hover:opacity-100" />;
+        return sortDirection === 'desc'
+            ? <ArrowDown className="ml-1 h-3 w-3 inline-block text-indigo-500" />
+            : <ArrowUp className="ml-1 h-3 w-3 inline-block text-indigo-500" />;
+    };
 
     // Signal filter
     const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
@@ -341,7 +360,23 @@ export function TeamRosterTable({
         const gap = getValueGap(p, scoringFormat);
         const lbl = getValueGapLabel(gap);
         return lbl?.label === signalFilter;
+    }).sort((a, b) => {
+        let valA: any = a[sortColumn as keyof PlayerData];
+        let valB: any = b[sortColumn as keyof PlayerData];
+
+        // Handle null/undefined
+        if (valA === null || valA === undefined) valA = sortDirection === 'desc' ? -Infinity : Infinity;
+        if (valB === null || valB === undefined) valB = sortDirection === 'desc' ? -Infinity : Infinity;
+
+        // String comparison
+        if (typeof valA === 'string' && typeof valB === 'string') {
+            return sortDirection === 'desc' ? valB.localeCompare(valA) : valA.localeCompare(valB);
+        }
+
+        // Numeric comparison
+        return sortDirection === 'desc' ? (valB as number) - (valA as number) : (valA as number) - (valB as number);
     });
+    
     const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'PICK'];
 
     const getTradeTargets = (pickValue: number, offset: number = 0) => {
@@ -454,36 +489,44 @@ export function TeamRosterTable({
                             <tr>
                                 <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider w-12">#</th>
                                 {/* Always-visible: Player */}
-                                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Player</th>
-                                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">Pos</th>
-                                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">Team</th>
+                                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('full_name')}>
+                                    Player <SortIcon column="full_name" />
+                                </th>
+                                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('position')}>
+                                    Pos <SortIcon column="position" />
+                                </th>
+                                <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('team')}>
+                                    Team <SortIcon column="team" />
+                                </th>
 
                                 {show('market_value') && (
-                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Value</th>
+                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('fc_value')}>
+                                        Value <SortIcon column="fc_value" />
+                                    </th>
                                 )}
                                 {show('fc_rank') && (
-                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20">
-                                        {fmtLabel} Rank
+                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort(sf ? 'fc_rank_sf' : 'fc_rank_1qb')}>
+                                        {fmtLabel} Rank <SortIcon column={sf ? 'fc_rank_sf' : 'fc_rank_1qb'} />
                                     </th>
                                 )}
                                 {show('fc_pos_rank') && (
-                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20">
-                                        {fmtLabel} Pos
+                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort(sf ? 'fc_position_rank_sf' : 'fc_position_rank_1qb')}>
+                                        {fmtLabel} Pos <SortIcon column={sf ? 'fc_position_rank_sf' : 'fc_position_rank_1qb'} />
                                     </th>
                                 )}
                                 {show('combined_value') && (
-                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20 hidden md:table-cell">
-                                        Combined
+                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20 hidden md:table-cell cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_combined_value')}>
+                                        Combined <SortIcon column="fc_combined_value" />
                                     </th>
                                 )}
                                 {show('trend_30d') && (
-                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20">
-                                        30d
+                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_trend_30_day')}>
+                                        30d <SortIcon column="fc_trend_30_day" />
                                     </th>
                                 )}
                                 {show('trade_freq') && (
-                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20">
-                                        Traded
+                                    <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_trade_frequency')}>
+                                        Traded <SortIcon column="fc_trade_frequency" />
                                     </th>
                                 )}
                                 {show('internal_rank') && (
