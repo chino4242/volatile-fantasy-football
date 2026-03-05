@@ -146,11 +146,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const setLeagueType = (leagueId: string, type: 'dynasty' | 'keeper' | 'redraft') => {
+    const setLeagueType = async (leagueId: string, type: 'dynasty' | 'keeper' | 'redraft') => {
         try {
             setState(prev => {
                 const nextTypes = { ...prev.leagueTypes, [leagueId]: type };
                 localStorage.setItem(STORAGE_KEYS.leagueTypes, JSON.stringify(nextTypes));
+                
+                // Save to database
+                const platform = prev.fleaflickerLeagueIds.includes(leagueId) ? 'fleaflicker' : 'sleeper';
+                fetch('/api/league-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        leagueId,
+                        platform,
+                        leagueType: type,
+                        keeperCount: prev.keeperCounts[leagueId],
+                    }),
+                }).catch(err => console.error('Failed to save to DB:', err));
+                
                 return { ...prev, leagueTypes: nextTypes };
             });
         } catch (err) {
@@ -158,11 +172,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const setKeeperCount = (leagueId: string, count: number) => {
+    const setKeeperCount = async (leagueId: string, count: number) => {
         try {
             setState(prev => {
                 const nextCounts = { ...prev.keeperCounts, [leagueId]: count };
                 localStorage.setItem(STORAGE_KEYS.keeperCounts, JSON.stringify(nextCounts));
+                
+                // Save to database
+                const platform = prev.fleaflickerLeagueIds.includes(leagueId) ? 'fleaflicker' : 'sleeper';
+                fetch('/api/league-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        leagueId,
+                        platform,
+                        leagueType: prev.leagueTypes[leagueId] || 'dynasty',
+                        keeperCount: count,
+                    }),
+                }).catch(err => console.error('Failed to save to DB:', err));
+                
                 return { ...prev, keeperCounts: nextCounts };
             });
         } catch (err) {

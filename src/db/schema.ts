@@ -27,6 +27,8 @@ export const leagues = pgTable("leagues", {
     league_id: text("league_id").primaryKey(),
     platform: text("platform").notNull(), // 'sleeper' or 'fleaflicker'
     scoring_format: text("scoring_format").notNull().default('sf'), // '1qb' or 'sf'
+    league_type: text("league_type").default('dynasty'), // 'dynasty', 'keeper', or 'redraft'
+    keeper_count: integer("keeper_count"), // Number of keepers (for keeper leagues)
     name: text("name"),
     avatar: text("avatar"),
     total_rosters: integer("total_rosters"),

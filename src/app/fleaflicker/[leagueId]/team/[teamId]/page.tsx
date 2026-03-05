@@ -3,7 +3,7 @@ import { getFleaflickerLeague } from "@/lib/fleaflicker";
 import { getPickFantasyCalcId } from "@/lib/sleeper";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { db } from "@/db";
-import { players, playerValues } from "@/db/schema";
+import { players, playerValues, leagues } from "@/db/schema";
 import { inArray, eq } from "drizzle-orm";
 import { TeamRosterTable } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterTable";
 
@@ -19,7 +19,15 @@ export default async function FleaflickerTeamPage({
     const { leagueId, teamId } = await params;
     const { format: formatParam, keepers: keepersParam } = await searchParams;
     const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
-    const keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
+    
+    // Try to get keeper count from URL, then from database
+    let keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
+    if (!keeperCount) {
+        const leagueData = await db.select().from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
+        if (leagueData[0]?.keeper_count) {
+            keeperCount = leagueData[0].keeper_count;
+        }
+    }
 
     const fleaflickerData = await getFleaflickerLeague(leagueId);
 
