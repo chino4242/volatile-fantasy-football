@@ -308,14 +308,34 @@ export default function Home() {
                             {leagueTypes[league.league_id] === 'keeper' && (
                               <div className="flex gap-2 items-center">
                                 <span className="text-xs text-zinc-500 font-medium">Keepers:</span>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="20"
-                                  value={keeperCounts[league.league_id] || 3}
-                                  onChange={(e) => setKeeperCount(league.league_id, parseInt(e.target.value) || 3)}
-                                  className="w-16 px-2 py-1 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
-                                />
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => {
+                                      const current = keeperCounts[league.league_id] || 3;
+                                      if (current > 1) setKeeperCount(league.league_id, current - 1);
+                                    }}
+                                    className="w-6 h-6 flex items-center justify-center text-xs font-bold border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                                  >
+                                    −
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="20"
+                                    value={keeperCounts[league.league_id] || 3}
+                                    onChange={(e) => setKeeperCount(league.league_id, parseInt(e.target.value) || 3)}
+                                    className="w-12 px-2 py-1 text-xs text-center border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      const current = keeperCounts[league.league_id] || 3;
+                                      if (current < 20) setKeeperCount(league.league_id, current + 1);
+                                    }}
+                                    className="w-6 h-6 flex items-center justify-center text-xs font-bold border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                                  >
+                                    +
+                                  </button>
+                                </div>
                               </div>
                             )}
 
