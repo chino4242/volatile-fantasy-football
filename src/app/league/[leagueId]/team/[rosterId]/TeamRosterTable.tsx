@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Settings2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { PlayerStatsModal } from '@/components/PlayerStatsModal';
 
@@ -80,6 +80,7 @@ interface TeamRosterTableProps {
     currentRosterId: number;
     customRankingsMap: Map<string, any[]>;
     rankingSources: Array<{ id: string; name: string; display_name: string; description: string | null }>;
+    keeperCount?: number; // Number of keepers for keeper leagues
 }
 
 // ── Signal filter ──────────────────────────────────────────────────────────────
@@ -261,6 +262,7 @@ export function TeamRosterTable({
     currentRosterId,
     customRankingsMap,
     rankingSources,
+    keeperCount,
 }: TeamRosterTableProps) {
     // Build dynamic columns including custom rankings
     const COLUMNS = [
@@ -515,17 +517,23 @@ export function TeamRosterTable({
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                            {filteredPlayers.map(player => {
+                            {filteredPlayers.map((player, index) => {
                                 const fcPosRank = sf ? player.fc_position_rank_sf : player.fc_position_rank_1qb;
                                 const fcOverall = sf ? player.rank_sf_overall : player.rank_1qb_overall;
                                 const fcPosInternal = sf ? player.rank_sf_pos : player.rank_1qb_pos;
                                 const fcTier = sf ? player.rank_sf_tier : player.rank_1qb_tier;
                                 const gap = getValueGap(player, scoringFormat);
                                 const gapLabel = getValueGapLabel(gap);
+                                
+                                // Show keeper line after the Nth player (excluding picks)
+                                const playersOnly = filteredPlayers.filter(p => p.position !== 'PICK');
+                                const isKeeperLine = keeperCount && keeperCount > 0 && 
+                                                     player.position !== 'PICK' && 
+                                                     playersOnly.indexOf(player) === keeperCount - 1;
 
                                 return (
+                                    <React.Fragment key={player.sleeper_id}>
                                     <tr
-                                        key={player.sleeper_id}
                                         className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer ${getPositionBgClass(player.position)}`}
                                         onClick={() => handlePlayerClick(player)}
                                     >
@@ -658,6 +666,20 @@ export function TeamRosterTable({
                                             );
                                         })}
                                     </tr>
+                                    {isKeeperLine && (
+                                        <tr>
+                                            <td colSpan={100} className="px-0 py-0">
+                                                <div className="relative h-2 bg-gradient-to-r from-green-500 via-yellow-500 to-red-500">
+                                                    <div className="absolute inset-0 flex items-center justify-center">
+                                                        <span className="bg-white dark:bg-zinc-900 px-3 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 rounded-full shadow-sm border border-zinc-200 dark:border-zinc-700">
+                                                            KEEPER LINE ({keeperCount} keepers)
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                    </React.Fragment>
                                 );
                             })}
                         </tbody>

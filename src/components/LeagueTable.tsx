@@ -23,12 +23,13 @@ interface LeagueTableProps {
     platform: 'sleeper' | 'fleaflicker';
     leagueId: string;
     format?: '1qb' | 'sf';
+    keeperCount?: number;
 }
 
 type SortColumn = 'totalValue' | 'qbValue' | 'rbValue' | 'wrValue' | 'teValue' | 'pickValue';
 type SortDirection = 'asc' | 'desc';
 
-export function LeagueTable({ teams, platform, leagueId, format }: LeagueTableProps) {
+export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: LeagueTableProps) {
     const [sortColumn, setSortColumn] = useState<SortColumn>('totalValue');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
@@ -60,9 +61,12 @@ export function LeagueTable({ teams, platform, leagueId, format }: LeagueTablePr
     };
 
     const getTeamLink = (teamId: string | number) => {
-        const formatParam = format ? `?format=${format}` : '';
-        if (platform === 'sleeper') return `/league/${leagueId}/team/${teamId}${formatParam}`;
-        return `/fleaflicker/${leagueId}/team/${teamId}${formatParam}`;
+        const params = new URLSearchParams();
+        if (format) params.set('format', format);
+        if (keeperCount) params.set('keepers', keeperCount.toString());
+        const queryString = params.toString() ? `?${params.toString()}` : '';
+        if (platform === 'sleeper') return `/league/${leagueId}/team/${teamId}${queryString}`;
+        return `/fleaflicker/${leagueId}/team/${teamId}${queryString}`;
     };
 
     return (

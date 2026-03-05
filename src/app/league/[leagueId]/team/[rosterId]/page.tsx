@@ -13,10 +13,11 @@ interface PageProps {
     params: Promise<{ leagueId: string; rosterId: string }>;
 }
 
-export default async function TeamPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string }> }) {
+export default async function TeamPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string; keepers?: string }> }) {
     const { leagueId, rosterId } = await params;
-    const { format: formatParam } = await searchParams;
+    const { format: formatParam, keepers: keepersParam } = await searchParams;
     const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
+    const keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
 
     // 1. Fetch league data (we need it to find the owner and players)
     const { users, rosters, tradedPicks } = await getLeagueData(leagueId);
@@ -217,6 +218,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                     currentRosterId={Number(rosterId)}
                     customRankingsMap={rankingsMap}
                     rankingSources={activeSources}
+                    keeperCount={keeperCount}
                 />
             </div>
         </div>

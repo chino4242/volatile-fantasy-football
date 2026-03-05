@@ -13,10 +13,11 @@ interface PageProps {
     params: Promise<{ leagueId: string }>;
 }
 
-export default async function LeagueSummaryPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string }> }) {
+export default async function LeagueSummaryPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string; keepers?: string }> }) {
     const { leagueId } = await params;
-    const { format: formatParam } = await searchParams;
+    const { format: formatParam, keepers: keepersParam } = await searchParams;
     const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
+    const keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
 
     try {
         // 1. Fetch live Sleeper data
@@ -111,7 +112,7 @@ export default async function LeagueSummaryPage({ params, searchParams }: PagePr
                             </Link>
                         </div>
                     </div>
-                    <LeagueTable teams={teamStats.map(t => ({ id: t.rosterId, ...t }))} platform="sleeper" leagueId={leagueId} format={format} />
+                    <LeagueTable teams={teamStats.map(t => ({ id: t.rosterId, ...t }))} platform="sleeper" leagueId={leagueId} format={format} keeperCount={keeperCount} />
                 </div>
             </div>
         );

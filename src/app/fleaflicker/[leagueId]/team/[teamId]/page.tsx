@@ -14,11 +14,12 @@ export default async function FleaflickerTeamPage({
     searchParams,
 }: {
     params: Promise<{ leagueId: string; teamId: string }>;
-    searchParams: Promise<{ format?: string }>;
+    searchParams: Promise<{ format?: string; keepers?: string }>;
 }) {
     const { leagueId, teamId } = await params;
-    const { format: formatParam } = await searchParams;
+    const { format: formatParam, keepers: keepersParam } = await searchParams;
     const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
+    const keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
 
     const fleaflickerData = await getFleaflickerLeague(leagueId);
 
@@ -242,6 +243,7 @@ export default async function FleaflickerTeamPage({
                     currentRosterId={parseInt(teamId)}
                     customRankingsMap={rankingsMap}
                     rankingSources={activeSources}
+                    keeperCount={keeperCount}
                 />
             </div>
         </div>

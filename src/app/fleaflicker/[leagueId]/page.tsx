@@ -28,11 +28,12 @@ export default async function FleaflickerLeaguePage({
     searchParams,
 }: {
     params: Promise<{ leagueId: string }>;
-    searchParams: Promise<{ format?: string }>;
+    searchParams: Promise<{ format?: string; keepers?: string }>;
 }) {
     const { leagueId } = await params;
-    const { format: formatParam } = await searchParams;
+    const { format: formatParam, keepers: keepersParam } = await searchParams;
     const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
+    const keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
 
     try {
         const fleaflickerData = await getFleaflickerLeague(leagueId);
@@ -158,7 +159,7 @@ export default async function FleaflickerLeaguePage({
                         </div>
                     </div>
 
-                    <LeagueTable teams={teams} platform="fleaflicker" leagueId={leagueId} format={format} />
+                    <LeagueTable teams={teams} platform="fleaflicker" leagueId={leagueId} format={format} keeperCount={keeperCount} />
                 </div>
             </div>
         );

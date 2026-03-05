@@ -22,8 +22,10 @@ export default function Home() {
   const {
     sleeperUsername, sleeperUserId,
     fleaflickerUsername, fleaflickerLeagueIds, fleaflickerLeagueFormats, sleeperLeagueFormats,
+    leagueTypes, keeperCounts,
     loginSleeper, loginFleaflicker,
     addFleaflickerLeague, removeFleaflickerLeague, setLeagueFormat,
+    setLeagueType, setKeeperCount,
     logout, isLoading,
   } = useAuth();
 
@@ -264,45 +266,85 @@ export default function Home() {
                   <p className="text-sm text-zinc-500">No active 2025 Sleeper leagues found.</p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {sleeperLeagues.map((league) => (
-                      <div key={league.league_id} className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex flex-col gap-3">
-                        <Link href={`/league/${league.league_id}?format=${sleeperLeagueFormats[league.league_id] || '1qb'}`}
-                          className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all flex items-center gap-3 group -m-5 p-5 rounded-2xl">
-                          {league.avatar ? (
-                            <img src={`https://sleepercdn.com/avatars/thumbs/${league.avatar}`} className="w-10 h-10 rounded-full bg-zinc-100 object-cover flex-shrink-0" alt="" />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-bold text-zinc-400 flex-shrink-0">{league.name[0]}</div>
-                          )}
-                          <div className="min-w-0">
-                            <h4 className="font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{league.name}</h4>
-                            <p className="text-xs text-zinc-500">Dynasty · {league.status === 'in_season' ? 'Active' : 'Off-season'}</p>
+                    {sleeperLeagues.map((league) => {
+                      const params = new URLSearchParams();
+                      params.set('format', sleeperLeagueFormats[league.league_id] || '1qb');
+                      if (leagueTypes[league.league_id] === 'keeper' && keeperCounts[league.league_id]) {
+                        params.set('keepers', keeperCounts[league.league_id].toString());
+                      }
+                      return (
+                        <div key={league.league_id} className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex flex-col gap-3">
+                          <Link href={`/league/${league.league_id}?${params.toString()}`}
+                            className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all flex items-center gap-3 group -m-5 p-5 rounded-2xl">
+                            {league.avatar ? (
+                              <img src={`https://sleepercdn.com/avatars/thumbs/${league.avatar}`} className="w-10 h-10 rounded-full bg-zinc-100 object-cover flex-shrink-0" alt="" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-bold text-zinc-400 flex-shrink-0">{league.name[0]}</div>
+                            )}
+                            <div className="min-w-0">
+                              <h4 className="font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{league.name}</h4>
+                              <p className="text-xs text-zinc-500">Dynasty · {league.status === 'in_season' ? 'Active' : 'Off-season'}</p>
+                            </div>
+                          </Link>
+                          <div className="flex flex-col gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                            {/* League Type */}
+                            <div className="flex gap-2 items-center">
+                              <span className="text-xs text-zinc-500 font-medium">Type:</span>
+                              {['dynasty', 'keeper', 'redraft'].map(type => (
+                                <button
+                                  key={type}
+                                  onClick={() => setLeagueType(league.league_id, type as any)}
+                                  className={`px-2 py-1 text-xs font-medium rounded transition-colors ${(leagueTypes[league.league_id] || 'dynasty') === type
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                                    }`}
+                                >
+                                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* Keeper Count (only show if keeper type) */}
+                            {leagueTypes[league.league_id] === 'keeper' && (
+                              <div className="flex gap-2 items-center">
+                                <span className="text-xs text-zinc-500 font-medium">Keepers:</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="20"
+                                  value={keeperCounts[league.league_id] || 3}
+                                  onChange={(e) => setKeeperCount(league.league_id, parseInt(e.target.value) || 3)}
+                                  className="w-16 px-2 py-1 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                                />
+                              </div>
+                            )}
+
+                            {/* Format */}
+                            <div className="flex gap-2 items-center">
+                              <span className="text-xs text-zinc-500 font-medium">Format:</span>
+                              <button
+                                onClick={() => setLeagueFormat(league.league_id, 'sleeper', '1qb')}
+                                className={`px-2 py-1 text-xs font-medium rounded transition-colors ${(sleeperLeagueFormats[league.league_id] || '1qb') === '1qb'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                                  }`}
+                              >
+                                1QB
+                              </button>
+                              <button
+                                onClick={() => setLeagueFormat(league.league_id, 'sleeper', 'sf')}
+                                className={`px-2 py-1 text-xs font-medium rounded transition-colors ${sleeperLeagueFormats[league.league_id] === 'sf'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                                  }`}
+                              >
+                                SF
+                              </button>
+                            </div>
                           </div>
-                        </Link>
-                        <div className="flex gap-2 items-center pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                          <span className="text-xs text-zinc-500 font-medium">Format:</span>
-                          <button
-                            onClick={() => setLeagueFormat(league.league_id, 'sleeper', '1qb')}
-                            className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                              (sleeperLeagueFormats[league.league_id] || '1qb') === '1qb'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                            }`}
-                          >
-                            1QB
-                          </button>
-                          <button
-                            onClick={() => setLeagueFormat(league.league_id, 'sleeper', 'sf')}
-                            className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                              sleeperLeagueFormats[league.league_id] === 'sf'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                            }`}
-                          >
-                            SF
-                          </button>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </section>
@@ -316,52 +358,92 @@ export default function Home() {
                 <div className="py-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-zinc-400" /></div>
               ) : ffLeagues.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                  {ffLeagues.map((league) => (
-                    <div key={league.id} className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex flex-col gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center font-bold text-blue-600 dark:text-blue-400 flex-shrink-0 text-sm">
-                          FF
+                  {ffLeagues.map((league) => {
+                    const params = new URLSearchParams();
+                    params.set('format', fleaflickerLeagueFormats[league.id] || '1qb');
+                    if (leagueTypes[league.id] === 'keeper' && keeperCounts[league.id]) {
+                      params.set('keepers', keeperCounts[league.id].toString());
+                    }
+                    return (
+                      <div key={league.id} className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex flex-col gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center font-bold text-blue-600 dark:text-blue-400 flex-shrink-0 text-sm">
+                            FF
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <Link href={`/fleaflicker/${league.id}?${params.toString()}`}
+                              className="font-semibold text-zinc-900 dark:text-zinc-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors truncate block">
+                              {league.name}
+                            </Link>
+                            <p className="text-xs text-zinc-500">Fleaflicker · #{league.id}</p>
+                          </div>
+                          <button
+                            onClick={() => removeFleaflickerLeague(league.id)}
+                            className="text-zinc-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 flex-shrink-0"
+                            title="Remove league"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <Link href={`/fleaflicker/${league.id}?format=${fleaflickerLeagueFormats[league.id] || '1qb'}`}
-                            className="font-semibold text-zinc-900 dark:text-zinc-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors truncate block">
-                            {league.name}
-                          </Link>
-                          <p className="text-xs text-zinc-500">Fleaflicker · #{league.id}</p>
+                        <div className="flex flex-col gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                          {/* League Type */}
+                          <div className="flex gap-2 items-center">
+                            <span className="text-xs text-zinc-500 font-medium">Type:</span>
+                            {['dynasty', 'keeper', 'redraft'].map(type => (
+                              <button
+                                key={type}
+                                onClick={() => setLeagueType(league.id, type as any)}
+                                className={`px-2 py-1 text-xs font-medium rounded transition-colors ${(leagueTypes[league.id] || 'dynasty') === type
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                                  }`}
+                              >
+                                {type.charAt(0).toUpperCase() + type.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Keeper Count (only show if keeper type) */}
+                          {leagueTypes[league.id] === 'keeper' && (
+                            <div className="flex gap-2 items-center">
+                              <span className="text-xs text-zinc-500 font-medium">Keepers:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="20"
+                                value={keeperCounts[league.id] || 3}
+                                onChange={(e) => setKeeperCount(league.id, parseInt(e.target.value) || 3)}
+                                className="w-16 px-2 py-1 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                              />
+                            </div>
+                          )}
+
+                          {/* Format */}
+                          <div className="flex gap-2 items-center">
+                            <span className="text-xs text-zinc-500 font-medium">Format:</span>
+                            <button
+                              onClick={() => setLeagueFormat(league.id, 'fleaflicker', '1qb')}
+                              className={`px-2 py-1 text-xs font-medium rounded transition-colors ${(fleaflickerLeagueFormats[league.id] || '1qb') === '1qb'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                                }`}
+                            >
+                              1QB
+                            </button>
+                            <button
+                              onClick={() => setLeagueFormat(league.id, 'fleaflicker', 'sf')}
+                              className={`px-2 py-1 text-xs font-medium rounded transition-colors ${fleaflickerLeagueFormats[league.id] === 'sf'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                                }`}
+                            >
+                              SF
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => removeFleaflickerLeague(league.id)}
-                          className="text-zinc-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 flex-shrink-0"
-                          title="Remove league"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
                       </div>
-                      <div className="flex gap-2 items-center pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                        <span className="text-xs text-zinc-500 font-medium">Format:</span>
-                        <button
-                          onClick={() => setLeagueFormat(league.id, 'fleaflicker', '1qb')}
-                          className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                            (fleaflickerLeagueFormats[league.id] || '1qb') === '1qb'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                          }`}
-                        >
-                          1QB
-                        </button>
-                        <button
-                          onClick={() => setLeagueFormat(league.id, 'fleaflicker', 'sf')}
-                          className={`px-2 py-1 text-xs font-medium rounded transition-colors ${
-                            fleaflickerLeagueFormats[league.id] === 'sf'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                          }`}
-                        >
-                          SF
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : null}
 
@@ -392,22 +474,20 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => setAddLeagueFormat('1qb')}
-                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                      addLeagueFormat === '1qb'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                    }`}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${addLeagueFormat === '1qb'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                      }`}
                   >
                     1QB
                   </button>
                   <button
                     type="button"
                     onClick={() => setAddLeagueFormat('sf')}
-                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                      addLeagueFormat === 'sf'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                    }`}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${addLeagueFormat === 'sf'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                      }`}
                   >
                     Superflex
                   </button>
