@@ -216,3 +216,38 @@ export const receiverOpportunity = pgView("v_receiver_opportunity", {
     air_yard_share: numeric("air_yard_share"),
     wopr: numeric("wopr"),
 }).existing();
+
+// Prospect Data Table (Late Round Guide)
+export const prospectData = pgTable("prospect_data", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
+    full_name: text("full_name").notNull(),
+    position: text("position").notNull(), // WR, RB, TE
+    college: text("college"),
+    draft_year: integer("draft_year").notNull(), // e.g., 2025
+    
+    // ZAP Model Data
+    zap_score: decimal("zap_score", { precision: 5, scale: 2 }),
+    zap_category: text("zap_category"), // Elite Producer, Weekly Starter, etc.
+    breakout_score: decimal("breakout_score", { precision: 5, scale: 2 }),
+    draft_capital_delta: text("draft_capital_delta"), // Low Risk, Neutral, High Risk
+    
+    // Physical Attributes
+    height: text("height"),
+    weight: integer("weight"),
+    
+    // Comparables & Analysis
+    statistical_comparables: text("statistical_comparables"),
+    analysis_text: text("analysis_text"),
+    
+    // Year 2 Data (for returning players)
+    is_year_2: boolean("is_year_2").default(false),
+    
+    created_at: timestamp("created_at").defaultNow(),
+    updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => {
+    return {
+        nameIdx: index("idx_prospect_name").on(table.full_name),
+        yearIdx: index("idx_prospect_year").on(table.draft_year),
+    };
+});
