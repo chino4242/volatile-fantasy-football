@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, RotateCcw, Download, Play, Settings2 } from 'lucide-react';
+import { ArrowLeft, RotateCcw, Download, Play, Settings2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface Player {
     id: string;
@@ -96,6 +96,8 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
     const [userTeamId, setUserTeamId] = useState<number | null>(null);
     const [draftStarted, setDraftStarted] = useState(false);
     const [positionFilter, setPositionFilter] = useState<string>('ALL');
+    const [sortColumn, setSortColumn] = useState<string>('fc_value');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
     const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('vff_mock_draft_columns');
@@ -227,6 +229,22 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
     };
 
     const show = (column: string) => visibleColumns.has(column);
+
+    const handleSort = (column: string) => {
+        if (sortColumn === column) {
+            setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
+        } else {
+            setSortColumn(column);
+            setSortDirection('desc');
+        }
+    };
+
+    const SortIcon = ({ column }: { column: string }) => {
+        if (sortColumn !== column) return <ArrowUpDown className="ml-1 h-3 w-3 inline-block opacity-40 group-hover:opacity-100" />;
+        return sortDirection === 'desc'
+            ? <ArrowDown className="ml-1 h-3 w-3 inline-block text-indigo-500" />
+            : <ArrowUp className="ml-1 h-3 w-3 inline-block text-indigo-500" />;
+    };
 
     const exportToCSV = () => {
         const headers = ['Round', 'Pick', 'Team', 'Player', 'Position', 'Value'];
@@ -454,25 +472,61 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                             <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                                 <thead className="bg-zinc-50 dark:bg-zinc-950/50 sticky top-0">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Player</th>
-                                        {show('position') && <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Pos</th>}
-                                        {show('team') && <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Team</th>}
-                                        {show('market_value') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Value</th>}
-                                        {show('fc_rank') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20">FC Rank</th>}
-                                        {show('fc_pos_rank') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20">FC Pos</th>}
-                                        {show('combined_value') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20">Combined</th>}
-                                        {show('trend_30d') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20">30d</th>}
-                                        {show('trade_freq') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20">Traded</th>}
-                                        {show('vff_rank') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20">VFF Rank</th>}
-                                        {show('vff_pos') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20">VFF Pos</th>}
-                                        {show('tier') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20">Tier</th>}
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('full_name')}>
+                                            Player <SortIcon column="full_name" />
+                                        </th>
+                                        {show('position') && <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('position')}>
+                                            Pos <SortIcon column="position" />
+                                        </th>}
+                                        {show('team') && <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('team')}>
+                                            Team <SortIcon column="team" />
+                                        </th>}
+                                        {show('market_value') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('fc_value')}>
+                                            Value <SortIcon column="fc_value" />
+                                        </th>}
+                                        {show('fc_rank') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'fc_rank_sf' : 'fc_rank_1qb')}>
+                                            FC Rank <SortIcon column={format === 'sf' ? 'fc_rank_sf' : 'fc_rank_1qb'} />
+                                        </th>}
+                                        {show('fc_pos_rank') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'fc_position_rank_sf' : 'fc_position_rank_1qb')}>
+                                            FC Pos <SortIcon column={format === 'sf' ? 'fc_position_rank_sf' : 'fc_position_rank_1qb'} />
+                                        </th>}
+                                        {show('combined_value') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_combined_value')}>
+                                            Combined <SortIcon column="fc_combined_value" />
+                                        </th>}
+                                        {show('trend_30d') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_trend_30_day')}>
+                                            30d <SortIcon column="fc_trend_30_day" />
+                                        </th>}
+                                        {show('trade_freq') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_trade_frequency')}>
+                                            Traded <SortIcon column="fc_trade_frequency" />
+                                        </th>}
+                                        {show('vff_rank') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_overall' : 'rank_1qb_overall')}>
+                                            VFF Rank <SortIcon column={format === 'sf' ? 'rank_sf_overall' : 'rank_1qb_overall'} />
+                                        </th>}
+                                        {show('vff_pos') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_pos' : 'rank_1qb_pos')}>
+                                            VFF Pos <SortIcon column={format === 'sf' ? 'rank_sf_pos' : 'rank_1qb_pos'} />
+                                        </th>}
+                                        {show('tier') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_tier' : 'rank_1qb_tier')}>
+                                            Tier <SortIcon column={format === 'sf' ? 'rank_sf_tier' : 'rank_1qb_tier'} />
+                                        </th>}
                                         <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                                     {availablePlayers
                                         .filter(p => positionFilter === 'ALL' || p.position === positionFilter)
-                                        .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0))
+                                        .sort((a, b) => {
+                                            let valA: any = a[sortColumn as keyof Player];
+                                            let valB: any = b[sortColumn as keyof Player];
+                                            
+                                            if (valA === null || valA === undefined) valA = sortDirection === 'desc' ? -Infinity : Infinity;
+                                            if (valB === null || valB === undefined) valB = sortDirection === 'desc' ? -Infinity : Infinity;
+                                            
+                                            if (typeof valA === 'string' && typeof valB === 'string') {
+                                                return sortDirection === 'desc' ? valB.localeCompare(valA) : valA.localeCompare(valB);
+                                            }
+                                            
+                                            return sortDirection === 'desc' ? (valB as number) - (valA as number) : (valA as number) - (valB as number);
+                                        })
                                         .slice(0, 50)
                                         .map(player => {
                                             const sf = format === 'sf';
