@@ -345,16 +345,16 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
 
                 {/* Current Pick */}
                 {draftStarted && !isDraftComplete && currentPick && (
-                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 mb-6">
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 mb-6">
                         <div className="text-center">
-                            <div className="text-sm text-zinc-500 dark:text-zinc-400 mb-2">
+                            <div className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mb-2">
                                 Round {currentPick.round}, Pick {currentPick.pick}
                             </div>
-                            <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
+                            <div className="text-lg sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
                                 {currentPick.teamName} is on the clock
                             </div>
                             {isUserPick && (
-                                <div className="text-lg text-indigo-600 dark:text-indigo-400 font-semibold">
+                                <div className="text-base sm:text-lg text-indigo-600 dark:text-indigo-400 font-semibold">
                                     Your pick! Select a player below.
                                 </div>
                             )}
@@ -372,19 +372,19 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
 
                 {/* Available Players (when user's pick) */}
                 {draftStarted && !isDraftComplete && isUserPick && (
-                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 mb-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 mb-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                            <h2 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100">
                                 Available Players
                             </h2>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0">
                                 {/* Position Filters */}
-                                <div className="flex gap-2">
+                                <div className="flex gap-1 sm:gap-2 flex-shrink-0">
                                     {['ALL', 'QB', 'RB', 'WR', 'TE'].map(pos => (
                                         <button
                                             key={pos}
                                             onClick={() => setPositionFilter(pos)}
-                                            className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                                            className={`px-2 sm:px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${
                                                 positionFilter === pos
                                                     ? 'bg-indigo-600 text-white'
                                                     : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
@@ -395,7 +395,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                                     ))}
                                 </div>
                                 {/* Column Picker */}
-                                <div className="relative">
+                                <div className="relative flex-shrink-0">
                                     <button
                                         onClick={() => setShowColumnPicker(!showColumnPicker)}
                                         className="p-2 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
@@ -468,47 +468,47 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                                 </div>
                             </div>
                         </div>
-                        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                        <div className="overflow-x-auto max-h-96 overflow-y-auto -mx-4 sm:mx-0">
                             <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                                 <thead className="bg-zinc-50 dark:bg-zinc-950/50 sticky top-0">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('full_name')}>
+                                        <th className="px-3 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('full_name')}>
                                             Player <SortIcon column="full_name" />
                                         </th>
-                                        {show('position') && <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('position')}>
+                                        {show('position') && <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('position')}>
                                             Pos <SortIcon column="position" />
                                         </th>}
-                                        {show('team') && <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('team')}>
+                                        {show('team') && <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('team')}>
                                             Team <SortIcon column="team" />
                                         </th>}
-                                        {show('market_value') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('fc_value')}>
+                                        {show('market_value') && <th className="px-2 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('fc_value')}>
                                             Value <SortIcon column="fc_value" />
                                         </th>}
-                                        {show('fc_rank') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'fc_rank_sf' : 'fc_rank_1qb')}>
+                                        {show('fc_rank') && <th className="hidden md:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'fc_rank_sf' : 'fc_rank_1qb')}>
                                             FC Rank <SortIcon column={format === 'sf' ? 'fc_rank_sf' : 'fc_rank_1qb'} />
                                         </th>}
-                                        {show('fc_pos_rank') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'fc_position_rank_sf' : 'fc_position_rank_1qb')}>
+                                        {show('fc_pos_rank') && <th className="hidden md:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'fc_position_rank_sf' : 'fc_position_rank_1qb')}>
                                             FC Pos <SortIcon column={format === 'sf' ? 'fc_position_rank_sf' : 'fc_position_rank_1qb'} />
                                         </th>}
-                                        {show('combined_value') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_combined_value')}>
+                                        {show('combined_value') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_combined_value')}>
                                             Combined <SortIcon column="fc_combined_value" />
                                         </th>}
-                                        {show('trend_30d') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_trend_30_day')}>
+                                        {show('trend_30d') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_trend_30_day')}>
                                             30d <SortIcon column="fc_trend_30_day" />
                                         </th>}
-                                        {show('trade_freq') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_trade_frequency')}>
+                                        {show('trade_freq') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_trade_frequency')}>
                                             Traded <SortIcon column="fc_trade_frequency" />
                                         </th>}
-                                        {show('vff_rank') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_overall' : 'rank_1qb_overall')}>
+                                        {show('vff_rank') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_overall' : 'rank_1qb_overall')}>
                                             VFF Rank <SortIcon column={format === 'sf' ? 'rank_sf_overall' : 'rank_1qb_overall'} />
                                         </th>}
-                                        {show('vff_pos') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_pos' : 'rank_1qb_pos')}>
+                                        {show('vff_pos') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_pos' : 'rank_1qb_pos')}>
                                             VFF Pos <SortIcon column={format === 'sf' ? 'rank_sf_pos' : 'rank_1qb_pos'} />
                                         </th>}
-                                        {show('tier') && <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_tier' : 'rank_1qb_tier')}>
+                                        {show('tier') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_tier' : 'rank_1qb_tier')}>
                                             Tier <SortIcon column={format === 'sf' ? 'rank_sf_tier' : 'rank_1qb_tier'} />
                                         </th>}
-                                        <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Action</th>
+                                        <th className="px-3 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-zinc-500 uppercase">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -532,41 +532,41 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                                             const sf = format === 'sf';
                                             return (
                                         <tr key={player.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
-                                            <td className="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
+                                            <td className="px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
                                                 {player.full_name}
                                             </td>
                                             {show('position') && (
-                                                <td className="px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">
+                                                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
                                                     {player.position}
                                                 </td>
                                             )}
                                             {show('team') && (
-                                                <td className="px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">
+                                                <td className="hidden sm:table-cell px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">
                                                     {player.team || '—'}
                                                 </td>
                                             )}
                                             {show('market_value') && (
-                                                <td className="px-4 py-3 text-sm text-right text-zinc-900 dark:text-zinc-100">
+                                                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-right text-zinc-900 dark:text-zinc-100">
                                                     {player.fc_value?.toFixed(0) || '—'}
                                                 </td>
                                             )}
                                             {show('fc_rank') && (
-                                                <td className="px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
+                                                <td className="hidden md:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
                                                     {(sf ? player.fc_rank_sf : player.fc_rank_1qb) || '—'}
                                                 </td>
                                             )}
                                             {show('fc_pos_rank') && (
-                                                <td className="px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
+                                                <td className="hidden md:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
                                                     {player.position}{(sf ? player.fc_position_rank_sf : player.fc_position_rank_1qb) || '—'}
                                                 </td>
                                             )}
                                             {show('combined_value') && (
-                                                <td className="px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
+                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
                                                     {player.fc_combined_value?.toFixed(0) || '—'}
                                                 </td>
                                             )}
                                             {show('trend_30d') && (
-                                                <td className="px-4 py-3 text-sm text-right bg-blue-50/50 dark:bg-blue-950/20">
+                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right bg-blue-50/50 dark:bg-blue-950/20">
                                                     {player.fc_trend_30_day ? (
                                                         <span className={player.fc_trend_30_day > 0 ? 'text-green-600 dark:text-green-400' : player.fc_trend_30_day < 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-500'}>
                                                             {player.fc_trend_30_day > 0 ? '+' : ''}{player.fc_trend_30_day}
@@ -575,29 +575,29 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                                                 </td>
                                             )}
                                             {show('trade_freq') && (
-                                                <td className="px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
+                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
                                                     {player.fc_trade_frequency ? Number(player.fc_trade_frequency).toFixed(2) : '—'}
                                                 </td>
                                             )}
                                             {show('vff_rank') && (
-                                                <td className="px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20">
+                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20">
                                                     {(sf ? player.rank_sf_overall : player.rank_1qb_overall) || '—'}
                                                 </td>
                                             )}
                                             {show('vff_pos') && (
-                                                <td className="px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20">
+                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20">
                                                     {player.position}{(sf ? player.rank_sf_pos : player.rank_1qb_pos) || '—'}
                                                 </td>
                                             )}
                                             {show('tier') && (
-                                                <td className="px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20">
+                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20">
                                                     {(sf ? player.rank_sf_tier : player.rank_1qb_tier) || '—'}
                                                 </td>
                                             )}
-                                            <td className="px-4 py-3 text-right">
+                                            <td className="px-3 sm:px-4 py-2 sm:py-3 text-right">
                                                 <button
                                                     onClick={() => makePick(player.id)}
-                                                    className="px-3 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700"
+                                                    className="px-2 sm:px-3 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700"
                                                 >
                                                     Draft
                                                 </button>
@@ -612,19 +612,19 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                 )}
 
                 {/* Draft Board + Roster Sidebar */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                     {/* Draft Board */}
-                    <div className="lg:col-span-2 bg-white dark:bg-zinc-900 rounded-xl shadow-lg overflow-hidden">
+                    <div className="lg:col-span-2 bg-white dark:bg-zinc-900 rounded-xl shadow-lg overflow-hidden order-2 lg:order-1">
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                                 <thead className="bg-zinc-50 dark:bg-zinc-950/50">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Round</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Pick</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Team</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Player</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Pos</th>
-                                        <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Value</th>
+                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase">Round</th>
+                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase">Pick</th>
+                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase hidden sm:table-cell">Team</th>
+                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase">Player</th>
+                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase">Pos</th>
+                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-zinc-500 uppercase hidden sm:table-cell">Value</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -639,22 +639,22 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                                                     : ''
                                             }`}
                                         >
-                                            <td className="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
+                                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
                                                 {pick.round}
                                             </td>
-                                            <td className="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
+                                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
                                                 {pick.pick}
                                             </td>
-                                            <td className="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
+                                            <td className="hidden sm:table-cell px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
                                                 {pick.teamName}
                                             </td>
-                                            <td className="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
+                                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
                                                 {pick.playerName || '—'}
                                             </td>
-                                            <td className="px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">
+                                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
                                                 {pick.playerPosition || '—'}
                                             </td>
-                                            <td className="px-4 py-3 text-sm text-right text-zinc-900 dark:text-zinc-100">
+                                            <td className="hidden sm:table-cell px-4 py-3 text-sm text-right text-zinc-900 dark:text-zinc-100">
                                                 {pick.playerValue ? pick.playerValue.toFixed(0) : '—'}
                                             </td>
                                         </tr>
@@ -666,7 +666,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
 
                     {/* Your Roster Sidebar */}
                     {userTeamId !== null && draftStarted && (
-                        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6">
+                        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 order-1 lg:order-2">
                             <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-4">
                                 Your Roster
                             </h3>
