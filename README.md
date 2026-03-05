@@ -5,7 +5,8 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 ## Features
 
 - **League Dashboard** — View all teams in a Sleeper or Fleaflicker league ranked by total dynasty value (players + draft picks)
-- **Team Rosters** — Drill into any team to see their full roster with per-player valuations and a configurable column picker
+- **Keeper League Support** — Designate leagues as Dynasty, Keeper, or Redraft. For keeper leagues, set the number of keepers and see a visual "keeper line" on team rosters showing which players would be kept. League dashboard shows "Value Dropped" column indicating total value of players that would need to be dropped per team
+- **Team Rosters** — Drill into any team to see their full roster with per-player valuations and a configurable column picker. For keeper leagues, displays "Value Dropped" stat showing the total value of players beyond the keeper limit
 - **Draft Capital** — All draft picks (next 3 years) are displayed with FantasyCalc values and integrated into team valuations
 - **Specific Pick Values** — Individual pick slots (e.g., 1.02 vs 1.09) are valued using real FantasyCalc pick data, not generic round averages
 - **Position Filters** — Interactive position filters on team pages to toggle between viewing players and draft picks
@@ -13,7 +14,8 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 - **Scoring Format per League** — Each league on the dashboard can be independently set to 1QB or Superflex (SF). The format is stored in localStorage and passed through all league, team, and free agent pages
 - **Market Value Gap Analysis** — BUY/SELL/HOLD indicators comparing FantasyCalc market rankings vs. proprietary analysis rankings for both 1QB and Superflex formats
 - **Trade Target Finder** — Click any draft pick to see trade targets from other teams within 5% value range, with value gap indicators and expandable results
-- **Free Agent View** — See available waiver wire players ranked by dynasty value for the selected scoring format (1QB or SF), with position and rookie filters
+- **Free Agent View** — See available waiver wire players ranked by dynasty value for the selected scoring format (1QB or SF), with position and rookie filters. Position value summary cards show total available value by position (QB, RB, WR, TE)
+- **Position Value Analytics** — All Players page and Free Agent pages display summary cards showing total value by position, making it easy to identify position scarcity and opportunity
 - **Rookie Filter** — On the Free Agent page, filter specifically by rookies (identified by `years_exp === 0` from FantasyCalc)
 - **Column Sorting** — All table columns are sortable on League and Free Agent pages
 - **Soft Login / Dashboard** — Enter your Sleeper username to get a personalized dashboard showing all your 2025 leagues. Supports Fleaflicker accounts too

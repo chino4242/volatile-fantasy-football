@@ -157,6 +157,17 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
     }, 0);
 
     const totalValue = enrichedPlayers.reduce((sum, p) => sum + (p!.fc_value || 0), 0) + pickValue;
+    
+    // Calculate value dropped for keeper leagues
+    let valueDropped = 0;
+    if (keeperCount && keeperCount > 0) {
+        const playersOnly = enrichedPlayers.filter(p => p!.position !== 'PICK');
+        if (playersOnly.length > keeperCount) {
+            const sortedPlayers = [...playersOnly].sort((a, b) => (b!.fc_value || 0) - (a!.fc_value || 0));
+            valueDropped = sortedPlayers.slice(keeperCount).reduce((sum, p) => sum + (p!.fc_value || 0), 0);
+        }
+    }
+    
     const positionValues: Record<string, number> = {};
     enrichedPlayers.forEach(p => {
         const pos = p!.position || 'UNK';
@@ -201,8 +212,15 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                         <div className="min-w-0">
                             <h1 className="text-xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-50 truncate">{owner?.display_name || 'Unknown Manager'}</h1>
                             <div className="text-xs sm:text-base text-zinc-500 mt-0.5 sm:mt-1">Roster ID: {rosterId}</div>
-                            <div className="mt-1 sm:mt-2 text-xl sm:text-2xl font-mono font-bold text-green-600 dark:text-green-400">
-                                {totalValue.toLocaleString()} <span className="text-xs sm:text-sm font-sans text-zinc-500 font-normal">pts</span>
+                            <div className="mt-1 sm:mt-2 flex items-center gap-4 flex-wrap">
+                                <div className="text-xl sm:text-2xl font-mono font-bold text-green-600 dark:text-green-400">
+                                    {totalValue.toLocaleString()} <span className="text-xs sm:text-sm font-sans text-zinc-500 font-normal">pts</span>
+                                </div>
+                                {keeperCount && keeperCount > 0 && (
+                                    <div className="text-sm sm:text-base font-mono text-red-600 dark:text-red-400">
+                                        <span className="text-xs text-zinc-500 font-sans">Value Dropped:</span> {valueDropped.toLocaleString()}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

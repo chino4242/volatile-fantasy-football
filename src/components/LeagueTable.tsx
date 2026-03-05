@@ -16,6 +16,7 @@ export interface LeagueTeamStat {
     teValue: number;
     pickValue: number;
     pickCount: number;
+    valueDropped?: number;
 }
 
 interface LeagueTableProps {
@@ -26,7 +27,7 @@ interface LeagueTableProps {
     keeperCount?: number;
 }
 
-type SortColumn = 'totalValue' | 'qbValue' | 'rbValue' | 'wrValue' | 'teValue' | 'pickValue';
+type SortColumn = 'totalValue' | 'qbValue' | 'rbValue' | 'wrValue' | 'teValue' | 'pickValue' | 'valueDropped';
 type SortDirection = 'asc' | 'desc';
 
 export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: LeagueTableProps) {
@@ -43,8 +44,8 @@ export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: 
     };
 
     const sortedTeams = [...teams].sort((a, b) => {
-        const valA = a[sortColumn];
-        const valB = b[sortColumn];
+        const valA = a[sortColumn] ?? 0;
+        const valB = b[sortColumn] ?? 0;
 
         if (sortDirection === 'desc') {
             return valB - valA;
@@ -96,6 +97,11 @@ export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: 
                                 <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider hidden md:table-cell cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('pickValue')}>
                                     Picks <SortIcon column="pickValue" />
                                 </th>
+                                {keeperCount && keeperCount > 0 && (
+                                    <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider whitespace-nowrap cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('valueDropped')}>
+                                        Value Dropped <SortIcon column="valueDropped" />
+                                    </th>
+                                )}
                                 <th scope="col" className="relative px-2 sm:px-3 py-3">
                                     <span className="sr-only">View</span>
                                 </th>
@@ -158,6 +164,11 @@ export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: 
                                     <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 hidden md:table-cell">
                                         {team.pickValue.toLocaleString()}
                                     </td>
+                                    {keeperCount && keeperCount > 0 && (
+                                        <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-mono text-red-600 dark:text-red-400">
+                                            {team.valueDropped?.toLocaleString() || '0'}
+                                        </td>
+                                    )}
                                     <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium">
                                         <ChevronRight className="h-5 w-5 text-zinc-400 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors" />
                                     </td>

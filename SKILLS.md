@@ -354,6 +354,155 @@ When a user adds a Fleaflicker league, they choose the format upfront via a 1QB/
 
 ---
 
+## Keeper League Support
+
+### Overview
+Users can designate leagues as **Dynasty**, **Keeper**, or **Redraft** and set the number of keepers for keeper leagues. A visual "keeper line" appears on team rosters showing which players would be kept. The league dashboard displays a "Value Dropped" column showing the total value of players each team would need to drop.
+
+### Implementation
+
+#### State Management (`src/hooks/useUser.tsx`)
+
+```typescript
+leagueTypes: Record<string, 'dynasty' | 'keeper' | 'redraft'>
+keeperCounts: Record<string, number>
+```
+
+Storage keys:
+- `vff_league_types`
+- `vff_keeper_counts`
+
+Functions:
+- `setLeagueType(leagueId, type)` — Updates league type
+- `setKeeperCount(leagueId, count)` — Updates keeper count
+
+#### Dashboard UI (`src/app/page.tsx`)
+
+Each league card shows:
+1. **League Type Selector** — Three buttons: Dynasty / Keeper / Redraft
+2. **Keeper Count Input** — Only visible when "Keeper" is selected
+3. **URL Generation** — Includes `?format=sf&keepers=3` in league links
+
+```typescript
+const params = new URLSearchParams();
+params.set('format', format);
+if (leagueTypes[league.id] === 'keeper' && keeperCounts[league.id]) {
+  params.set('keepers', keeperCounts[league.id].toString());
+}
+```
+
+#### Value Dropped Calculation
+
+For keeper leagues, the platform calculates which players would need to be dropped:
+
+```typescript
+// Collect players with values (excluding picks)
+const playersWithValues = roster.players.map(p => ({ value: p.fc_value || 0 }));
+
+// Sort by value descending
+const sortedPlayers = playersWithValues.sort((a, b) => b.value - a.value);
+
+// Sum values beyond keeper limit
+if (playersWithValues.length > keeperCount) {
+  valueDropped = sortedPlayers.slice(keeperCount).reduce((sum, p) => sum + p.value, 0);
+}
+```
+
+**League Table Display:**
+- "Value Dropped" column appears only when `keeperCount > 0`
+- Shows total value of players beyond keeper limit
+- Sortable column
+- Displayed in red to indicate lost value
+
+**Team Page Display:**
+- "Value Dropped" stat appears next to total value
+- Only visible when keeper count is set
+- Format: "Value Dropped: 1,234"
+
+#### Team Roster Visualization (`TeamRosterTable.tsx`)
+
+The keeper line appears after the Nth player (excluding picks):
+
+```typescript
+const playersOnly = filteredPlayers.filter(p => p.position !== 'PICK');
+const isKeeperLine = keeperCount && keeperCount > 0 && 
+                     player.position !== 'PICK' && 
+                     playersOnly.indexOf(player) === keeperCount - 1;
+```
+
+Visual design:
+- Gradient line: green → yellow → red
+- Label: "KEEPER LINE (N keepers)"
+- Full-width row spanning all columns
+
+#### URL Parameter Flow
+
+1. Dashboard sets `?keepers=3` in league link
+2. League page reads param, passes to `LeagueTable`
+3. `LeagueTable` includes param in team links
+4. Team page reads param, passes to `TeamRosterTable`
+5. `TeamRosterTable` renders keeper line at correct position
+
+### Supported Platforms
+
+- ✅ Sleeper leagues
+- ✅ Fleaflicker leagues
+
+Both platforms support the same keeper league functionality with identical UI and behavior.
+
+---
+
+## Position Value Analytics
+
+### Overview
+The platform displays position-specific value summaries on the All Players page and Free Agent pages, making it easy to identify position scarcity and available value.
+
+### Implementation
+
+#### Calculation
+
+```typescript
+const positionTotals = players.reduce((acc, player) => {
+    const pos = player.position || 'UNK';
+    if (!acc[pos]) acc[pos] = 0;
+    acc[pos] += player.fc_value || 0;
+    return acc;
+}, {} as Record<string, number>);
+```
+
+#### Display Locations
+
+1. **All Players Page** (`/players`)
+   - Shows total value of all players by position
+   - Helps identify overall position depth in dynasty format
+
+2. **Free Agent Pages** (Sleeper & Fleaflicker)
+   - Shows available value by position for the specific league
+   - Helps identify waiver wire opportunities
+   - Particularly useful for identifying QB surplus in smaller leagues
+
+#### UI Design
+
+Four summary cards displayed in a 2x2 grid (4 columns on desktop):
+- **QB** — Total/Available QB value
+- **RB** — Total/Available RB value
+- **WR** — Total/Available WR value
+- **TE** — Total/Available TE value
+
+Each card shows:
+- Position label (uppercase)
+- Large formatted value (e.g., "123,456")
+- Subtitle: "Total Value" or "Available Value"
+
+### Use Cases
+
+- **10-team leagues:** Quickly see QB surplus on waivers
+- **Deep leagues:** Identify position scarcity
+- **Trade analysis:** Compare available value vs. rostered value
+- **Waiver strategy:** Target positions with high available value
+
+---
+
 ## Future Enhancements
 
 Potential improvements to the platform:

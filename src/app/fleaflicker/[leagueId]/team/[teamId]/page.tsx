@@ -142,6 +142,17 @@ export default async function FleaflickerTeamPage({
     const allAssets = [...playersWithData, ...enrichedPicks].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
 
     const totalValue = allAssets.reduce((sum, p) => sum + (p.fc_value || 0), 0);
+    
+    // Calculate value dropped for keeper leagues
+    let valueDropped = 0;
+    if (keeperCount && keeperCount > 0) {
+        const playersOnly = playersWithData;
+        if (playersOnly.length > keeperCount) {
+            const sortedPlayers = [...playersOnly].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+            valueDropped = sortedPlayers.slice(keeperCount).reduce((sum, p) => sum + (p.fc_value || 0), 0);
+        }
+    }
+    
     const positionValues: Record<string, number> = {};
     playersWithData.forEach(p => {
         const pos = p.position || 'UNK';
@@ -228,9 +239,16 @@ export default async function FleaflickerTeamPage({
                     <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 md:text-3xl">
                         {roster.name}
                     </h1>
-                    <p className="mt-2 text-lg font-semibold text-zinc-700 dark:text-zinc-300">
-                        Total Value: {totalValue.toLocaleString()}
-                    </p>
+                    <div className="mt-2 flex items-center gap-4 flex-wrap">
+                        <p className="text-lg font-semibold text-zinc-700 dark:text-zinc-300">
+                            Total Value: {totalValue.toLocaleString()}
+                        </p>
+                        {keeperCount && keeperCount > 0 && (
+                            <p className="text-sm font-mono text-red-600 dark:text-red-400">
+                                <span className="text-xs text-zinc-500 font-sans">Value Dropped:</span> {valueDropped.toLocaleString()}
+                            </p>
+                        )}
+                    </div>
                 </div>
 
                 <TeamRosterTable

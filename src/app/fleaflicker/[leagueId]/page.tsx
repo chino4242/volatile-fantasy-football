@@ -99,12 +99,16 @@ export default async function FleaflickerLeaguePage({
             let teValue = 0;
             let totalValue = 0;
 
+            // Collect players with values for keeper calculation
+            const playersWithValues: { value: number }[] = [];
+
             // Calculate player values
             roster.players.forEach(player => {
                 const dbPlayer = nameToPlayerMap.get(normalizeName(player.full_name));
                 if (dbPlayer) {
                     const value = valueMap.get(dbPlayer.sleeper_id) || 0;
                     totalValue += value;
+                    playersWithValues.push({ value });
 
                     if (dbPlayer.position === 'QB') qbValue += value;
                     else if (dbPlayer.position === 'RB') rbValue += value;
@@ -122,6 +126,13 @@ export default async function FleaflickerLeaguePage({
                 totalValue += value;
             });
 
+            // Calculate value dropped for keeper leagues
+            let valueDropped = 0;
+            if (keeperCount && keeperCount > 0 && playersWithValues.length > keeperCount) {
+                const sortedPlayers = playersWithValues.sort((a, b) => b.value - a.value);
+                valueDropped = sortedPlayers.slice(keeperCount).reduce((sum, p) => sum + p.value, 0);
+            }
+
             return {
                 id: roster.id,
                 name: roster.name,
@@ -133,6 +144,7 @@ export default async function FleaflickerLeaguePage({
                 teValue,
                 pickValue,
                 pickCount: roster.draftPicks.length,
+                valueDropped,
             };
         });
 

@@ -73,13 +73,18 @@ export default async function LeagueSummaryPage({ params, searchParams }: PagePr
                 teValue: 0,
                 pickValue: pickData.totalValue,
                 pickCount: pickData.count,
+                valueDropped: 0,
             };
+
+            // Collect players with values for keeper calculation
+            const playersWithValues: { value: number }[] = [];
 
             (roster.players || []).forEach((pid) => {
                 const p = playerMap.get(pid);
                 if (p) {
                     const val = p.fc_value || 0;
                     stats.totalValue += val;
+                    playersWithValues.push({ value: val });
                     if (p.position === 'QB') stats.qbValue += val;
                     else if (p.position === 'RB') stats.rbValue += val;
                     else if (p.position === 'WR') stats.wrValue += val;
@@ -88,6 +93,12 @@ export default async function LeagueSummaryPage({ params, searchParams }: PagePr
             });
 
             stats.totalValue += stats.pickValue;
+
+            // Calculate value dropped for keeper leagues
+            if (keeperCount && keeperCount > 0 && playersWithValues.length > keeperCount) {
+                const sortedPlayers = playersWithValues.sort((a, b) => b.value - a.value);
+                stats.valueDropped = sortedPlayers.slice(keeperCount).reduce((sum, p) => sum + p.value, 0);
+            }
 
             return stats;
         }).sort((a, b) => b.totalValue - a.totalValue);

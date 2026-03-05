@@ -36,6 +36,14 @@ export default async function PlayersPage({ searchParams }: PageProps) {
         .where(isNotNull(format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb))
         .orderBy(desc(format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb));
 
+    // Calculate position totals
+    const positionTotals = allPlayers.reduce((acc, player) => {
+        const pos = player.position || 'UNK';
+        if (!acc[pos]) acc[pos] = 0;
+        acc[pos] += player.fc_value || 0;
+        return acc;
+    }, {} as Record<string, number>);
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-8">
             <div className="max-w-7xl mx-auto">
@@ -76,6 +84,19 @@ export default async function PlayersPage({ searchParams }: PageProps) {
                             ← Back to Home
                         </Link>
                     </div>
+                </div>
+
+                {/* Position Value Summary */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                    {['QB', 'RB', 'WR', 'TE'].map(pos => (
+                        <div key={pos} className="bg-white dark:bg-zinc-900 rounded-lg shadow-sm ring-1 ring-zinc-900/5 p-4">
+                            <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{pos}</div>
+                            <div className="mt-1 text-2xl font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                                {(positionTotals[pos] || 0).toLocaleString()}
+                            </div>
+                            <div className="text-xs text-zinc-400 mt-1">Total Value</div>
+                        </div>
+                    ))}
                 </div>
 
                 <PlayersTable players={allPlayers as any[]} format={format} />
