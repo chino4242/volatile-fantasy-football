@@ -703,3 +703,234 @@ const AUTH_KEYS = {
 #### AppHeader Auth Awareness
 
 The `AppHeader` component reads `sleeperUsername` / `fleaflickerUsername` from `useAuth()`. If logged in, the hardcoded nav links (Sleeper/Fleaflicker) are hidden; the user's personalized dashboard on `/` serves as the navigation hub instead.
+
+---
+
+## Mock Draft Simulator
+
+### Overview
+Full snake draft simulation with CPU auto-pick logic, manual user picks, real-time roster tracking, and comprehensive player data display. Available at `/fleaflicker/[leagueId]/mock-draft`.
+
+### Features
+
+#### Draft Mechanics
+- **Snake Draft Logic:** Draft order from Fleaflicker API (handles traded picks correctly)
+- **CPU Auto-Simulation:** Weighted algorithm (85% value, 10% positional need, 5% random)
+- **User Team Selection:** Choose which team to control
+- **Manual Pick Interface:** Click player to draft when it's your turn
+- **Draft Board:** Visual grid showing all picks with team colors and highlighting
+
+#### Player Data Display
+- **9+ Sortable Columns:**
+  - FC Rank (FantasyCalc Overall Rank)
+  - Pos Rank (FantasyCalc Position Rank)
+  - Combined (Dynasty + Redraft combined value)
+  - 30d (30-day trend)
+  - Trade Freq (Trade frequency %)
+  - VFF Rank (Proprietary overall rank)
+  - VFF Pos (Proprietary position rank)
+  - Tier (Proprietary tier)
+  - Signal (BUY/SELL/HOLD indicator)
+
+#### Filters & Controls
+- **Position Filters:** ALL / QB / RB / WR / TE
+- **Column Picker:** Toggle which columns are visible
+- **Export to CSV:** Download complete draft results
+- **Reset Draft:** Start over with same settings
+
+#### Real-Time Updates
+- **Roster Sidebar:** Shows drafted players by team with position totals
+- **Current Pick Banner:** Highlights whose turn it is
+- **Available Players:** Updates instantly as players are drafted
+- **Position Counts:** Live tracking of QB/RB/WR/TE per team
+
+#### Mobile Optimization
+- **Responsive Layouts:** Stacks vertically on mobile
+- **Hidden Columns:** Less important columns hidden on smaller screens
+  - Team column hidden < sm
+  - FC columns hidden < md
+  - VFF columns hidden < lg
+- **Compact Padding:** Optimized for touch targets
+- **Horizontal Scroll:** Position filters scroll horizontally on mobile
+- **Roster First:** Roster sidebar appears first on mobile
+
+### Implementation
+
+#### Server Component (`page.tsx`)
+1. Fetches league data from Fleaflicker API
+2. Queries database for player values and rankings
+3. Generates draft order (handles traded picks)
+4. Passes data to `MockDraftClient`
+
+#### Client Component (`MockDraftClient.tsx`)
+Manages all draft state:
+```typescript
+const [draftPicks, setDraftPicks] = useState<DraftPick[]>([]);
+const [availablePlayers, setAvailablePlayers] = useState<Player[]>(players);
+const [currentPickIndex, setCurrentPickIndex] = useState(0);
+const [userTeamId, setUserTeamId] = useState<number | null>(null);
+```
+
+#### CPU Auto-Pick Algorithm
+```typescript
+const calculatePickScore = (player: Player, team: Team) => {
+  const valueScore = player.fc_value || 0;
+  const needScore = calculatePositionalNeed(player.position, team);
+  const randomFactor = Math.random() * 100;
+  
+  return (valueScore * 0.85) + (needScore * 0.10) + (randomFactor * 0.05);
+};
+```
+
+#### Draft Order
+Uses Fleaflicker's draft order API which returns correct slot numbers for each team, accounting for traded picks. No snake reversal needed - API provides the correct order.
+
+#### Trade Evaluator
+When it's the user's turn to pick, they can click "Evaluate Trades" to:
+- View their current pick value (based on FantasyCalc pick values)
+- Select additional assets to include (future picks, rostered players)
+- See trade targets from other teams within ±15% value range
+- Compare values with color-coded indicators:
+  - **Green (positive %)** = Target worth more than package (getting value)
+  - **Red (negative %)** = Target worth less than package (giving value)
+
+**Pick Value Formula:**
+- Round 1: 6,700 (1.01) down to 2,000 (1.12)
+- Round 2: 1,900 (2.01) down to 1,200 (2.12)
+- Round 3: 1,100 (3.01) down to 700 (3.12)
+- Round 4: 650 (4.01) down to 400 (4.12)
+- Round 5+: 350 down to 200
+
+Based on actual FantasyCalc pick values in the database.
+
+### Platform Support
+- ✅ Fleaflicker leagues (full support)
+- ⏳ Sleeper leagues (planned)
+
+---
+
+## Prospect Guide Integration
+
+### Overview
+Late Round Fantasy Football prospect data (ZAP scores, categories, breakout scores, draft capital delta, statistical comparables) is ingested from PDF guides and stored in the database for integration with the mock draft feature.
+
+### Database Schema
+
+**Table:** `prospect_data`
+
+```typescript
+export const prospectData = pgTable("prospect_data", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
+    full_name: text("full_name").notNull(),
+    position: text("position").notNull(), // WR, RB, TE
+    college: text("college"),
+    draft_year: integer("draft_year").notNull(), // e.g., 2025
+    
+    // ZAP Model Data
+    zap_score: decimal("zap_score", { precision: 5, scale: 2 }),
+    zap_category: text("zap_category"), // Elite Producer, Weekly Starter, etc.
+    breakout_score: decimal("breakout_score", { precision: 5, scale: 2 }),
+    draft_capital_delta: text("draft_capital_delta"), // Low Risk, Neutral, High Risk
+    
+    // Physical Attributes
+    height: text("height"),
+    weight: integer("weight"),
+    
+    // Comparables & Analysis
+    statistical_comparables: text("statistical_comparables"),
+    analysis_text: text("analysis_text"),
+    
+    // Year 2 Data (for returning players)
+    is_year_2: boolean("is_year_2").default(false),
+    
+    created_at: timestamp("created_at").defaultNow(),
+    updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => {
+    return {
+        nameIdx: index("idx_prospect_name").on(table.full_name),
+        yearIdx: index("idx_prospect_year").on(table.draft_year),
+    };
+});
+```
+
+### ZAP Categories
+
+From Late Round's proprietary model:
+- **Elite Producer** — Top-tier prospects (ZAP 90+)
+- **Weekly Starter** — High-quality starters (ZAP 80-89)
+- **Flex Play** — Solid depth pieces (ZAP 70-79)
+- **Waiver Wire Add** — Streaming options (ZAP 60-69)
+- **Benchwarmer** — Deep stashes (ZAP 50-59)
+- **Dart Throw** — High-risk fliers (ZAP <50)
+
+### Ingestion Process
+
+**Script:** `scripts/ingest-prospects.py`
+
+```bash
+python3 scripts/ingest-prospects.py <pdf_path> <draft_year>
+```
+
+Example:
+```bash
+python3 scripts/ingest-prospects.py ~/Documents/LRProspectGuide2025.pdf 2025
+```
+
+The script:
+1. Parses the PDF using `pypdf` library
+2. Extracts player profiles from specific page ranges:
+   - Pages 31-80: Wide Receiver prospects
+   - Pages 81-112: Running Back prospects
+   - Pages 120-143: Year 2 Wide Receivers
+   - Pages 144-158: Year 2 Running Backs
+3. Uses regex patterns to extract structured data:
+   - Player name and ZAP score from header
+   - Physical attributes (height/weight)
+   - College and ZAP category
+   - Draft capital delta (risk assessment)
+   - Statistical comparables
+   - Full analysis text
+4. Inserts/updates database records (handles duplicates via unique constraint)
+
+### Data Extraction Patterns
+
+**Player Header:**
+```
+LUTHER BURDEN • WR 96.3
+```
+Regex: `^([A-Z\'\-\s]+)\s*•\s*(WR|RB|TE)\s+([\d\.]+)`
+
+**Physical Attributes:**
+```
+Height: 6'0 Weight: 188
+```
+Regex: `Height:\s*([\d'\"]+)\s*Weight:\s*(\d+)`
+
+**College & Category:**
+```
+MISSOURI ELITE PRODUCER
+```
+Regex: `\n([A-Z\s]+)\s+(ELITE PRODUCER|WEEKLY STARTER|...)`
+
+### Current Data
+
+- **2025 Draft Class:** 75 prospects ingested
+  - Wide Receivers: ~46 players
+  - Running Backs: ~29 players
+  - Top prospects: Ashton Jeanty (99.2), Omarion Hampton (97.0), Luther Burden (96.5)
+
+### Future Integration
+
+Planned features for mock draft:
+1. Add prospect data columns to available players table
+2. Create filters for ZAP categories
+3. Display prospect analysis in player detail modals
+4. Highlight rookies with high ZAP scores
+5. Sort by ZAP score or breakout score
+
+See [`scripts/README-PROSPECTS.md`](scripts/README-PROSPECTS.md) for detailed ingestion instructions.
+
+---
+
+## Future Enhancements

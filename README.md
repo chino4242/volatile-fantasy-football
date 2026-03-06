@@ -18,6 +18,8 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 - **Position Value Analytics** — All Players page and Free Agent pages display summary cards showing total value by position, making it easy to identify position scarcity and opportunity
 - **Rookie Filter** — On the Free Agent page, filter specifically by rookies (identified by `years_exp === 0` from FantasyCalc)
 - **Column Sorting** — All table columns are sortable on League and Free Agent pages
+- **Mock Draft Simulator** — Full snake draft simulation with CPU auto-pick logic, manual user picks, real-time roster tracking, position filters, column picker (9+ columns), CSV export, and draft board visualization. Supports both Sleeper and Fleaflicker leagues with accurate draft order including traded picks
+- **Prospect Guide Integration** — Late Round Fantasy Football prospect data (ZAP scores, categories, breakout scores, draft capital delta, statistical comparables) ingested from PDF and ready for mock draft integration. Easy-to-use Python script for importing new prospect guides
 - **Soft Login / Dashboard** — Enter your Sleeper username to get a personalized dashboard showing all your 2025 leagues. Supports Fleaflicker accounts too
 - **Player Rankings** — Browse the top 50 dynasty players by FantasyCalc value
 - **Live Sleeper Integration** — Roster data is fetched in real-time from the [Sleeper API](https://docs.sleeper.com/)
@@ -96,6 +98,7 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 volatile-fantasy-football/
 ├── scripts/                    # Data ingestion & DB utility scripts
 │   ├── ingest-players.ts       # Fetches player + pick data from FantasyCalc API
+│   ├── ingest-prospects.py     # Ingests Late Round Prospect Guide PDF data
 │   ├── test-db.js              # Quick DB connection test
 │   └── verify-db.ts            # Verifies DB schema and data
 ├── src/
@@ -116,6 +119,9 @@ volatile-fantasy-football/
 │   │   └── fleaflicker/
 │   │       └── [leagueId]/
 │   │           ├── page.tsx          # Fleaflicker league dashboard
+│   │           ├── mock-draft/
+│   │           │   ├── page.tsx      # Mock draft page (server component)
+│   │           │   └── MockDraftClient.tsx  # Mock draft simulator (client)
 │   │           ├── free-agents/
 │   │           │   └── page.tsx      # Free agent view (Fleaflicker)
 │   │           └── team/
@@ -127,7 +133,7 @@ volatile-fantasy-football/
 │   │   └── LeagueTable.tsx     # League dashboard table (sortable)
 │   ├── db/
 │   │   ├── index.ts            # Database connection (Drizzle + postgres.js)
-│   │   └── schema.ts           # Drizzle schema (players, leagues, rosters, values)
+│   │   └── schema.ts           # Drizzle schema (players, leagues, rosters, values, prospects)
 │   ├── hooks/
 │   │   └── useUser.tsx         # AuthProvider & useAuth hook (localStorage-backed login)
 │   └── lib/
@@ -140,12 +146,13 @@ volatile-fantasy-football/
 
 ## Database Schema
 
-The app uses five tables managed by Drizzle ORM:
+The app uses six tables managed by Drizzle ORM:
 
 | Table             | Description                                            |
 | ----------------- | ------------------------------------------------------ |
 | `players`         | Master player list (name, position, team, age, `years_exp`) |
 | `player_values`   | Dynasty trade values from FantasyCalc and KTC          |
+| `prospect_data`   | Late Round prospect guide data (ZAP scores, categories, analysis) |
 | `leagues`         | League metadata (platform, scoring, roster settings)   |
 | `rosters`         | Team rosters within a league (W/L record, points)      |
 | `roster_players`  | Join table linking rosters to players                  |
@@ -175,6 +182,15 @@ Player valuations are fetched via the ingestion script and stored in PostgreSQL 
 
 **Draft Pick Values:** FantasyCalc provides values for draft picks (e.g., `FP_2026_1` for 2026 1st round) which are stored alongside player values and used for trade analysis.
 
+### Late Round Prospect Guide (Ingested)
+Prospect analysis data is ingested from Late Round Fantasy Football PDF guides and stored in PostgreSQL.
+
+- **Script:** [`scripts/ingest-prospects.py`](scripts/ingest-prospects.py)
+- **Run:** `python3 scripts/ingest-prospects.py <pdf_path> <draft_year>`
+- **Data:** ZAP scores, categories, breakout scores, draft capital delta, statistical comparables, analysis text
+
+See [`scripts/README-PROSPECTS.md`](scripts/README-PROSPECTS.md) for detailed ingestion instructions.
+
 ## Available Scripts
 
 | Command                             | Description                                      |
@@ -189,6 +205,7 @@ Player valuations are fetched via the ingestion script and stored in PostgreSQL 
 | `npx drizzle-kit push`             | Push schema changes to the database              |
 | `npx drizzle-kit studio`           | Open Drizzle Studio (visual DB browser)          |
 | `npx tsx scripts/ingest-players.ts`| Ingest/update player data from FantasyCalc       |
+| `python3 scripts/ingest-prospects.py <pdf> <year>` | Ingest prospect data from PDF |
 | `npx tsx scripts/verify-db.ts`     | Verify database connection and data              |
 
 ## Testing

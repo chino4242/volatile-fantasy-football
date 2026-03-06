@@ -106,6 +106,8 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
         return new Set(['position', 'team', 'market_value', 'fc_rank', 'fc_pos_rank']);
     });
     const [showColumnPicker, setShowColumnPicker] = useState(false);
+    const [showTradeModal, setShowTradeModal] = useState(false);
+    const [selectedTradeAssets, setSelectedTradeAssets] = useState<Set<string>>(new Set());
 
     // Auto-simulate CPU picks
     const currentPick = picks[currentPickIndex];
@@ -137,7 +139,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
             if (selectedPlayer) {
                 makePick(selectedPlayer.id);
             }
-        }, 300);
+        }, 1500);
     }
 
     // Calculate league average positional values
@@ -268,6 +270,105 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
         a.click();
     };
 
+    // Calculate trade value
+    const calculateTradeValue = () => {
+        const userTeam = teams.find(t => t.id === userTeamId);
+        if (!userTeam || !currentPick) return 0;
+
+        let totalValue = 0;
+
+        // Add current pick value - use rough estimates based on round/pick
+        // Based on FantasyCalc values: 1.01 ~6700, 1.09 ~2500, 2.01 ~1900, etc.
+        const round = currentPick.round;
+        const pick = currentPick.pick;
+        
+        let pickValue = 0;
+        if (round === 1) {
+            // First round: 6700 down to 2000
+            pickValue = Math.max(2000, 6700 - (pick - 1) * 400);
+        } else if (round === 2) {
+            // Second round: 1900 down to 1200
+            pickValue = Math.max(1200, 1900 - (pick - 1) * 60);
+        } else if (round === 3) {
+            // Third round: 1100 down to 700
+            pickValue = Math.max(700, 1100 - (pick - 1) * 35);
+        } else if (round === 4) {
+            // Fourth round: 650 down to 400
+            pickValue = Math.max(400, 650 - (pick - 1) * 20);
+        } else {
+            // Fifth round and beyond: 350 down to 200
+            pickValue = Math.max(200, 350 - (pick - 1) * 15);
+        }
+        
+        totalValue += pickValue;
+
+        // Add selected assets
+        selectedTradeAssets.forEach(assetId => {
+            if (assetId.startsWith('player_')) {
+                const playerId = assetId.replace('player_', '');
+                const player = userTeam.players.find(p => p.id === playerId);
+                if (player) totalValue += player.fc_value || 0;
+            } else if (assetId.startsWith('pick_')) {
+                const [_, season, round] = assetId.split('_');
+                const r = parseInt(round);
+                // Future picks worth slightly less
+                let futurePickValue = 0;
+                if (r === 1) futurePickValue = 2900;
+                else if (r === 2) futurePickValue = 1500;
+                else if (r === 3) futurePickValue = 900;
+                else if (r === 4) futurePickValue = 500;
+                else futurePickValue = 300;
+                totalValue += futurePickValue;
+            }
+        });
+
+        return totalValue;
+    };
+
+    // Find trade targets
+    const tradeTargets = useMemo(() => {
+        if (!showTradeModal || !currentPick || !userTeamId) return [];
+        
+        const tradeValue = calculateTradeValue();
+        const tolerance = 0.15; // 15% tolerance for rostered players
+        const minValue = tradeValue * (1 - tolerance);
+        const maxValue = tradeValue * (1 + tolerance);
+
+        // Get all rostered players from OTHER teams
+        const rosteredPlayers: (Player & { teamName: string })[] = [];
+        teams.forEach(team => {
+            if (team.id !== userTeamId) {
+                team.players.forEach(player => {
+                    rosteredPlayers.push({ ...player, teamName: team.name });
+                });
+            }
+        });
+
+        return rosteredPlayers
+            .filter(p => {
+                const value = p.fc_value || 0;
+                return value >= minValue && value <= maxValue;
+            })
+            .sort((a, b) => {
+                const aDiff = Math.abs((a.fc_value || 0) - tradeValue);
+                const bDiff = Math.abs((b.fc_value || 0) - tradeValue);
+                return aDiff - bDiff;
+            })
+            .slice(0, 30);
+    }, [showTradeModal, selectedTradeAssets, currentPick, userTeamId, teams]);
+
+    const toggleTradeAsset = (assetId: string) => {
+        setSelectedTradeAssets(prev => {
+            const next = new Set(prev);
+            if (next.has(assetId)) {
+                next.delete(assetId);
+            } else {
+                next.add(assetId);
+            }
+            return next;
+        });
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -354,8 +455,16 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                                 {currentPick.teamName} is on the clock
                             </div>
                             {isUserPick && (
-                                <div className="text-base sm:text-lg text-indigo-600 dark:text-indigo-400 font-semibold">
-                                    Your pick! Select a player below.
+                                <div className="space-y-3">
+                                    <div className="text-base sm:text-lg text-indigo-600 dark:text-indigo-400 font-semibold">
+                                        Your pick! Select a player below or evaluate trades.
+                                    </div>
+                                    <button
+                                        onClick={() => setShowTradeModal(true)}
+                                        className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors"
+                                    >
+                                        Evaluate Trades
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -720,6 +829,217 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                         </div>
                     )}
                 </div>
+
+                {/* Trade Modal */}
+                {showTradeModal && userTeamId !== null && currentPick && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowTradeModal(false)}>
+                        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                            <div className="sticky top-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 p-6 z-10">
+                                <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
+                                    Trade Evaluator
+                                </h2>
+                                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                                    Select additional assets to include in the trade package
+                                </p>
+                            </div>
+
+                            <div className="p-6 space-y-6">
+                                {/* Current Pick (always included) */}
+                                <div>
+                                    <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">
+                                        Current Pick (Included)
+                                    </h3>
+                                    <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-lg p-3">
+                                        <div className="flex justify-between items-center">
+                                            <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                                                {currentPick.round}.{String(currentPick.pick).padStart(2, '0')}
+                                            </span>
+                                            <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                                                ~{(() => {
+                                                    const round = currentPick.round;
+                                                    const pick = currentPick.pick;
+                                                    let pickValue = 0;
+                                                    if (round === 1) pickValue = Math.max(2000, 6700 - (pick - 1) * 400);
+                                                    else if (round === 2) pickValue = Math.max(1200, 1900 - (pick - 1) * 60);
+                                                    else if (round === 3) pickValue = Math.max(700, 1100 - (pick - 1) * 35);
+                                                    else if (round === 4) pickValue = Math.max(400, 650 - (pick - 1) * 20);
+                                                    else pickValue = Math.max(200, 350 - (pick - 1) * 15);
+                                                    return pickValue.toLocaleString();
+                                                })()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Additional Assets */}
+                                <div>
+                                    <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">
+                                        Additional Assets (Optional)
+                                    </h3>
+                                    
+                                    {/* Future Picks */}
+                                    {(() => {
+                                        const userTeam = teams.find(t => t.id === userTeamId);
+                                        const futurePicks = userTeam?.draftPicks.filter(p => p.season > new Date().getFullYear()) || [];
+                                        
+                                        return futurePicks.length > 0 && (
+                                            <div className="mb-4">
+                                                <div className="text-xs font-medium text-zinc-500 uppercase mb-2">Future Picks</div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                    {futurePicks.map((pick, idx) => {
+                                                        const assetId = `pick_${pick.season}_${pick.round}`;
+                                                        const isSelected = selectedTradeAssets.has(assetId);
+                                                        return (
+                                                            <button
+                                                                key={idx}
+                                                                onClick={() => toggleTradeAsset(assetId)}
+                                                                className={`p-2 rounded-lg border-2 text-sm transition-colors ${
+                                                                    isSelected
+                                                                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-900 dark:text-indigo-100'
+                                                                        : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+                                                                }`}
+                                                            >
+                                                                {pick.season} R{pick.round}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {/* Rostered Players */}
+                                    {(() => {
+                                        const userTeam = teams.find(t => t.id === userTeamId);
+                                        const rosteredPlayers = userTeam?.players || [];
+                                        
+                                        return rosteredPlayers.length > 0 && (
+                                            <div>
+                                                <div className="text-xs font-medium text-zinc-500 uppercase mb-2">Rostered Players</div>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                                                    {rosteredPlayers
+                                                        .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0))
+                                                        .map((player) => {
+                                                            const assetId = `player_${player.id}`;
+                                                            const isSelected = selectedTradeAssets.has(assetId);
+                                                            return (
+                                                                <button
+                                                                    key={player.id}
+                                                                    onClick={() => toggleTradeAsset(assetId)}
+                                                                    className={`p-2 rounded-lg border-2 text-sm text-left transition-colors ${
+                                                                        isSelected
+                                                                            ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-900 dark:text-indigo-100'
+                                                                            : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex justify-between items-center">
+                                                                        <span className="truncate">{player.full_name}</span>
+                                                                        <span className="ml-2 text-xs text-zinc-500">
+                                                                            {(player.fc_value || 0).toLocaleString()}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="text-xs text-zinc-500 mt-1">
+                                                                        {player.position} • {player.team || 'FA'}
+                                                                    </div>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+
+                                {/* Trade Package Summary */}
+                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                                            Trade Package Value
+                                        </span>
+                                        <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                                            {calculateTradeValue().toLocaleString()}
+                                        </span>
+                                    </div>
+                                    {selectedTradeAssets.size > 0 && (
+                                        <button
+                                            onClick={() => setSelectedTradeAssets(new Set())}
+                                            className="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                        >
+                                            Clear selections
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Trade Targets */}
+                                <div>
+                                    <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-3">
+                                        Trade Targets (±10% value)
+                                    </h3>
+                                    {tradeTargets.length === 0 ? (
+                                        <div className="text-center py-8">
+                                            <div className="text-zinc-500 dark:text-zinc-400 mb-2">
+                                                No players found in this value range
+                                            </div>
+                                            <div className="text-xs text-zinc-400">
+                                                Looking for players between {(calculateTradeValue() * 0.9).toFixed(0)} - {(calculateTradeValue() * 1.1).toFixed(0)}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                                            {tradeTargets.map(player => {
+                                                const valueDiff = (player.fc_value || 0) - calculateTradeValue();
+                                                const diffPercent = ((valueDiff / calculateTradeValue()) * 100).toFixed(1);
+                                                
+                                                return (
+                                                    <div
+                                                        key={player.id}
+                                                        className="flex items-center justify-between p-3 border border-zinc-200 dark:border-zinc-700 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                                                    >
+                                                        <div className="flex-1">
+                                                            <div className="font-medium text-zinc-900 dark:text-zinc-100">
+                                                                {player.full_name}
+                                                            </div>
+                                                            <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                                                                {player.position} • {player.team || 'FA'} • {player.teamName}
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="font-semibold text-zinc-900 dark:text-zinc-100">
+                                                                {(player.fc_value || 0).toLocaleString()}
+                                                            </div>
+                                                            <div className={`text-xs font-medium ${
+                                                                valueDiff > 0 
+                                                                    ? 'text-green-600 dark:text-green-400' 
+                                                                    : valueDiff < 0 
+                                                                    ? 'text-red-600 dark:text-red-400'
+                                                                    : 'text-zinc-500'
+                                                            }`}>
+                                                                {valueDiff > 0 ? '+' : ''}{diffPercent}%
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Close Button */}
+                                <div className="flex justify-end">
+                                    <button
+                                        onClick={() => {
+                                            setShowTradeModal(false);
+                                            setSelectedTradeAssets(new Set());
+                                        }}
+                                        className="px-6 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
