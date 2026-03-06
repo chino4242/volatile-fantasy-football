@@ -32,7 +32,7 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 | Layer      | Technology                                                       |
 | ---------- | ---------------------------------------------------------------- |
 | Framework  | [Next.js 16](https://nextjs.org/) (App Router, Server Components)|
-| Database   | PostgreSQL (via [Neon](https://neon.tech/) or any Postgres host) |
+| Database   | PostgreSQL (via [Supabase](https://supabase.com/))              |
 | ORM        | [Drizzle ORM](https://orm.drizzle.team/)                        |
 | Styling    | [Tailwind CSS v4](https://tailwindcss.com/)                      |
 | Icons      | [Lucide React](https://lucide.dev/)                              |
@@ -45,7 +45,7 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 
 - **Node.js** ≥ 18
 - **npm** (comes with Node)
-- A **PostgreSQL** database (we recommend [Neon](https://neon.tech/) for serverless Postgres)
+- A **PostgreSQL** database (we use [Supabase](https://supabase.com/) for managed Postgres)
 
 ### 1. Clone the Repository
 
@@ -68,7 +68,7 @@ Create a `.env.local` file in the project root:
 DATABASE_URL=postgresql://<user>:<password>@<host>/<database>?sslmode=require
 ```
 
-> **Note:** The `DATABASE_URL` must point to a PostgreSQL database. If you're using Neon, copy the connection string from your Neon dashboard.
+> **Note:** The `DATABASE_URL` must point to a PostgreSQL database. If you're using Supabase, copy the connection string from your Supabase project settings under Database > Connection string > URI.
 
 ### 4. Set Up the Database
 
