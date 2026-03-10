@@ -173,12 +173,14 @@ Roster and user data is fetched **at request time** from the Sleeper API. No Sle
 
 **Draft Picks:** The app generates all draft picks for each team (next 3 years, 5 rounds per year) and applies trades from the Sleeper API to show complete draft capital ownership.
 
-### FantasyCalc API (Ingested)
-Player valuations are fetched via the ingestion script and stored in PostgreSQL for fast lookups.
+### FantasyCalc API (Ingested & Auto-Updated)
+Player valuations are automatically refreshed **daily at 6 AM UTC** via Vercel Cron Job. Data is stored in PostgreSQL for fast lookups.
 
 - **Endpoint:** `https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=2&numTeams=12&ppr=0.5`
 - **Script:** [`scripts/ingest-players.ts`](scripts/ingest-players.ts)
-- **Run:** `npx tsx scripts/ingest-players.ts`
+- **Automation:** See [AUTOMATED_INGESTION.md](AUTOMATED_INGESTION.md) for details
+- **Manual Trigger:** `curl -X POST https://theprovingground.co/api/ingest`
+- **Local Run:** `npx tsx scripts/ingest-players.ts`
 
 **Draft Pick Values:** FantasyCalc provides values for draft picks (e.g., `FP_2026_1` for 2026 1st round) which are stored alongside player values and used for trade analysis.
 
