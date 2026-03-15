@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getFleaflickerLeague } from "@/lib/fleaflicker";
 import { getPickFantasyCalcId } from "@/lib/sleeper";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
+import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { db } from "@/db";
 import { players, playerValues, leagues } from "@/db/schema";
 import { inArray, eq } from "drizzle-orm";
@@ -172,6 +173,7 @@ export default async function FleaflickerTeamPage({
     const customRankings = await getCustomRankings();
     const rankingsMap = buildCustomRankingsMap(customRankings);
     const activeSources = await getActiveSources();
+    const rankingsVintage = formatVintage(await getRankingsVintage(format));
 
     // Fetch all league players for trade targets
     const allLeaguePlayerNames = fleaflickerData.rosters.flatMap(r =>
@@ -270,6 +272,7 @@ export default async function FleaflickerTeamPage({
                     customRankingsMap={rankingsMap}
                     rankingSources={activeSources}
                     keeperCount={keeperCount}
+                    rankingsVintage={rankingsVintage}
                 />
             </div>
         </div>

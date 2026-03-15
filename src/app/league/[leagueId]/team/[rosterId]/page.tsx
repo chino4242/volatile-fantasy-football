@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { players, playerValues } from "@/db/schema";
 import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from "@/lib/sleeper";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
+import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -179,6 +180,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
     const customRankings = await getCustomRankings();
     const rankingsMap = buildCustomRankingsMap(customRankings);
     const activeSources = await getActiveSources();
+    const rankingsVintage = formatVintage(await getRankingsVintage(format));
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
@@ -237,6 +239,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                     customRankingsMap={rankingsMap}
                     rankingSources={activeSources}
                     keeperCount={keeperCount}
+                    rankingsVintage={rankingsVintage}
                 />
             </div>
         </div>

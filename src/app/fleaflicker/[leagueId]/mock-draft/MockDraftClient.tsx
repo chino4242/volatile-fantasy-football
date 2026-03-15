@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, RotateCcw, Download, Play, Settings2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ArrowLeft, RotateCcw, Download, Play, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
+import type { ColumnDef } from '@/components/ColumnPicker';
 
 interface Player {
     id: string;
@@ -58,11 +60,27 @@ interface MockDraftClientProps {
     teams: Team[];
     freeAgents: Player[];
     format: string;
+    rankingsVintage?: string | null;
+    platform?: 'sleeper' | 'fleaflicker';
 }
 
 const ROUNDS = 5;
 
-export default function MockDraftClient({ leagueId, teams, freeAgents, format }: MockDraftClientProps) {
+const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
+    { key: 'position', label: 'Position', defaultOn: true, group: 'core' },
+    { key: 'team', label: 'Team', defaultOn: true, group: 'core' },
+    { key: 'market_value', label: 'Market Value', defaultOn: true, group: 'core' },
+    { key: 'fc_rank', label: 'FC Overall', defaultOn: true, group: 'fc' },
+    { key: 'fc_pos_rank', label: 'FC Pos Rank', defaultOn: true, group: 'fc' },
+    { key: 'combined_value', label: 'Combined', defaultOn: false, group: 'fc' },
+    { key: 'trend_30d', label: '30d Trend', defaultOn: false, group: 'fc' },
+    { key: 'trade_freq', label: 'Trade Freq', defaultOn: false, group: 'fc' },
+    { key: 'vff_rank', label: 'VFF Rank', defaultOn: false, group: 'internal' },
+    { key: 'vff_pos', label: 'VFF Pos', defaultOn: false, group: 'internal' },
+    { key: 'tier', label: 'Tier', defaultOn: false, group: 'internal' },
+];
+
+export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, platform = 'fleaflicker' }: MockDraftClientProps) {
     // Generate draft order from current year picks
     const draftOrder = useMemo(() => {
         const currentYear = new Date().getFullYear();
@@ -95,17 +113,81 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
     const [availablePlayers, setAvailablePlayers] = useState<Player[]>(freeAgents);
     const [userTeamId, setUserTeamId] = useState<number | null>(null);
     const [draftStarted, setDraftStarted] = useState(false);
+    const [setupComplete, setSetupComplete] = useState(false);
+
+    // Draft setup: slot assignments per round — Record<`${round}.${slot}`, teamId>
+    // Default: each team owns their slot in every round (no trades)
+    type PickAssignments = Record<string, number>;
+    const storageKey = `vff_draft_setup_${leagueId}`;
+
+    const buildDefaultAssignments = useCallback((): { assignments: PickAssignments; userSlot: number | null } => {
+        const assignments: PickAssignments = {};
+        teams.forEach((team, i) => {
+            for (let round = 1; round <= ROUNDS; round++) {
+                assignments[`${round}.${i + 1}`] = team.id;
+            }
+        });
+        return { assignments, userSlot: null };
+    }, [teams]);
+
+    const [pickAssignments, setPickAssignments] = useState<PickAssignments>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem(storageKey);
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    if (parsed.assignments) return parsed.assignments;
+                } catch {}
+            }
+        }
+        return buildDefaultAssignments().assignments;
+    });
+    const [userDraftSlot, setUserDraftSlot] = useState<number | null>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem(storageKey);
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    if (parsed.userSlot) return parsed.userSlot;
+                } catch {}
+            }
+        }
+        return null;
+    });
+    const [editingPick, setEditingPick] = useState<string | null>(null);
+
+    // Save setup to localStorage whenever it changes
+    useEffect(() => {
+        if (typeof window !== 'undefined' && setupComplete) {
+            localStorage.setItem(storageKey, JSON.stringify({ assignments: pickAssignments, userSlot: userDraftSlot }));
+        }
+    }, [pickAssignments, userDraftSlot, setupComplete, storageKey]);
+
+    // Build draftOrder from pickAssignments
+    const setupDraftOrder = useMemo(() => {
+        const order: DraftPick[] = [];
+        const numTeams = teams.length;
+        for (let round = 1; round <= ROUNDS; round++) {
+            for (let slot = 1; slot <= numTeams; slot++) {
+                const teamId = pickAssignments[`${round}.${slot}`];
+                const team = teams.find(t => t.id === teamId);
+                if (team) {
+                    order.push({ round, pick: slot, teamId: team.id, teamName: team.name });
+                }
+            }
+        }
+        return order;
+    }, [pickAssignments, teams]);
     const [positionFilter, setPositionFilter] = useState<string>('ALL');
     const [sortColumn, setSortColumn] = useState<string>('fc_value');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-    const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('vff_mock_draft_columns');
-            if (saved) return new Set(JSON.parse(saved));
-        }
-        return new Set(['position', 'team', 'market_value', 'fc_rank', 'fc_pos_rank']);
-    });
-    const [showColumnPicker, setShowColumnPicker] = useState(false);
+    const vffLabel = rankingsVintage ? `VFF Rankings (${rankingsVintage})` : 'VFF Rankings';
+    const MD_GROUPS = [
+        { id: 'core', label: 'Core' },
+        { id: 'fc', label: 'FantasyCalc' },
+        { id: 'internal', label: vffLabel },
+    ];
+    const { visibleCols: visibleColumns, columnOrder, toggle: toggleCol, reorder, orderedVisible } = useColumnState(MOCK_DRAFT_COLUMNS, 'vff_mock_draft_columns');
     const [showTradeModal, setShowTradeModal] = useState(false);
     const [selectedTradeAssets, setSelectedTradeAssets] = useState<Set<string>>(new Set());
 
@@ -211,26 +293,11 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
     };
 
     const resetDraft = () => {
-        setPicks(draftOrder);
+        setPicks(setupComplete ? setupDraftOrder : draftOrder);
         setCurrentPickIndex(0);
         setAvailablePlayers(freeAgents);
         setDraftStarted(false);
     };
-
-    const toggleColumn = (column: string) => {
-        setVisibleColumns(prev => {
-            const next = new Set(prev);
-            if (next.has(column)) {
-                next.delete(column);
-            } else {
-                next.add(column);
-            }
-            localStorage.setItem('vff_mock_draft_columns', JSON.stringify([...next]));
-            return next;
-        });
-    };
-
-    const show = (column: string) => visibleColumns.has(column);
 
     const handleSort = (column: string) => {
         if (sortColumn === column) {
@@ -246,6 +313,52 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
         return sortDirection === 'desc'
             ? <ArrowDown className="ml-1 h-3 w-3 inline-block text-indigo-500" />
             : <ArrowUp className="ml-1 h-3 w-3 inline-block text-indigo-500" />;
+    };
+
+    const sf = format === 'sf';
+    const coreTh = "px-2 sm:px-4 py-2 sm:py-3 text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors";
+    const fcTh = "hidden md:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors";
+    const vffTh = "hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors";
+    const vffTitle = rankingsVintage ? `VFF Rankings from ${rankingsVintage}` : undefined;
+
+    const headerMap: Record<string, { className: string; sortKey: string; label: string; title?: string }> = {
+        position: { className: `${coreTh} text-left`, sortKey: 'position', label: 'Pos' },
+        team: { className: `${coreTh} hidden sm:table-cell text-left`, sortKey: 'team', label: 'Team' },
+        market_value: { className: `${coreTh} text-right`, sortKey: 'fc_value', label: 'Value' },
+        fc_rank: { className: fcTh, sortKey: sf ? 'fc_rank_sf' : 'fc_rank_1qb', label: 'FC Rank' },
+        fc_pos_rank: { className: fcTh, sortKey: sf ? 'fc_position_rank_sf' : 'fc_position_rank_1qb', label: 'FC Pos' },
+        combined_value: { className: `hidden lg:table-cell ${fcTh.replace('hidden md:table-cell ', '')}`, sortKey: 'fc_combined_value', label: 'Combined' },
+        trend_30d: { className: `hidden lg:table-cell ${fcTh.replace('hidden md:table-cell ', '')}`, sortKey: 'fc_trend_30_day', label: '30d' },
+        trade_freq: { className: `hidden lg:table-cell ${fcTh.replace('hidden md:table-cell ', '')}`, sortKey: 'fc_trade_frequency', label: 'Traded' },
+        vff_rank: { className: vffTh, sortKey: sf ? 'rank_sf_overall' : 'rank_1qb_overall', label: 'VFF Rank', title: vffTitle },
+        vff_pos: { className: vffTh, sortKey: sf ? 'rank_sf_pos' : 'rank_1qb_pos', label: 'VFF Pos', title: vffTitle },
+        tier: { className: vffTh, sortKey: sf ? 'rank_sf_tier' : 'rank_1qb_tier', label: 'Tier', title: vffTitle },
+    };
+
+    const renderHeader = (key: string) => {
+        const h = headerMap[key];
+        if (!h) return null;
+        return <th key={key} className={h.className} onClick={() => handleSort(h.sortKey)} title={h.title}>{h.label} <SortIcon column={h.sortKey} /></th>;
+    };
+
+    const fcTd = "hidden md:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20";
+    const vffTd = "hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20";
+
+    const renderCell = (key: string, player: Player) => {
+        switch (key) {
+            case 'position': return <td key={key} className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">{player.position}</td>;
+            case 'team': return <td key={key} className="hidden sm:table-cell px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">{player.team || '—'}</td>;
+            case 'market_value': return <td key={key} className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-right text-zinc-900 dark:text-zinc-100">{player.fc_value?.toFixed(0) || '—'}</td>;
+            case 'fc_rank': return <td key={key} className={fcTd}>{(sf ? player.fc_rank_sf : player.fc_rank_1qb) || '—'}</td>;
+            case 'fc_pos_rank': return <td key={key} className={fcTd}>{player.position}{(sf ? player.fc_position_rank_sf : player.fc_position_rank_1qb) || '—'}</td>;
+            case 'combined_value': return <td key={key} className={`${fcTd} hidden lg:table-cell`}>{player.fc_combined_value?.toFixed(0) || '—'}</td>;
+            case 'trend_30d': return <td key={key} className="hidden lg:table-cell px-4 py-3 text-sm text-right bg-blue-50/50 dark:bg-blue-950/20">{player.fc_trend_30_day ? <span className={player.fc_trend_30_day > 0 ? 'text-green-600 dark:text-green-400' : player.fc_trend_30_day < 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-500'}>{player.fc_trend_30_day > 0 ? '+' : ''}{player.fc_trend_30_day}</span> : '—'}</td>;
+            case 'trade_freq': return <td key={key} className={`${fcTd} hidden lg:table-cell`}>{player.fc_trade_frequency ? Number(player.fc_trade_frequency).toFixed(2) : '—'}</td>;
+            case 'vff_rank': return <td key={key} className={vffTd}>{(sf ? player.rank_sf_overall : player.rank_1qb_overall) || '—'}</td>;
+            case 'vff_pos': return <td key={key} className={vffTd}>{player.position}{(sf ? player.rank_sf_pos : player.rank_1qb_pos) || '—'}</td>;
+            case 'tier': return <td key={key} className={vffTd}>{(sf ? player.rank_sf_tier : player.rank_1qb_tier) || '—'}</td>;
+            default: return null;
+        }
     };
 
     const exportToCSV = () => {
@@ -376,7 +489,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                 <div className="flex items-center justify-between mb-8">
                     <div className="flex items-center gap-4">
                         <Link
-                            href={`/fleaflicker/${leagueId}`}
+                            href={platform === 'sleeper' ? `/league/${leagueId}` : `/fleaflicker/${leagueId}`}
                             className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
                         >
                             <ArrowLeft className="h-5 w-5" />
@@ -430,17 +543,168 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                 )}
 
                 {/* Start Draft Button */}
-                {userTeamId !== null && !draftStarted && (
+                {userTeamId !== null && !draftStarted && !setupComplete && (
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 mb-6">
+                        <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
+                            Draft Setup — {teams.find(t => t.id === userTeamId)?.name}
+                        </h2>
+
+                        {/* Draft Slot Selector */}
+                        <div className="mb-6">
+                            <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">Your Draft Slot</h3>
+                            <div className="flex flex-wrap gap-2">
+                                {teams.map((_, i) => (
+                                    <button
+                                        key={i + 1}
+                                        onClick={() => {
+                                            setUserDraftSlot(i + 1);
+                                            // Assign user team to this slot in every round, and swap with whoever was there
+                                            setPickAssignments(prev => {
+                                                const next = { ...prev };
+                                                for (let round = 1; round <= ROUNDS; round++) {
+                                                    const key = `${round}.${i + 1}`;
+                                                    // Find where user team currently is in this round
+                                                    const userKey = Object.keys(next).find(k => k.startsWith(`${round}.`) && next[k] === userTeamId);
+                                                    const prevOccupant = next[key];
+                                                    next[key] = userTeamId!;
+                                                    if (userKey && prevOccupant !== undefined) next[userKey] = prevOccupant;
+                                                }
+                                                return next;
+                                            });
+                                        }}
+                                        className={`w-10 h-10 rounded-lg font-semibold text-sm transition-colors ${
+                                            userDraftSlot === i + 1
+                                                ? 'bg-indigo-600 text-white'
+                                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                                        }`}
+                                    >
+                                        {i + 1}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Pick Grid */}
+                        {userDraftSlot && (
+                            <div className="mb-6">
+                                <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">
+                                    Pick Assignments <span className="font-normal text-zinc-500">(click a pick to reassign)</span>
+                                </h3>
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full text-xs">
+                                        <thead>
+                                            <tr>
+                                                <th className="px-2 py-1 text-left text-zinc-500">Round</th>
+                                                {teams.map((_, i) => (
+                                                    <th key={i} className="px-2 py-1 text-center text-zinc-500">{i + 1}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {Array.from({ length: ROUNDS }, (_, r) => r + 1).map(round => (
+                                                <tr key={round}>
+                                                    <td className="px-2 py-1 font-semibold text-zinc-700 dark:text-zinc-300">R{round}</td>
+                                                    {teams.map((_, i) => {
+                                                        const slot = i + 1;
+                                                        const key = `${round}.${slot}`;
+                                                        const assignedTeamId = pickAssignments[key];
+                                                        const assignedTeam = teams.find(t => t.id === assignedTeamId);
+                                                        const isUserPick = assignedTeamId === userTeamId;
+                                                        const isEditing = editingPick === key;
+                                                        return (
+                                                            <td key={slot} className="px-1 py-1 text-center relative">
+                                                                {isEditing ? (
+                                                                    <select
+                                                                        autoFocus
+                                                                        className="w-full text-xs bg-white dark:bg-zinc-800 border border-indigo-500 rounded px-1 py-0.5"
+                                                                        value={assignedTeamId ?? ''}
+                                                                        onChange={(e) => {
+                                                                            const newTeamId = Number(e.target.value);
+                                                                            setPickAssignments(prev => ({ ...prev, [key]: newTeamId }));
+                                                                            setEditingPick(null);
+                                                                        }}
+                                                                        onBlur={() => setEditingPick(null)}
+                                                                    >
+                                                                        {teams.map(t => (
+                                                                            <option key={t.id} value={t.id}>{t.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                ) : (
+                                                                    <button
+                                                                        onClick={() => setEditingPick(key)}
+                                                                        className={`w-full px-1 py-0.5 rounded text-xs truncate transition-colors ${
+                                                                            isUserPick
+                                                                                ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-semibold'
+                                                                                : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                                                                        }`}
+                                                                        title={assignedTeam?.name}
+                                                                    >
+                                                                        {assignedTeam?.name?.substring(0, 8) || '?'}
+                                                                    </button>
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex gap-3 justify-center">
+                            <button
+                                onClick={() => { setUserTeamId(null); setUserDraftSlot(null); }}
+                                className="px-6 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                            >
+                                Back
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setPickAssignments(buildDefaultAssignments().assignments);
+                                    setUserDraftSlot(null);
+                                    localStorage.removeItem(storageKey);
+                                }}
+                                className="px-6 py-3 text-sm font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-950/40"
+                            >
+                                Reset
+                            </button>
+                            {userDraftSlot && (
+                                <button
+                                    onClick={() => {
+                                        setSetupComplete(true);
+                                        setPicks(setupDraftOrder);
+                                    }}
+                                    className="px-8 py-3 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-lg"
+                                >
+                                    Start Draft
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Ready screen after setup */}
+                {userTeamId !== null && setupComplete && !draftStarted && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 mb-6 text-center">
                         <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
-                            Ready to draft as {teams.find(t => t.id === userTeamId)?.name}?
+                            Ready to draft as {teams.find(t => t.id === userTeamId)?.name}? (Slot {userDraftSlot})
                         </h2>
-                        <button
-                            onClick={() => setDraftStarted(true)}
-                            className="px-8 py-4 text-lg font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-lg"
-                        >
-                            Start Draft
-                        </button>
+                        <div className="flex gap-3 justify-center">
+                            <button
+                                onClick={() => setSetupComplete(false)}
+                                className="px-6 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                            >
+                                Edit Setup
+                            </button>
+                            <button
+                                onClick={() => setDraftStarted(true)}
+                                className="px-8 py-4 text-lg font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-lg"
+                            >
+                                Start Draft
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -504,77 +768,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                                     ))}
                                 </div>
                                 {/* Column Picker */}
-                                <div className="relative flex-shrink-0">
-                                    <button
-                                        onClick={() => setShowColumnPicker(!showColumnPicker)}
-                                        className="p-2 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
-                                        title="Configure columns"
-                                    >
-                                        <Settings2 className="h-4 w-4" />
-                                    </button>
-                                    {showColumnPicker && (
-                                        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-zinc-800 rounded-lg shadow-lg border border-zinc-200 dark:border-zinc-700 z-50 max-h-96 overflow-y-auto">
-                                            <div className="p-3 space-y-3">
-                                                <div>
-                                                    <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">Core</div>
-                                                    {[
-                                                        { id: 'position', label: 'Position' },
-                                                        { id: 'team', label: 'Team' },
-                                                        { id: 'market_value', label: 'Market Value' },
-                                                    ].map(col => (
-                                                        <label key={col.id} className="flex items-center gap-2 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-700 p-1 rounded">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={show(col.id)}
-                                                                onChange={() => toggleColumn(col.id)}
-                                                                className="rounded border-zinc-300 dark:border-zinc-600"
-                                                            />
-                                                            <span className="text-sm text-zinc-700 dark:text-zinc-300">{col.label}</span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                                <div>
-                                                    <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">FantasyCalc</div>
-                                                    {[
-                                                        { id: 'fc_rank', label: 'FC Overall' },
-                                                        { id: 'fc_pos_rank', label: 'FC Pos Rank' },
-                                                        { id: 'combined_value', label: 'Combined' },
-                                                        { id: 'trend_30d', label: '30d Trend' },
-                                                        { id: 'trade_freq', label: 'Trade Freq' },
-                                                    ].map(col => (
-                                                        <label key={col.id} className="flex items-center gap-2 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-700 p-1 rounded">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={show(col.id)}
-                                                                onChange={() => toggleColumn(col.id)}
-                                                                className="rounded border-zinc-300 dark:border-zinc-600"
-                                                            />
-                                                            <span className="text-sm text-zinc-700 dark:text-zinc-300">{col.label}</span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                                <div>
-                                                    <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">VFF Rankings</div>
-                                                    {[
-                                                        { id: 'vff_rank', label: 'VFF Rank' },
-                                                        { id: 'vff_pos', label: 'VFF Pos' },
-                                                        { id: 'tier', label: 'Tier' },
-                                                    ].map(col => (
-                                                        <label key={col.id} className="flex items-center gap-2 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-700 p-1 rounded">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={show(col.id)}
-                                                                onChange={() => toggleColumn(col.id)}
-                                                                className="rounded border-zinc-300 dark:border-zinc-600"
-                                                            />
-                                                            <span className="text-sm text-zinc-700 dark:text-zinc-300">{col.label}</span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                <ColumnPicker columns={MOCK_DRAFT_COLUMNS} visibleCols={visibleColumns} columnOrder={columnOrder} onToggle={toggleCol} onReorder={reorder} groups={MD_GROUPS} />
                             </div>
                         </div>
                         <div className="overflow-x-auto max-h-96 overflow-y-auto -mx-4 sm:mx-0">
@@ -584,39 +778,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                                         <th className="px-3 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('full_name')}>
                                             Player <SortIcon column="full_name" />
                                         </th>
-                                        {show('position') && <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('position')}>
-                                            Pos <SortIcon column="position" />
-                                        </th>}
-                                        {show('team') && <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('team')}>
-                                            Team <SortIcon column="team" />
-                                        </th>}
-                                        {show('market_value') && <th className="px-2 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('fc_value')}>
-                                            Value <SortIcon column="fc_value" />
-                                        </th>}
-                                        {show('fc_rank') && <th className="hidden md:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'fc_rank_sf' : 'fc_rank_1qb')}>
-                                            FC Rank <SortIcon column={format === 'sf' ? 'fc_rank_sf' : 'fc_rank_1qb'} />
-                                        </th>}
-                                        {show('fc_pos_rank') && <th className="hidden md:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'fc_position_rank_sf' : 'fc_position_rank_1qb')}>
-                                            FC Pos <SortIcon column={format === 'sf' ? 'fc_position_rank_sf' : 'fc_position_rank_1qb'} />
-                                        </th>}
-                                        {show('combined_value') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_combined_value')}>
-                                            Combined <SortIcon column="fc_combined_value" />
-                                        </th>}
-                                        {show('trend_30d') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_trend_30_day')}>
-                                            30d <SortIcon column="fc_trend_30_day" />
-                                        </th>}
-                                        {show('trade_freq') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors" onClick={() => handleSort('fc_trade_frequency')}>
-                                            Traded <SortIcon column="fc_trade_frequency" />
-                                        </th>}
-                                        {show('vff_rank') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_overall' : 'rank_1qb_overall')}>
-                                            VFF Rank <SortIcon column={format === 'sf' ? 'rank_sf_overall' : 'rank_1qb_overall'} />
-                                        </th>}
-                                        {show('vff_pos') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_pos' : 'rank_1qb_pos')}>
-                                            VFF Pos <SortIcon column={format === 'sf' ? 'rank_sf_pos' : 'rank_1qb_pos'} />
-                                        </th>}
-                                        {show('tier') && <th className="hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors" onClick={() => handleSort(format === 'sf' ? 'rank_sf_tier' : 'rank_1qb_tier')}>
-                                            Tier <SortIcon column={format === 'sf' ? 'rank_sf_tier' : 'rank_1qb_tier'} />
-                                        </th>}
+                                        {orderedVisible.map(renderHeader)}
                                         <th className="px-3 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-zinc-500 uppercase">Action</th>
                                     </tr>
                                 </thead>
@@ -637,72 +799,12 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                                             return sortDirection === 'desc' ? (valB as number) - (valA as number) : (valA as number) - (valB as number);
                                         })
                                         .slice(0, 50)
-                                        .map(player => {
-                                            const sf = format === 'sf';
-                                            return (
+                                        .map(player => (
                                         <tr key={player.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                                             <td className="px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
                                                 {player.full_name}
                                             </td>
-                                            {show('position') && (
-                                                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
-                                                    {player.position}
-                                                </td>
-                                            )}
-                                            {show('team') && (
-                                                <td className="hidden sm:table-cell px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">
-                                                    {player.team || '—'}
-                                                </td>
-                                            )}
-                                            {show('market_value') && (
-                                                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-right text-zinc-900 dark:text-zinc-100">
-                                                    {player.fc_value?.toFixed(0) || '—'}
-                                                </td>
-                                            )}
-                                            {show('fc_rank') && (
-                                                <td className="hidden md:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
-                                                    {(sf ? player.fc_rank_sf : player.fc_rank_1qb) || '—'}
-                                                </td>
-                                            )}
-                                            {show('fc_pos_rank') && (
-                                                <td className="hidden md:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
-                                                    {player.position}{(sf ? player.fc_position_rank_sf : player.fc_position_rank_1qb) || '—'}
-                                                </td>
-                                            )}
-                                            {show('combined_value') && (
-                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
-                                                    {player.fc_combined_value?.toFixed(0) || '—'}
-                                                </td>
-                                            )}
-                                            {show('trend_30d') && (
-                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right bg-blue-50/50 dark:bg-blue-950/20">
-                                                    {player.fc_trend_30_day ? (
-                                                        <span className={player.fc_trend_30_day > 0 ? 'text-green-600 dark:text-green-400' : player.fc_trend_30_day < 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-500'}>
-                                                            {player.fc_trend_30_day > 0 ? '+' : ''}{player.fc_trend_30_day}
-                                                        </span>
-                                                    ) : '—'}
-                                                </td>
-                                            )}
-                                            {show('trade_freq') && (
-                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20">
-                                                    {player.fc_trade_frequency ? Number(player.fc_trade_frequency).toFixed(2) : '—'}
-                                                </td>
-                                            )}
-                                            {show('vff_rank') && (
-                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20">
-                                                    {(sf ? player.rank_sf_overall : player.rank_1qb_overall) || '—'}
-                                                </td>
-                                            )}
-                                            {show('vff_pos') && (
-                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20">
-                                                    {player.position}{(sf ? player.rank_sf_pos : player.rank_1qb_pos) || '—'}
-                                                </td>
-                                            )}
-                                            {show('tier') && (
-                                                <td className="hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20">
-                                                    {(sf ? player.rank_sf_tier : player.rank_1qb_tier) || '—'}
-                                                </td>
-                                            )}
+                                            {orderedVisible.map(key => renderCell(key, player))}
                                             <td className="px-3 sm:px-4 py-2 sm:py-3 text-right">
                                                 <button
                                                     onClick={() => makePick(player.id)}
@@ -712,8 +814,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format }:
                                                 </button>
                                             </td>
                                         </tr>
-                                            );
-                                        })}
+                                        ))}
                                 </tbody>
                             </table>
                         </div>

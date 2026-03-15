@@ -101,12 +101,32 @@ export const playerValues = pgTable("player_values", {
     rank_sf_tier: integer("rank_sf_tier"),
     rank_sf_pos: integer("rank_sf_pos"),
 
+    // When VFF rankings were last uploaded (per format)
+    rank_1qb_updated_at: timestamp("rank_1qb_updated_at"),
+    rank_sf_updated_at: timestamp("rank_sf_updated_at"),
+
     updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => {
     return {
         valueSfIdx: index("idx_player_values_fc_value_sf").on(table.fc_value_sf),
         value1qbIdx: index("idx_player_values_fc_value_1qb").on(table.fc_value_1qb),
         rankSfIdx: index("idx_player_values_rank_sf").on(table.rank_sf_overall),
+    };
+});
+
+// 5b. Rankings History Table (archives VFF rankings per upload)
+export const rankingsHistory = pgTable("rankings_history", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
+    category: text("category").notNull(), // '1qb' or 'sf'
+    overall: integer("overall"),
+    pos_rank: integer("pos_rank"),
+    tier: integer("tier"),
+    recorded_at: timestamp("recorded_at").notNull(), // when this snapshot was taken
+}, (table) => {
+    return {
+        playerCatIdx: index("idx_rankings_history_player_cat").on(table.sleeper_id, table.category),
+        recordedIdx: index("idx_rankings_history_recorded").on(table.recorded_at),
     };
 });
 

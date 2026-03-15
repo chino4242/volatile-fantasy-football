@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { read, utils } from 'xlsx';
 import { db } from '@/db';
-import { players, playerValues } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { players, playerValues, rankingsHistory } from '@/db/schema';
+import { eq, isNotNull } from 'drizzle-orm';
 import { cleanseName } from '@/lib/nameUtils';
 
 export async function POST(request: Request) {
@@ -39,6 +39,36 @@ export async function POST(request: Request) {
             }
         }
 
+        // ── Snapshot current rankings into history before overwriting ──
+        const rankCol = category === '1qb' ? playerValues.rank_1qb_overall : playerValues.rank_sf_overall;
+        const existingRanks = await db.select({
+            sleeper_id: playerValues.sleeper_id,
+            overall: category === '1qb' ? playerValues.rank_1qb_overall : playerValues.rank_sf_overall,
+            pos_rank: category === '1qb' ? playerValues.rank_1qb_pos : playerValues.rank_sf_pos,
+            tier: category === '1qb' ? playerValues.rank_1qb_tier : playerValues.rank_sf_tier,
+            updated_at: category === '1qb' ? playerValues.rank_1qb_updated_at : playerValues.rank_sf_updated_at,
+        }).from(playerValues).where(isNotNull(rankCol));
+
+        if (existingRanks.length > 0) {
+            // Use the stored updated_at as recorded_at, or fall back to now
+            const snapshotDate = existingRanks[0].updated_at || new Date();
+            const historyRows = existingRanks.map(r => ({
+                sleeper_id: r.sleeper_id,
+                category,
+                overall: r.overall,
+                pos_rank: r.pos_rank,
+                tier: r.tier,
+                recorded_at: snapshotDate,
+            }));
+
+            // Insert in batches of 500
+            for (let i = 0; i < historyRows.length; i += 500) {
+                await db.insert(rankingsHistory).values(historyRows.slice(i, i + 500));
+            }
+        }
+
+        // ── Apply new rankings ──
+        const now = new Date();
         let matchCount = 0;
         const updatePromises = [];
 
@@ -65,15 +95,17 @@ export async function POST(request: Request) {
             const overall = parseInt(overallStr, 10);
             const tier = tierStr ? parseInt(tierStr, 10) : null;
 
-            const updateData: any = { updated_at: new Date() };
+            const updateData: any = { updated_at: now };
 
             if (category === '1qb') {
                 updateData.rank_1qb_overall = overall;
                 updateData.rank_1qb_tier = tier;
+                updateData.rank_1qb_updated_at = now;
                 if (posRank !== null) updateData.rank_1qb_pos = posRank;
             } else if (category === 'sf') {
                 updateData.rank_sf_overall = overall;
                 updateData.rank_sf_tier = tier;
+                updateData.rank_sf_updated_at = now;
                 if (posRank !== null) updateData.rank_sf_pos = posRank;
             }
 
@@ -94,7 +126,8 @@ export async function POST(request: Request) {
             totalRows: rawData.length,
             matches: matchCount,
             updatedCount: updatePromises.length,
-            matchRate: rawData.length > 0 ? Math.round((matchCount / rawData.length) * 100) : 0
+            matchRate: rawData.length > 0 ? Math.round((matchCount / rawData.length) * 100) : 0,
+            archivedCount: existingRanks.length,
         });
 
     } catch (error: any) {

@@ -4,6 +4,7 @@ import { getLeagueData, getPickFantasyCalcId } from "@/lib/sleeper";
 import { desc, eq, notInArray, and, not, like, inArray } from "drizzle-orm";
 import { FreeAgentTable } from "@/components/FreeAgentTable";
 import Link from "next/link";
+import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +65,8 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
             return acc;
         }, {} as Record<string, number>);
 
+        const rankingsVintage = formatVintage(await getRankingsVintage(format));
+
         return (
             <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8">
                 <div className="max-w-4xl mx-auto">
@@ -93,7 +96,7 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
                         ))}
                     </div>
 
-                    <FreeAgentTable players={freeAgents} />
+                    <FreeAgentTable players={freeAgents} rankingsVintage={rankingsVintage} />
                 </div>
             </div>
         );

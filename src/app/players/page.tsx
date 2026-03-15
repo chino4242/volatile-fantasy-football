@@ -3,6 +3,7 @@ import { players, playerValues } from "@/db/schema";
 import { desc, eq, isNotNull } from "drizzle-orm";
 import Link from "next/link";
 import { PlayersTable } from "./PlayersTable";
+import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +44,8 @@ export default async function PlayersPage({ searchParams }: PageProps) {
         acc[pos] += player.fc_value || 0;
         return acc;
     }, {} as Record<string, number>);
+
+    const rankingsVintage = formatVintage(await getRankingsVintage(format));
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-8">
@@ -99,7 +102,7 @@ export default async function PlayersPage({ searchParams }: PageProps) {
                     ))}
                 </div>
 
-                <PlayersTable players={allPlayers as any[]} format={format} />
+                <PlayersTable players={allPlayers as any[]} format={format} rankingsVintage={rankingsVintage} />
             </div>
         </div>
     );

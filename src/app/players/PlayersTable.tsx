@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings2, TrendingUp, TrendingDown } from 'lucide-react';
+import { TrendingUp, TrendingDown } from 'lucide-react';
+import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
+import type { ColumnDef } from '@/components/ColumnPicker';
 
 interface PlayerData {
     sleeper_id: string;
@@ -23,6 +25,7 @@ interface PlayerData {
 interface PlayersTableProps {
     players: PlayerData[];
     format: '1qb' | 'sf';
+    rankingsVintage?: string | null;
 }
 
 type SignalFilter = 'ALL' | 'STRONG BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG SELL';
@@ -36,25 +39,17 @@ const SIGNAL_FILTERS: { label: SignalFilter; activeColor: string }[] = [
     { label: 'STRONG SELL', activeColor: 'bg-red-600 text-white' },
 ];
 
-type ColKey = 'market_value' | 'fc_rank' | 'fc_pos_rank' | 'combined_value' | 'trend_30d' | 'trade_freq' | 'internal_rank' | 'internal_pos' | 'tier' | 'value_gap';
-
-interface ColDef {
-    key: ColKey;
-    label: string;
-    defaultOn: boolean;
-}
-
-const COLUMNS: ColDef[] = [
-    { key: 'market_value', label: 'Market Value', defaultOn: true },
-    { key: 'fc_rank', label: 'FC Overall', defaultOn: true },
-    { key: 'fc_pos_rank', label: 'FC Pos Rank', defaultOn: false },
-    { key: 'combined_value', label: 'Combined', defaultOn: false },
-    { key: 'trend_30d', label: '30d Trend', defaultOn: false },
-    { key: 'trade_freq', label: 'Trade Freq', defaultOn: false },
-    { key: 'internal_rank', label: 'VFF Rank', defaultOn: false },
-    { key: 'internal_pos', label: 'VFF Pos', defaultOn: false },
-    { key: 'tier', label: 'Tier', defaultOn: false },
-    { key: 'value_gap', label: 'Signal', defaultOn: true },
+const COLUMNS: ColumnDef[] = [
+    { key: 'market_value', label: 'Market Value', defaultOn: true, group: 'core' },
+    { key: 'fc_rank', label: 'FC Overall', defaultOn: true, group: 'fc' },
+    { key: 'fc_pos_rank', label: 'FC Pos Rank', defaultOn: false, group: 'fc' },
+    { key: 'combined_value', label: 'Combined', defaultOn: false, group: 'fc' },
+    { key: 'trend_30d', label: '30d Trend', defaultOn: false, group: 'fc' },
+    { key: 'trade_freq', label: 'Trade Freq', defaultOn: false, group: 'fc' },
+    { key: 'internal_rank', label: 'VFF Rank', defaultOn: false, group: 'internal' },
+    { key: 'internal_pos', label: 'VFF Pos', defaultOn: false, group: 'internal' },
+    { key: 'tier', label: 'Tier', defaultOn: false, group: 'internal' },
+    { key: 'value_gap', label: 'Signal', defaultOn: true, group: 'internal' },
 ];
 
 const getValueGap = (player: PlayerData) => {
@@ -73,25 +68,17 @@ const getValueGapLabel = (gap: number | null) => {
     return { label: 'HOLD', color: 'bg-zinc-400 text-white' };
 };
 
-export function PlayersTable({ players, format }: PlayersTableProps) {
+export function PlayersTable({ players, format, rankingsVintage }: PlayersTableProps) {
     const [activePositions, setActivePositions] = useState<Set<string>>(new Set(['QB', 'RB', 'WR', 'TE']));
     const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
-    
-    // Load column visibility from localStorage
-    const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => {
-        if (typeof window === 'undefined') return new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key));
-        const saved = localStorage.getItem('vff_column_visibility');
-        if (saved) {
-            try {
-                return new Set(JSON.parse(saved));
-            } catch {
-                return new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key));
-            }
-        }
-        return new Set(COLUMNS.filter(c => c.defaultOn).map(c => c.key));
-    });
-    
-    const [showColumnPicker, setShowColumnPicker] = useState(false);
+
+    const vffLabel = rankingsVintage ? `VFF Rankings (${rankingsVintage})` : 'VFF Rankings';
+    const COLUMN_GROUPS = [
+        { id: 'core', label: 'Core' },
+        { id: 'fc', label: 'FantasyCalc' },
+        { id: 'internal', label: vffLabel },
+    ];
+    const { visibleCols, columnOrder, toggle: toggleCol, reorder, show, orderedVisible } = useColumnState(COLUMNS, 'vff_players_columns');
 
     const togglePosition = (pos: string) => {
         setActivePositions(prev => {
@@ -100,18 +87,6 @@ export function PlayersTable({ players, format }: PlayersTableProps) {
             return next;
         });
     };
-
-    const toggleCol = (key: ColKey) => {
-        setVisibleCols(prev => {
-            const next = new Set(prev);
-            next.has(key) ? next.delete(key) : next.add(key);
-            // Save to localStorage
-            localStorage.setItem('vff_column_visibility', JSON.stringify([...next]));
-            return next;
-        });
-    };
-
-    const show = (key: ColKey) => visibleCols.has(key);
 
     const filteredPlayers = players.filter(p => {
         if (!activePositions.has(p.position || '')) return false;
@@ -124,6 +99,45 @@ export function PlayersTable({ players, format }: PlayersTableProps) {
 
     const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'PICK'];
 
+    const vintageTitle = rankingsVintage ? `VFF Rankings from ${rankingsVintage}` : undefined;
+    const signalTitle = rankingsVintage ? `Signal based on ${rankingsVintage} VFF ranks vs. current FC market ranks` : undefined;
+
+    const renderHeader = (key: string) => {
+        const h: Record<string, React.ReactNode> = {
+            market_value: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Value</th>,
+            fc_rank: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">FC Rank</th>,
+            fc_pos_rank: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">FC Pos</th>,
+            combined_value: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Combined</th>,
+            trend_30d: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">30d Trend</th>,
+            trade_freq: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Trade Freq</th>,
+            internal_rank: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase" title={vintageTitle}>VFF Rank</th>,
+            internal_pos: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase" title={vintageTitle}>VFF Pos</th>,
+            tier: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase" title={vintageTitle}>Tier</th>,
+            value_gap: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase" title={signalTitle}>Signal{rankingsVintage ? <span className="ml-1 text-[9px] font-normal normal-case text-purple-400">({rankingsVintage})</span> : null}</th>,
+        };
+        return h[key] || null;
+    };
+
+    const renderCell = (key: string, player: PlayerData) => {
+        const gap = getValueGap(player);
+        const gapLabel = getValueGapLabel(gap);
+        const trend = player.fc_trend_30_day;
+
+        const c: Record<string, React.ReactNode> = {
+            market_value: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-900 dark:text-zinc-100">{player.fc_value?.toLocaleString() || '–'}</td>,
+            fc_rank: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.fc_rank || '–'}</td>,
+            fc_pos_rank: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.fc_position_rank ? `${player.position}${player.fc_position_rank}` : '–'}</td>,
+            combined_value: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.fc_combined_value?.toLocaleString() || '–'}</td>,
+            trend_30d: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm">{trend ? <span className={`inline-flex items-center gap-1 ${trend > 0 ? 'text-green-600' : trend < 0 ? 'text-red-600' : 'text-zinc-500'}`}>{trend > 0 ? <TrendingUp className="w-3 h-3" /> : trend < 0 ? <TrendingDown className="w-3 h-3" /> : null}{trend > 0 ? '+' : ''}{trend}</span> : '–'}</td>,
+            trade_freq: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.fc_trade_frequency ? `${(parseFloat(player.fc_trade_frequency) * 100).toFixed(2)}%` : '–'}</td>,
+            internal_rank: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.rank_overall || '–'}</td>,
+            internal_pos: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.rank_pos ? `${player.position}${player.rank_pos}` : '–'}</td>,
+            tier: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.rank_tier || '–'}</td>,
+            value_gap: <td key={key} className="px-6 py-4 whitespace-nowrap text-right">{gapLabel ? <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${gapLabel.color}`} title={rankingsVintage ? `Based on ${rankingsVintage} VFF ranks vs. current FC market ranks` : undefined}>{gapLabel.label}</span> : <span className="text-sm text-zinc-400">–</span>}</td>,
+        };
+        return c[key] || null;
+    };
+
     return (
         <div>
             {/* Filters */}
@@ -135,22 +149,13 @@ export function PlayersTable({ players, format }: PlayersTableProps) {
                         {POSITIONS.map(pos => {
                             const isActive = activePositions.has(pos);
                             const colors: Record<string, string> = {
-                                QB: 'bg-[#9de89f] text-zinc-900',
-                                RB: 'bg-[#ffadad] text-zinc-900',
-                                WR: 'bg-[#9bf6ff] text-zinc-900',
-                                TE: 'bg-[#ffd6a5] text-zinc-900',
+                                QB: 'bg-[#9de89f] text-zinc-900', RB: 'bg-[#ffadad] text-zinc-900',
+                                WR: 'bg-[#9bf6ff] text-zinc-900', TE: 'bg-[#ffd6a5] text-zinc-900',
                                 PICK: 'bg-[#6fffe9] text-zinc-900',
                             };
                             return (
-                                <button
-                                    key={pos}
-                                    onClick={() => togglePosition(pos)}
-                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                                        isActive
-                                            ? colors[pos]
-                                            : 'bg-zinc-100 text-zinc-600 opacity-40 hover:opacity-60 dark:bg-zinc-800 dark:text-zinc-400'
-                                    }`}
-                                >
+                                <button key={pos} onClick={() => togglePosition(pos)}
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${isActive ? colors[pos] : 'bg-zinc-100 text-zinc-600 opacity-40 hover:opacity-60 dark:bg-zinc-800 dark:text-zinc-400'}`}>
                                     {pos}
                                 </button>
                             );
@@ -163,15 +168,8 @@ export function PlayersTable({ players, format }: PlayersTableProps) {
                     <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Signal</h3>
                     <div className="flex flex-wrap gap-2">
                         {SIGNAL_FILTERS.map(({ label, activeColor }) => (
-                            <button
-                                key={label}
-                                onClick={() => setSignalFilter(label)}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                    signalFilter === label
-                                        ? activeColor
-                                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
-                                }`}
-                            >
+                            <button key={label} onClick={() => setSignalFilter(label)}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${signalFilter === label ? activeColor : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'}`}>
                                 {label}
                             </button>
                         ))}
@@ -179,30 +177,7 @@ export function PlayersTable({ players, format }: PlayersTableProps) {
                 </div>
 
                 {/* Column Picker */}
-                <div className="relative">
-                    <button
-                        onClick={() => setShowColumnPicker(!showColumnPicker)}
-                        className="flex items-center gap-2 px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-300 transition-colors"
-                    >
-                        <Settings2 className="w-4 h-4" />
-                        Columns
-                    </button>
-                    {showColumnPicker && (
-                        <div className="absolute top-full mt-2 left-0 bg-white dark:bg-zinc-900 rounded-lg shadow-lg ring-1 ring-zinc-900/5 p-4 z-10 min-w-[200px]">
-                            {COLUMNS.map(col => (
-                                <label key={col.key} className="flex items-center gap-2 py-2 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 px-2 rounded">
-                                    <input
-                                        type="checkbox"
-                                        checked={show(col.key)}
-                                        onChange={() => toggleCol(col.key)}
-                                        className="rounded"
-                                    />
-                                    <span className="text-sm text-zinc-700 dark:text-zinc-300">{col.label}</span>
-                                </label>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                <ColumnPicker columns={COLUMNS} visibleCols={visibleCols} columnOrder={columnOrder} onToggle={toggleCol} onReorder={reorder} groups={COLUMN_GROUPS} />
             </div>
 
             {/* Results count */}
@@ -220,102 +195,19 @@ export function PlayersTable({ players, format }: PlayersTableProps) {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Player</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Pos</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Team</th>
-                                {show('market_value') && <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Value</th>}
-                                {show('fc_rank') && <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">FC Rank</th>}
-                                {show('fc_pos_rank') && <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">FC Pos</th>}
-                                {show('combined_value') && <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Combined</th>}
-                                {show('trend_30d') && <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">30d Trend</th>}
-                                {show('trade_freq') && <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Trade Freq</th>}
-                                {show('internal_rank') && <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">VFF Rank</th>}
-                                {show('internal_pos') && <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">VFF Pos</th>}
-                                {show('tier') && <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Tier</th>}
-                                {show('value_gap') && <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Signal</th>}
+                                {orderedVisible.map(key => renderHeader(key))}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                            {filteredPlayers.map((player, index) => {
-                                const gap = getValueGap(player);
-                                const gapLabel = getValueGapLabel(gap);
-                                const trend = player.fc_trend_30_day;
-
-                                return (
-                                    <tr key={player.sleeper_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                                        <td className="px-3 py-4 whitespace-nowrap text-sm text-zinc-400 dark:text-zinc-500 font-mono">
-                                            {index + 1}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                                            {player.full_name}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400">
-                                            {player.position}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400">
-                                            {player.team || 'FA'}
-                                        </td>
-                                        {show('market_value') && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-900 dark:text-zinc-100">
-                                                {player.fc_value?.toLocaleString() || '–'}
-                                            </td>
-                                        )}
-                                        {show('fc_rank') && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">
-                                                {player.fc_rank || '–'}
-                                            </td>
-                                        )}
-                                        {show('fc_pos_rank') && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">
-                                                {player.fc_position_rank ? `${player.position}${player.fc_position_rank}` : '–'}
-                                            </td>
-                                        )}
-                                        {show('combined_value') && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">
-                                                {player.fc_combined_value?.toLocaleString() || '–'}
-                                            </td>
-                                        )}
-                                        {show('trend_30d') && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                                                {trend ? (
-                                                    <span className={`inline-flex items-center gap-1 ${trend > 0 ? 'text-green-600' : trend < 0 ? 'text-red-600' : 'text-zinc-500'}`}>
-                                                        {trend > 0 ? <TrendingUp className="w-3 h-3" /> : trend < 0 ? <TrendingDown className="w-3 h-3" /> : null}
-                                                        {trend > 0 ? '+' : ''}{trend}
-                                                    </span>
-                                                ) : '–'}
-                                            </td>
-                                        )}
-                                        {show('trade_freq') && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">
-                                                {player.fc_trade_frequency ? `${(parseFloat(player.fc_trade_frequency) * 100).toFixed(2)}%` : '–'}
-                                            </td>
-                                        )}
-                                        {show('internal_rank') && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">
-                                                {player.rank_overall || '–'}
-                                            </td>
-                                        )}
-                                        {show('internal_pos') && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">
-                                                {player.rank_pos ? `${player.position}${player.rank_pos}` : '–'}
-                                            </td>
-                                        )}
-                                        {show('tier') && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">
-                                                {player.rank_tier || '–'}
-                                            </td>
-                                        )}
-                                        {show('value_gap') && (
-                                            <td className="px-6 py-4 whitespace-nowrap text-right">
-                                                {gapLabel ? (
-                                                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${gapLabel.color}`}>
-                                                        {gapLabel.label}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-sm text-zinc-400">–</span>
-                                                )}
-                                            </td>
-                                        )}
-                                    </tr>
-                                );
-                            })}
+                            {filteredPlayers.map((player, index) => (
+                                <tr key={player.sleeper_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                                    <td className="px-3 py-4 whitespace-nowrap text-sm text-zinc-400 dark:text-zinc-500 font-mono">{index + 1}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-zinc-900 dark:text-zinc-100">{player.full_name}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400">{player.position}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400">{player.team || 'FA'}</td>
+                                    {orderedVisible.map(key => renderCell(key, player))}
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>

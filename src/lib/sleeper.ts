@@ -91,6 +91,49 @@ export function getPickFantasyCalcId(season: string, round: number): string {
     return `FP_${season}_${round}`;
 }
 
+export interface SleeperDraft {
+    draft_id: string;
+    league_id: string;
+    season: string;
+    status: string;
+    type: string; // 'snake' | 'linear'
+    settings: { rounds: number; reversal_round: number; teams: number };
+    slot_to_roster_id: Record<string, number> | null;
+    draft_order: Record<string, number> | null;
+}
+
+export interface SleeperDraftTradedPick {
+    season: string;
+    round: number;
+    roster_id: number;
+    previous_owner_id: number;
+    owner_id: number;
+}
+
+export async function getLeagueDrafts(leagueId: string): Promise<SleeperDraft[]> {
+    const cacheKey = `sleeper:drafts:${leagueId}`;
+    const cached = cache.get<SleeperDraft[]>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+
+    const res = await fetch(`${BASE_URL}/league/${leagueId}/drafts`);
+    if (!res.ok) throw new Error("Failed to fetch drafts");
+    const data = await res.json();
+    cache.set(cacheKey, data);
+    return data;
+}
+
+export async function getDraftTradedPicks(draftId: string): Promise<SleeperDraftTradedPick[]> {
+    const cacheKey = `sleeper:draft_traded_picks:${draftId}`;
+    const cached = cache.get<SleeperDraftTradedPick[]>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+
+    const res = await fetch(`${BASE_URL}/draft/${draftId}/traded_picks`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    cache.set(cacheKey, data);
+    return data;
+}
+
 export function getAllDraftPicks(rosters: SleeperRoster[], tradedPicks: SleeperTradedPick[], currentYear: number = 2026): DraftPick[] {
     const picks: DraftPick[] = [];
     const numTeams = rosters.length;

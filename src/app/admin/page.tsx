@@ -51,7 +51,7 @@ export default function AdminPage() {
                 throw new Error(data.error || 'Failed to upload rankings');
             }
 
-            setMessage(`Success! Match rate: ${data.matches}/${data.totalRows} (${data.matchRate}%). Updated ${data.updatedCount} records.`);
+            setMessage(`Success! Match rate: ${data.matches}/${data.totalRows} (${data.matchRate}%). Updated ${data.updatedCount} records.${data.archivedCount ? ` Archived ${data.archivedCount} previous rankings.` : ''}`);
             setFile(null);
             // Reset file input element if needed
             const fileInput = document.getElementById('file-upload') as HTMLInputElement;

@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { players, playerValues } from '@/db/schema';
 import { eq, inArray, sql } from 'drizzle-orm';
 import MockDraftClient from './MockDraftClient';
+import { getRankingsVintage, formatVintage } from '@/lib/rankings-vintage';
 
 export default async function FleaflickerMockDraftPage({
     params,
@@ -93,12 +94,15 @@ export default async function FleaflickerMockDraftPage({
         };
     }));
 
+    const rankingsVintage = formatVintage(await getRankingsVintage(format as '1qb' | 'sf'));
+
     return (
         <MockDraftClient
             leagueId={leagueId}
             teams={teams}
             freeAgents={freeAgents}
             format={format}
+            rankingsVintage={rankingsVintage}
         />
     );
 }
