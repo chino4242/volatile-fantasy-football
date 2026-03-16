@@ -26,6 +26,8 @@ interface Player {
     rank_1qb_pos?: number | null;
     rank_sf_tier?: number | null;
     rank_1qb_tier?: number | null;
+    zap_score?: number | null;
+    zap_category?: string | null;
 }
 
 interface Team {
@@ -53,6 +55,7 @@ interface DraftPick {
     playerName?: string;
     playerPosition?: string;
     playerValue?: number;
+    pickReason?: string;
 }
 
 interface MockDraftClientProps {
@@ -62,6 +65,7 @@ interface MockDraftClientProps {
     format: string;
     rankingsVintage?: string | null;
     platform?: 'sleeper' | 'fleaflicker';
+    rosterSlots?: { QB: number; RB: number; WR: number; TE: number; FLEX: number };
 }
 
 const ROUNDS = 5;
@@ -78,9 +82,10 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'vff_rank', label: 'VFF Rank', defaultOn: false, group: 'internal' },
     { key: 'vff_pos', label: 'VFF Pos', defaultOn: false, group: 'internal' },
     { key: 'tier', label: 'Tier', defaultOn: false, group: 'internal' },
+    { key: 'zap', label: 'ZAP', defaultOn: true, group: 'prospect' },
 ];
 
-export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, platform = 'fleaflicker' }: MockDraftClientProps) {
+export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, platform = 'fleaflicker', rosterSlots }: MockDraftClientProps) {
     // Generate draft order from current year picks
     const draftOrder = useMemo(() => {
         const currentYear = new Date().getFullYear();
@@ -113,7 +118,8 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     const [availablePlayers, setAvailablePlayers] = useState<Player[]>(freeAgents);
     const [userTeamId, setUserTeamId] = useState<number | null>(null);
     const [draftStarted, setDraftStarted] = useState(false);
-    const [setupComplete, setSetupComplete] = useState(false);
+    const isSleeper = platform === 'sleeper';
+    const [setupComplete, setSetupComplete] = useState(!isSleeper);
 
     // Draft setup: slot assignments per round — Record<`${round}.${slot}`, teamId>
     // Default: each team owns their slot in every round (no trades)
@@ -186,6 +192,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         { id: 'core', label: 'Core' },
         { id: 'fc', label: 'FantasyCalc' },
         { id: 'internal', label: vffLabel },
+        { id: 'prospect', label: 'Prospect' },
     ];
     const { visibleCols: visibleColumns, columnOrder, toggle: toggleCol, reorder, orderedVisible } = useColumnState(MOCK_DRAFT_COLUMNS, 'vff_mock_draft_columns');
     const [showTradeModal, setShowTradeModal] = useState(false);
@@ -196,7 +203,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     const isUserPick = currentPick && userTeamId !== null && currentPick.teamId === userTeamId;
     const isDraftComplete = currentPickIndex >= picks.length;
 
-    const makePick = (playerId: string) => {
+    const makePick = (playerId: string, reason?: string) => {
         const player = availablePlayers.find(p => p.id === playerId);
         if (!player) return;
 
@@ -207,6 +214,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
             playerName: player.full_name,
             playerPosition: player.position || undefined,
             playerValue: player.fc_value || undefined,
+            pickReason: reason,
         };
 
         setPicks(updatedPicks);
@@ -217,40 +225,94 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     // Auto-simulate non-user picks
     if (draftStarted && !isDraftComplete && currentPick && !isUserPick && userTeamId !== null && availablePlayers.length > 0) {
         setTimeout(() => {
-            const selectedPlayer = simulatePick(currentPick.teamId);
-            if (selectedPlayer) {
-                makePick(selectedPlayer.id);
+            const result = simulatePick(currentPick.teamId);
+            if (result) {
+                makePick(result.player.id, result.reason);
             }
         }, 1500);
     }
 
-    // Calculate league average positional values
-    const leagueAvgPositions = useMemo(() => {
-        const totals = { QB: 0, RB: 0, WR: 0, TE: 0 };
-        teams.forEach(team => {
-            totals.QB += team.positionValues.QB;
-            totals.RB += team.positionValues.RB;
-            totals.WR += team.positionValues.WR;
-            totals.TE += team.positionValues.TE;
+    // Default roster slots if not provided (1QB, 2RB, 3WR, 1TE, 2FLEX)
+    const slots = rosterSlots || { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
+    // FLEX counts toward RB/WR/TE proportionally
+    const effectiveSlots = {
+        QB: slots.QB,
+        RB: slots.RB + slots.FLEX * 0.33,
+        WR: slots.WR + slots.FLEX * 0.5,
+        TE: slots.TE + slots.FLEX * 0.17,
+    };
+    const totalSlots = effectiveSlots.QB + effectiveSlots.RB + effectiveSlots.WR + effectiveSlots.TE;
+    const TARGET_ALLOCATION = {
+        QB: effectiveSlots.QB / totalSlots,
+        RB: effectiveSlots.RB / totalSlots,
+        WR: effectiveSlots.WR / totalSlots,
+        TE: effectiveSlots.TE / totalSlots,
+    };
+
+    // Waiver scarcity: avg value of top N free agents at each position (N = league size)
+    const waiverScarcity = useMemo(() => {
+        const leagueSize = teams.length;
+        const byPos: Record<string, number[]> = { QB: [], RB: [], WR: [], TE: [] };
+        availablePlayers.forEach(p => {
+            if (p.position && p.position in byPos && p.fc_value) {
+                byPos[p.position].push(p.fc_value);
+            }
         });
-        return {
-            QB: totals.QB / teams.length,
-            RB: totals.RB / teams.length,
-            WR: totals.WR / teams.length,
-            TE: totals.TE / teams.length,
-        };
-    }, [teams]);
+        const avgTop: Record<string, number> = {};
+        (['QB', 'RB', 'WR', 'TE'] as const).forEach(pos => {
+            const sorted = byPos[pos].sort((a, b) => b - a).slice(0, leagueSize);
+            avgTop[pos] = sorted.length > 0 ? sorted.reduce((a, b) => a + b, 0) / sorted.length : 0;
+        });
+        // Normalize: lower avg = more scarce = higher multiplier
+        const maxAvg = Math.max(...Object.values(avgTop), 1);
+        const scarcity: Record<string, number> = {};
+        (['QB', 'RB', 'WR', 'TE'] as const).forEach(pos => {
+            scarcity[pos] = avgTop[pos] > 0 ? 1 + (maxAvg - avgTop[pos]) / maxAvg : 1;
+        });
+        return scarcity;
+    }, [availablePlayers, teams.length]);
 
     const calculatePositionalNeed = (teamId: number): Record<string, number> => {
         const team = teams.find(t => t.id === teamId);
         if (!team) return { QB: 0, RB: 0, WR: 0, TE: 0 };
 
+        // Count rostered + drafted players at each position
+        const rosterCounts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+        team.players.forEach(p => {
+            if (p.position && p.position in rosterCounts) rosterCounts[p.position as keyof typeof rosterCounts]++;
+        });
+        picks.filter(p => p.teamId === teamId && p.playerPosition).forEach(p => {
+            const pos = p.playerPosition as keyof typeof rosterCounts;
+            if (pos in rosterCounts) rosterCounts[pos]++;
+        });
+
+        // Include values for allocation calc
+        const draftedValues = { QB: 0, RB: 0, WR: 0, TE: 0 };
+        picks.filter(p => p.teamId === teamId && p.playerPosition && p.playerValue).forEach(p => {
+            const pos = p.playerPosition as keyof typeof draftedValues;
+            if (pos in draftedValues) draftedValues[pos] += p.playerValue!;
+        });
+        const currentValues = {
+            QB: team.positionValues.QB + draftedValues.QB,
+            RB: team.positionValues.RB + draftedValues.RB,
+            WR: team.positionValues.WR + draftedValues.WR,
+            TE: team.positionValues.TE + draftedValues.TE,
+        };
+        const totalValue = currentValues.QB + currentValues.RB + currentValues.WR + currentValues.TE || 1;
+
         const needs: Record<string, number> = {};
         (['QB', 'RB', 'WR', 'TE'] as const).forEach(pos => {
-            const teamValue = team.positionValues[pos];
-            const avgValue = leagueAvgPositions[pos];
-            // Higher need when below average
-            needs[pos] = Math.max(0, (avgValue - teamValue) / avgValue);
+            // Allocation need (0-1)
+            const currentPct = currentValues[pos] / totalValue;
+            const targetPct = TARGET_ALLOCATION[pos];
+            const allocNeed = Math.max(0, Math.min(1, (targetPct - currentPct) / targetPct));
+
+            // Depth need: if below starting requirement
+            const startReq = Math.ceil(effectiveSlots[pos]);
+            const depthNeed = rosterCounts[pos] < startReq ? (startReq - rosterCounts[pos]) / startReq : 0;
+
+            // Combine: 50% allocation, 30% depth, 20% scarcity boost
+            needs[pos] = allocNeed * 0.5 + depthNeed * 0.3 + (allocNeed * (waiverScarcity[pos] - 1)) * 0.2;
         });
 
         return needs;
@@ -260,40 +322,42 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         const value = player.fc_value || 0;
         const needs = calculatePositionalNeed(teamId);
         const posNeed = needs[player.position || ''] || 0;
-        const random = Math.random() * 100;
 
-        return (value * 0.85) + (posNeed * value * 0.10) + (random * 0.05);
+        return (value * 0.92) + (posNeed * value * 0.08);
     };
 
-    const simulatePick = (teamId: number) => {
+    const simulatePick = (teamId: number): { player: Player; reason: string } | null => {
         if (availablePlayers.length === 0) return null;
 
-        // Score all available players
-        const scoredPlayers = availablePlayers.map(p => ({
-            player: p,
-            score: scorePlayer(p, teamId)
-        }));
+        const needs = calculatePositionalNeed(teamId);
+        const scoredPlayers = availablePlayers.map(p => {
+            const value = p.fc_value || 0;
+            const posNeed = needs[p.position || ''] || 0;
+            return { player: p, score: scorePlayer(p, teamId), value, posNeed };
+        });
 
-        // Sort by score and pick from top 5
         scoredPlayers.sort((a, b) => b.score - a.score);
-        const topCandidates = scoredPlayers.slice(0, 5);
+        const topCandidates = scoredPlayers.slice(0, 3);
         
-        // Weighted random selection from top candidates
-        const totalScore = topCandidates.reduce((sum, c) => sum + c.score, 0);
-        let random = Math.random() * totalScore;
+        const squared = topCandidates.map(c => ({ ...c, w: c.score * c.score }));
+        const totalW = squared.reduce((sum, c) => sum + c.w, 0);
+        let random = Math.random() * totalW;
         
-        for (const candidate of topCandidates) {
-            random -= candidate.score;
+        for (let i = 0; i < squared.length; i++) {
+            random -= squared[i].w;
             if (random <= 0) {
-                return candidate.player;
+                const c = squared[i];
+                const reason = `#${i + 1} of 3 | Value: ${c.value} | ${c.player.position} need: ${(c.posNeed * 100).toFixed(0)}% | Score: ${c.score.toFixed(0)}`;
+                return { player: c.player, reason };
             }
         }
 
-        return topCandidates[0].player;
+        const c = topCandidates[0];
+        return { player: c.player, reason: `BPA | Value: ${c.value} | Score: ${c.score.toFixed(0)}` };
     };
 
     const resetDraft = () => {
-        setPicks(setupComplete ? setupDraftOrder : draftOrder);
+        setPicks(isSleeper ? setupDraftOrder : draftOrder);
         setCurrentPickIndex(0);
         setAvailablePlayers(freeAgents);
         setDraftStarted(false);
@@ -333,6 +397,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         vff_rank: { className: vffTh, sortKey: sf ? 'rank_sf_overall' : 'rank_1qb_overall', label: 'VFF Rank', title: vffTitle },
         vff_pos: { className: vffTh, sortKey: sf ? 'rank_sf_pos' : 'rank_1qb_pos', label: 'VFF Pos', title: vffTitle },
         tier: { className: vffTh, sortKey: sf ? 'rank_sf_tier' : 'rank_1qb_tier', label: 'Tier', title: vffTitle },
+        zap: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'zap_score', label: 'ZAP' },
     };
 
     const renderHeader = (key: string) => {
@@ -357,6 +422,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
             case 'vff_rank': return <td key={key} className={vffTd}>{(sf ? player.rank_sf_overall : player.rank_1qb_overall) || '—'}</td>;
             case 'vff_pos': return <td key={key} className={vffTd}>{player.position}{(sf ? player.rank_sf_pos : player.rank_1qb_pos) || '—'}</td>;
             case 'tier': return <td key={key} className={vffTd}>{(sf ? player.rank_sf_tier : player.rank_1qb_tier) || '—'}</td>;
+            case 'zap': return <td key={key} className="hidden sm:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-emerald-50/50 dark:bg-emerald-950/20">{player.zap_score ? <span title={player.zap_category || ''}>{player.zap_score.toFixed(1)}</span> : '—'}</td>;
             default: return null;
         }
     };
@@ -689,15 +755,17 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                 {userTeamId !== null && setupComplete && !draftStarted && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 mb-6 text-center">
                         <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
-                            Ready to draft as {teams.find(t => t.id === userTeamId)?.name}? (Slot {userDraftSlot})
+                            Ready to draft as {teams.find(t => t.id === userTeamId)?.name}{isSleeper && userDraftSlot ? ` (Slot ${userDraftSlot})` : ''}?
                         </h2>
                         <div className="flex gap-3 justify-center">
-                            <button
-                                onClick={() => setSetupComplete(false)}
-                                className="px-6 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                            >
-                                Edit Setup
-                            </button>
+                            {isSleeper && (
+                                <button
+                                    onClick={() => setSetupComplete(false)}
+                                    className="px-6 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                                >
+                                    Edit Setup
+                                </button>
+                            )}
                             <button
                                 onClick={() => setDraftStarted(true)}
                                 className="px-8 py-4 text-lg font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-lg"
@@ -723,6 +791,40 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                     <div className="text-base sm:text-lg text-indigo-600 dark:text-indigo-400 font-semibold">
                                         Your pick! Select a player below or evaluate trades.
                                     </div>
+                                    {(() => {
+                                        const needs = calculatePositionalNeed(userTeamId!);
+                                        const top3 = availablePlayers
+                                            .map(p => {
+                                                const value = p.fc_value || 0;
+                                                const posNeed = needs[p.position || ''] || 0;
+                                                return { player: p, score: scorePlayer(p, userTeamId!), value, posNeed };
+                                            })
+                                            .sort((a, b) => b.score - a.score)
+                                            .slice(0, 3);
+                                        return (
+                                            <div className="flex flex-col sm:flex-row gap-2 justify-center mt-2">
+                                                {top3.map((c, i) => (
+                                                    <button
+                                                        key={c.player.id}
+                                                        onClick={() => makePick(c.player.id)}
+                                                        className={`text-left px-3 py-2 rounded-lg border-2 transition-colors ${
+                                                            i === 0
+                                                                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30'
+                                                                : 'border-zinc-200 dark:border-zinc-700 hover:border-indigo-300'
+                                                        }`}
+                                                    >
+                                                        <div className="text-xs text-zinc-400">#{i + 1}</div>
+                                                        <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">
+                                                            {c.player.full_name} <span className="text-zinc-400">{c.player.position}</span>
+                                                        </div>
+                                                        <div className="text-[10px] text-zinc-500">
+                                                            Value: {c.value} | {c.player.position} need: {(c.posNeed * 100).toFixed(0)}% | Score: {c.score.toFixed(0)}
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    })()}
                                     <button
                                         onClick={() => setShowTradeModal(true)}
                                         className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors"
@@ -860,6 +962,9 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                             </td>
                                             <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
                                                 {pick.playerName || '—'}
+                                                {pick.pickReason && (
+                                                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">{pick.pickReason}</div>
+                                                )}
                                             </td>
                                             <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
                                                 {pick.playerPosition || '—'}

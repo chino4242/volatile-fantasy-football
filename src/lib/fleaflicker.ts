@@ -145,3 +145,28 @@ export async function getFleaflickerTeamPicks(leagueId: string, teamId: number):
         return [];
     }
 }
+
+export interface RosterSlots { QB: number; RB: number; WR: number; TE: number; FLEX: number }
+
+export async function getFleaflickerRosterSlots(leagueId: string): Promise<RosterSlots> {
+    const cacheKey = `fleaflicker:slots:${leagueId}`;
+    const cached = cache.get<RosterSlots>(cacheKey, TTL.FLEAFLICKER_LEAGUE);
+    if (cached) return cached;
+
+    const res = await fetch(`${BASE_URL}/FetchLeagueStandings?sport=NFL&league_id=${leagueId}`);
+    if (!res.ok) return { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
+    const data = await res.json();
+    const positions = data?.league?.rosterRequirements?.positions || [];
+    const slots: RosterSlots = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0 };
+    for (const p of positions) {
+        if (p.group !== 'START' || !p.start) continue;
+        const elig = p.eligibility || [];
+        if (elig.length === 1 && elig[0] in slots) {
+            slots[elig[0] as keyof RosterSlots] += p.start;
+        } else if (elig.length > 1) {
+            slots.FLEX += p.start;
+        }
+    }
+    cache.set(cacheKey, slots);
+    return slots;
+}

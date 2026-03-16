@@ -1,6 +1,6 @@
-import { getFleaflickerLeague } from '@/lib/fleaflicker';
+import { getFleaflickerLeague, getFleaflickerRosterSlots } from '@/lib/fleaflicker';
 import { db } from '@/db';
-import { players, playerValues } from '@/db/schema';
+import { players, playerValues, prospectData } from '@/db/schema';
 import { eq, inArray, sql } from 'drizzle-orm';
 import MockDraftClient from './MockDraftClient';
 import { getRankingsVintage, formatVintage } from '@/lib/rankings-vintage';
@@ -17,7 +17,10 @@ export default async function FleaflickerMockDraftPage({
     const sf = format === 'sf';
 
     // Fetch league data
-    const leagueData = await getFleaflickerLeague(leagueId);
+    const [leagueData, rosterSlots] = await Promise.all([
+        getFleaflickerLeague(leagueId),
+        getFleaflickerRosterSlots(leagueId),
+    ]);
 
     // Normalize name function (same as league page)
     const normalizeName = (name: string) =>
@@ -63,8 +66,20 @@ export default async function FleaflickerMockDraftPage({
         .where(sql`${players.position} IN ('QB', 'RB', 'WR', 'TE')`)
         .orderBy(sf ? playerValues.fc_value_sf : playerValues.fc_value_1qb);
 
+    // Fetch prospect data and build name lookup
+    const currentYear = new Date().getFullYear();
+    const prospects = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category })
+        .from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
+    const zapByName = new Map(prospects.map(p => [normalizeName(p.full_name), p]));
+
+    // Merge ZAP data into players
+    const allPlayersWithZap = allPlayersData.map(p => {
+        const zap = zapByName.get(normalizeName(p.full_name));
+        return { ...p, zap_score: zap ? parseFloat(zap.zap_score || '0') : null, zap_category: zap?.zap_category || null };
+    });
+
     // Filter to free agents only (by name matching)
-    const freeAgents = allPlayersData.filter(p => !rosteredPlayerNames.has(normalizeName(p.full_name)));
+    const freeAgents = allPlayersWithZap.filter(p => !rosteredPlayerNames.has(normalizeName(p.full_name)));
 
     // Build team rosters with values
     const teams = await Promise.all(leagueData.rosters.map(async (roster) => {
@@ -72,9 +87,9 @@ export default async function FleaflickerMockDraftPage({
         const playersWithValues = roster.players
             .map(p => {
                 const normalizedName = normalizeName(p.full_name);
-                return allPlayersData.find(dbPlayer => normalizeName(dbPlayer.full_name) === normalizedName);
+                return allPlayersWithZap.find(dbPlayer => normalizeName(dbPlayer.full_name) === normalizedName);
             })
-            .filter(Boolean) as typeof allPlayersData;
+            .filter(Boolean) as typeof allPlayersWithZap;
 
         // Calculate positional values
         const positionValues = { QB: 0, RB: 0, WR: 0, TE: 0 };
@@ -103,6 +118,7 @@ export default async function FleaflickerMockDraftPage({
             freeAgents={freeAgents}
             format={format}
             rankingsVintage={rankingsVintage}
+            rosterSlots={rosterSlots}
         />
     );
 }

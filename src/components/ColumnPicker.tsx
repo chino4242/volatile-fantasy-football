@@ -119,7 +119,15 @@ export function useColumnState(columns: ColumnDef[], storageKey: string) {
         if (typeof window === 'undefined') return new Set(columns.filter(c => c.defaultOn).map(c => c.key));
         const saved = localStorage.getItem(storageKey);
         if (saved) {
-            try { return new Set(JSON.parse(saved)); } catch { /* fall through */ }
+            try {
+                const restored = new Set<string>(JSON.parse(saved));
+                // Include new defaultOn columns not present when user last saved
+                const allSavedKeys = JSON.parse(saved) as string[];
+                columns.forEach(c => {
+                    if (c.defaultOn && !allSavedKeys.includes(c.key)) restored.add(c.key);
+                });
+                return restored;
+            } catch { /* fall through */ }
         }
         return new Set(columns.filter(c => c.defaultOn).map(c => c.key));
     });

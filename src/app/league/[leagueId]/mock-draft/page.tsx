@@ -1,7 +1,7 @@
 import { db } from '@/db';
-import { players, playerValues } from '@/db/schema';
+import { players, playerValues, prospectData } from '@/db/schema';
 import { getLeagueData, getAllDraftPicks, getPickFantasyCalcId, getLeagueDrafts, getDraftTradedPicks } from '@/lib/sleeper';
-import { eq, inArray, and, notInArray, not, like, desc } from 'drizzle-orm';
+import { eq, inArray, and, notInArray, not, like, desc, sql } from 'drizzle-orm';
 import MockDraftClient from '@/app/fleaflicker/[leagueId]/mock-draft/MockDraftClient';
 import { getRankingsVintage, formatVintage } from '@/lib/rankings-vintage';
 
@@ -122,7 +122,19 @@ export default async function SleeperMockDraftPage({
             .where(inArray(players.sleeper_id, allRosteredIds))
         : [];
 
-    const playerMap = new Map(rosteredPlayers.map(p => [p.id, p]));
+    // Fetch prospect ZAP data
+    const currentYear = new Date().getFullYear();
+    const normalizeName = (n: string) => n.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+    const prospects = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category })
+        .from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
+    const zapByName = new Map(prospects.map(p => [normalizeName(p.full_name), p]));
+    const addZap = <T extends { full_name: string }>(p: T) => {
+        const zap = zapByName.get(normalizeName(p.full_name));
+        return { ...p, zap_score: zap ? parseFloat(zap.zap_score || '0') : null, zap_category: zap?.zap_category || null };
+    };
+
+    const rosteredPlayersWithZap = rosteredPlayers.map(addZap);
+    const playerMap = new Map(rosteredPlayersWithZap.map(p => [p.id, p]));
 
     // Fetch free agents
     const excludeIds = allRosteredIds.length > 0 ? allRosteredIds : ['dummy'];
@@ -135,13 +147,14 @@ export default async function SleeperMockDraftPage({
         ))
         .orderBy(desc(valueCol))
         .limit(300);
+    const freeAgentsWithZap = freeAgents.map(addZap);
 
     // Build teams with draft picks from the draft board
     const teams = rosters.map(roster => {
         const owner = users.find(u => u.user_id === roster.owner_id);
         const rosterPlayers = (roster.players || [])
             .map(pid => playerMap.get(pid))
-            .filter(Boolean) as typeof rosteredPlayers;
+            .filter(Boolean) as typeof rosteredPlayersWithZap;
 
         const positionValues = { QB: 0, RB: 0, WR: 0, TE: 0 };
         rosterPlayers.forEach(p => {
@@ -181,7 +194,7 @@ export default async function SleeperMockDraftPage({
         <MockDraftClient
             leagueId={leagueId}
             teams={teams}
-            freeAgents={freeAgents}
+            freeAgents={freeAgentsWithZap}
             format={format}
             rankingsVintage={rankingsVintage}
             platform="sleeper"

@@ -18,7 +18,12 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 - **Position Value Analytics** — All Players page and Free Agent pages display summary cards showing total value by position, making it easy to identify position scarcity and opportunity
 - **Rookie Filter** — On the Free Agent page, filter specifically by rookies (identified by `years_exp === 0` from FantasyCalc)
 - **Column Sorting** — All table columns are sortable on League and Free Agent pages
-- **Mock Draft Simulator** — Full snake draft simulation with CPU auto-pick logic, manual user picks, real-time roster tracking, position filters, column picker (9+ columns), CSV export, and draft board visualization. Supports both Sleeper and Fleaflicker leagues with accurate draft order including traded picks
+- **Mock Draft Simulator** — Full snake draft simulation with intelligent CPU auto-pick logic, manual user picks, real-time roster tracking, position filters, column picker (9+ columns), CSV export, and draft board visualization. Supports both Sleeper and Fleaflicker leagues with accurate draft order including traded picks. Features:
+  - **Draft Setup (Sleeper)** — Pre-draft screen to select your draft slot and reassign picks for trades, persisted to localStorage per league
+  - **Smart CPU Logic** — 92% value weight + 8% positional need, selecting from top 3 candidates with weighted random (squared scores)
+  - **Positional Need Calculation** — Factors in lineup-derived target allocation (from Fleaflicker roster requirements API), depth vs starting slots, waiver wire scarcity, and players drafted during the mock
+  - **Pick Reasoning** — Shows score breakdown below each CPU pick (rank, value, need %, composite score)
+  - **User Recommendations** — When on the clock, displays top 3 recommended picks with full score breakdown; click to draft instantly
 - **Prospect Guide Integration** — Late Round Fantasy Football prospect data (ZAP scores, categories, breakout scores, draft capital delta, statistical comparables) ingested from PDF and ready for mock draft integration. Easy-to-use Python script for importing new prospect guides
 - **Soft Login / Dashboard** — Enter your Sleeper username to get a personalized dashboard showing all your 2025 leagues. Supports Fleaflicker accounts too
 - **Player Rankings** — Browse the top 50 dynasty players by FantasyCalc value

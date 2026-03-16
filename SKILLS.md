@@ -709,16 +709,50 @@ The `AppHeader` component reads `sleeperUsername` / `fleaflickerUsername` from `
 ## Mock Draft Simulator
 
 ### Overview
-Full snake draft simulation with CPU auto-pick logic, manual user picks, real-time roster tracking, and comprehensive player data display. Available at `/fleaflicker/[leagueId]/mock-draft`.
+Full snake draft simulation with intelligent CPU auto-pick logic, manual user picks, real-time roster tracking, and comprehensive player data display. Supports both Sleeper and Fleaflicker leagues with accurate draft order including traded picks.
 
 ### Features
 
+#### Draft Setup (Sleeper Only)
+- **Draft Slot Selection:** Pick your position (1-12) in the draft order
+- **Pick Assignment Grid:** 5 rounds × 12 slots, click any cell to reassign for traded picks
+- **Reset Button:** Clears localStorage and resets to defaults
+- **Persistence:** Saved to localStorage keyed by `vff_draft_setup_{leagueId}`
+- Fleaflicker skips setup entirely (draft order comes from API)
+
 #### Draft Mechanics
-- **Snake Draft Logic:** Draft order from Fleaflicker API (handles traded picks correctly)
-- **CPU Auto-Simulation:** Weighted algorithm (85% value, 10% positional need, 5% random)
+- **Snake Draft Logic:** Draft order from Fleaflicker API or Sleeper setup (handles traded picks)
+- **CPU Auto-Simulation:** Weighted algorithm (92% value, 8% positional need), top 3 candidates with squared weighted random selection
 - **User Team Selection:** Choose which team to control
 - **Manual Pick Interface:** Click player to draft when it's your turn
 - **Draft Board:** Visual grid showing all picks with team colors and highlighting
+
+#### Smart CPU Pick Logic
+- **Score Formula:** `score = (value × 0.92) + (positionalNeed × value × 0.08)`
+- **Candidate Pool:** Top 3 by score, squared scores for weighted random (heavily favors #1)
+- **No random noise** — deterministic scoring, randomness only in final selection
+
+#### Positional Need Calculation
+Three-factor model (0-1 scale):
+1. **Value Allocation Need (50%)** — How far below target allocation at that position
+   - Target allocation derived from starting lineup slots (e.g., 1QB/2RB/3WR/1TE/2FLEX)
+   - FLEX distributed proportionally: 50% WR, 33% RB, 17% TE
+2. **Depth Need (30%)** — Roster count vs starting requirement
+   - If roster count < starting slots, need increases (e.g., 1 RB with 2 starting slots = 50% depth need)
+3. **Waiver Scarcity Boost (20%)** — Positions thin on waivers get prioritized
+   - Compares avg value of top N free agents per position (N = league size)
+   - Lower waiver quality = higher scarcity multiplier
+
+Inputs: current roster composition, players drafted during mock, starting lineup requirements (from Fleaflicker roster requirements API), available free agent pool quality.
+
+#### Pick Reasoning Display
+- CPU picks show score breakdown as small gray text below player name
+- Format: `#1 of 3 | Value: 6639 | RB need: 34% | Score: 6641`
+
+#### User Recommendations
+- When on the clock, displays top 3 recommended picks as clickable cards
+- Each card shows: rank, player name/position, value, positional need %, composite score
+- Click any card to instantly draft that player
 
 #### Player Data Display
 - **9+ Sortable Columns:**
@@ -757,33 +791,38 @@ Full snake draft simulation with CPU auto-pick logic, manual user picks, real-ti
 ### Implementation
 
 #### Server Component (`page.tsx`)
-1. Fetches league data from Fleaflicker API
+1. Fetches league data from platform API (Fleaflicker or Sleeper)
 2. Queries database for player values and rankings
 3. Generates draft order (handles traded picks)
-4. Passes data to `MockDraftClient`
+4. Fetches roster requirements (Fleaflicker: `FetchLeagueStandings` API → `rosterRequirements.positions`)
+5. Passes data to `MockDraftClient` including `rosterSlots`
 
 #### Client Component (`MockDraftClient.tsx`)
 Manages all draft state:
 ```typescript
-const [draftPicks, setDraftPicks] = useState<DraftPick[]>([]);
-const [availablePlayers, setAvailablePlayers] = useState<Player[]>(players);
-const [currentPickIndex, setCurrentPickIndex] = useState(0);
-const [userTeamId, setUserTeamId] = useState<number | null>(null);
+interface DraftPick {
+    round: number;
+    pick: number;
+    teamId: number;
+    teamName: string;
+    playerId?: string;
+    playerName?: string;
+    playerPosition?: string;
+    playerValue?: number;
+    pickReason?: string;
+}
 ```
 
-#### CPU Auto-Pick Algorithm
+#### Roster Slots
 ```typescript
-const calculatePickScore = (player: Player, team: Team) => {
-  const valueScore = player.fc_value || 0;
-  const needScore = calculatePositionalNeed(player.position, team);
-  const randomFactor = Math.random() * 100;
-  
-  return (valueScore * 0.85) + (needScore * 0.10) + (randomFactor * 0.05);
-};
+interface RosterSlots { QB: number; RB: number; WR: number; TE: number; FLEX: number }
+// Fetched from Fleaflicker API, defaults to { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 }
+// Used to derive target allocation and depth requirements
 ```
 
 #### Draft Order
-Uses Fleaflicker's draft order API which returns correct slot numbers for each team, accounting for traded picks. No snake reversal needed - API provides the correct order.
+- **Fleaflicker:** Uses API which returns correct slot numbers for each team, accounting for traded picks
+- **Sleeper:** User configures via setup screen, persisted to localStorage
 
 #### Trade Evaluator
 When it's the user's turn to pick, they can click "Evaluate Trades" to:
@@ -804,8 +843,8 @@ When it's the user's turn to pick, they can click "Evaluate Trades" to:
 Based on actual FantasyCalc pick values in the database.
 
 ### Platform Support
-- ✅ Fleaflicker leagues (full support)
-- ⏳ Sleeper leagues (planned)
+- ✅ Fleaflicker leagues (full support with roster requirements API)
+- ✅ Sleeper leagues (full support with draft setup screen)
 
 ---
 
