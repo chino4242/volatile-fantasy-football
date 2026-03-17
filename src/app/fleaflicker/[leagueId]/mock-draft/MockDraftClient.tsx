@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, RotateCcw, Download, Play, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
@@ -28,6 +28,12 @@ interface Player {
     rank_1qb_tier?: number | null;
     zap_score?: number | null;
     zap_category?: string | null;
+    zap_stale?: boolean;
+    zap_comps?: string | null;
+    zap_analysis?: string | null;
+    rookie_rank?: number | null;
+    rookie_pos_rank?: number | null;
+    rookie_tier?: number | null;
 }
 
 interface Team {
@@ -82,7 +88,9 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'vff_rank', label: 'VFF Rank', defaultOn: false, group: 'internal' },
     { key: 'vff_pos', label: 'VFF Pos', defaultOn: false, group: 'internal' },
     { key: 'tier', label: 'Tier', defaultOn: false, group: 'internal' },
-    { key: 'zap', label: 'ZAP', defaultOn: true, group: 'prospect' },
+    { key: 'zap', label: 'ZAP / Yr 2', defaultOn: true, group: 'prospect' },
+    { key: 'rookie_pos_rank', label: 'Pos Rank', defaultOn: true, group: 'prospect' },
+    { key: 'rookie_tier', label: 'Tier', defaultOn: true, group: 'prospect' },
 ];
 
 export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, platform = 'fleaflicker', rosterSlots }: MockDraftClientProps) {
@@ -197,6 +205,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     const { visibleCols: visibleColumns, columnOrder, toggle: toggleCol, reorder, orderedVisible } = useColumnState(MOCK_DRAFT_COLUMNS, 'vff_mock_draft_columns');
     const [showTradeModal, setShowTradeModal] = useState(false);
     const [selectedTradeAssets, setSelectedTradeAssets] = useState<Set<string>>(new Set());
+    const [expandedProspect, setExpandedProspect] = useState<string | null>(null);
 
     // Auto-simulate CPU picks
     const currentPick = picks[currentPickIndex];
@@ -397,7 +406,9 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         vff_rank: { className: vffTh, sortKey: sf ? 'rank_sf_overall' : 'rank_1qb_overall', label: 'VFF Rank', title: vffTitle },
         vff_pos: { className: vffTh, sortKey: sf ? 'rank_sf_pos' : 'rank_1qb_pos', label: 'VFF Pos', title: vffTitle },
         tier: { className: vffTh, sortKey: sf ? 'rank_sf_tier' : 'rank_1qb_tier', label: 'Tier', title: vffTitle },
-        zap: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'zap_score', label: 'ZAP' },
+        zap: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'zap_score', label: 'ZAP / Yr 2' },
+        rookie_pos_rank: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'rookie_pos_rank', label: 'Pos Rank' },
+        rookie_tier: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'rookie_tier', label: 'Tier' },
     };
 
     const renderHeader = (key: string) => {
@@ -422,7 +433,9 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
             case 'vff_rank': return <td key={key} className={vffTd}>{(sf ? player.rank_sf_overall : player.rank_1qb_overall) || '—'}</td>;
             case 'vff_pos': return <td key={key} className={vffTd}>{player.position}{(sf ? player.rank_sf_pos : player.rank_1qb_pos) || '—'}</td>;
             case 'tier': return <td key={key} className={vffTd}>{(sf ? player.rank_sf_tier : player.rank_1qb_tier) || '—'}</td>;
-            case 'zap': return <td key={key} className="hidden sm:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-emerald-50/50 dark:bg-emerald-950/20">{player.zap_score ? <span title={player.zap_category || ''}>{player.zap_score.toFixed(1)}</span> : '—'}</td>;
+            case 'zap': return <td key={key} className="hidden sm:table-cell px-4 py-3 text-sm text-right bg-emerald-50/50 dark:bg-emerald-950/20">{player.zap_score ? <span className={player.zap_stale ? 'text-zinc-400 dark:text-zinc-600 italic' : 'text-zinc-700 dark:text-zinc-300'} title={`${player.zap_category || ''}${player.zap_stale ? ' (stale)' : ''}`}>{player.zap_score.toFixed(1)}</span> : '—'}</td>;
+            case 'rookie_pos_rank': { const zapTd = "hidden sm:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-emerald-50/50 dark:bg-emerald-950/20"; return <td key={key} className={zapTd}>{player.rookie_pos_rank ? `${player.position}${player.rookie_pos_rank}` : '—'}</td>; }
+            case 'rookie_tier': { const zapTd = "hidden sm:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-emerald-50/50 dark:bg-emerald-950/20"; return <td key={key} className={zapTd}>{player.rookie_tier || '—'}</td>; }
             default: return null;
         }
     };
@@ -902,9 +915,14 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                         })
                                         .slice(0, 50)
                                         .map(player => (
-                                        <tr key={player.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                                        <React.Fragment key={player.id}>
+                                        <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                                             <td className="px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
-                                                {player.full_name}
+                                                {player.zap_analysis ? (
+                                                    <button className="text-left hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors" onClick={() => setExpandedProspect(expandedProspect === player.id ? null : player.id)}>
+                                                        {player.full_name} <span className="text-[10px] text-zinc-400">{expandedProspect === player.id ? '▲' : '▼'}</span>
+                                                    </button>
+                                                ) : player.full_name}
                                             </td>
                                             {orderedVisible.map(key => renderCell(key, player))}
                                             <td className="px-3 sm:px-4 py-2 sm:py-3 text-right">
@@ -916,6 +934,20 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                                 </button>
                                             </td>
                                         </tr>
+                                        {expandedProspect === player.id && player.zap_analysis && (
+                                            <tr className="bg-zinc-50 dark:bg-zinc-800/50">
+                                                <td colSpan={orderedVisible.length + 2} className="px-4 py-3">
+                                                    <div className="max-w-3xl">
+                                                        <div className="flex items-center gap-3 mb-2">
+                                                            <span className="text-xs font-medium text-zinc-500">{player.zap_category}</span>
+                                                            {player.zap_comps && <span className="text-xs text-zinc-400">Comps: {player.zap_comps}</span>}
+                                                        </div>
+                                                        <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{player.zap_analysis}</p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                        </React.Fragment>
                                         ))}
                                 </tbody>
                             </table>

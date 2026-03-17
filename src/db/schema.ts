@@ -263,6 +263,11 @@ export const prospectData = pgTable("prospect_data", {
     // Year 2 Data (for returning players)
     is_year_2: boolean("is_year_2").default(false),
     
+    // Rookie Rankings (from Late Round guide)
+    rookie_rank: integer("rookie_rank"),
+    rookie_pos_rank: integer("rookie_pos_rank"),
+    rookie_tier: integer("rookie_tier"),
+    
     created_at: timestamp("created_at").defaultNow(),
     updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => {

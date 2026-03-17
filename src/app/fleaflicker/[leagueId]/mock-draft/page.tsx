@@ -66,16 +66,26 @@ export default async function FleaflickerMockDraftPage({
         .where(sql`${players.position} IN ('QB', 'RB', 'WR', 'TE')`)
         .orderBy(sf ? playerValues.fc_value_sf : playerValues.fc_value_1qb);
 
-    // Fetch prospect data and build name lookup
+    // Fetch prospect data — Year 2 scores take priority over ZAP
     const currentYear = new Date().getFullYear();
-    const prospects = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category })
+    const prospects = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, is_year_2: prospectData.is_year_2, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text, rookie_rank: prospectData.rookie_rank, rookie_pos_rank: prospectData.rookie_pos_rank, rookie_tier: prospectData.rookie_tier })
         .from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
-    const zapByName = new Map(prospects.map(p => [normalizeName(p.full_name), p]));
+    const zapByName = new Map<string, typeof prospects[number]>();
+    for (const p of prospects) {
+        const key = normalizeName(p.full_name);
+        const existing = zapByName.get(key);
+        if (!existing || (p.is_year_2 && !existing.is_year_2)) zapByName.set(key, p);
+    }
 
-    // Merge ZAP data into players
+    // Merge ZAP/Y2 data into players
+    // Rookies: show ZAP. Non-rookies: only show if they have a Year 2 record.
     const allPlayersWithZap = allPlayersData.map(p => {
         const zap = zapByName.get(normalizeName(p.full_name));
-        return { ...p, zap_score: zap ? parseFloat(zap.zap_score || '0') : null, zap_category: zap?.zap_category || null };
+        if (!zap) return { ...p, zap_score: null, zap_category: null, zap_stale: false, zap_comps: null, zap_analysis: null, rookie_rank: null, rookie_pos_rank: null, rookie_tier: null };
+        const score = parseFloat(zap.zap_score || '0');
+        const isRookie = p.years_exp === 0;
+        const stale = !isRookie && !zap.is_year_2;
+        return { ...p, zap_score: score, zap_category: zap.zap_category || null, zap_stale: stale, zap_comps: zap.statistical_comparables || null, zap_analysis: zap.analysis_text || null, rookie_rank: zap.rookie_rank, rookie_pos_rank: zap.rookie_pos_rank, rookie_tier: zap.rookie_tier };
     });
 
     // Filter to free agents only (by name matching)

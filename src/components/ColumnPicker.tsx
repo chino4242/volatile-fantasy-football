@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings2, GripVertical } from 'lucide-react';
 
 export interface ColumnDef {
@@ -23,6 +23,15 @@ interface ColumnPickerProps {
 export function ColumnPicker({ columns, visibleCols, columnOrder, onToggle, onReorder, groups }: ColumnPickerProps) {
     const [open, setOpen] = useState(false);
     const [dragKey, setDragKey] = useState<string | null>(null);
+    const buttonRef = React.useRef<HTMLButtonElement>(null);
+    const [pos, setPos] = useState({ top: 0, right: 0 });
+
+    useEffect(() => {
+        if (open && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+        }
+    }, [open]);
 
     const handleDragStart = (key: string) => setDragKey(key);
     const handleDragEnd = () => setDragKey(null);
@@ -46,8 +55,9 @@ export function ColumnPicker({ columns, visibleCols, columnOrder, onToggle, onRe
     const orderedCols = columnOrder.map(k => colMap.get(k)).filter((c): c is ColumnDef => !!c);
 
     return (
-        <div className="relative">
+        <div>
             <button
+                ref={buttonRef}
                 onClick={() => setOpen(o => !o)}
                 className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border transition-colors ${open
                     ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300'
@@ -64,7 +74,7 @@ export function ColumnPicker({ columns, visibleCols, columnOrder, onToggle, onRe
             {open && (
                 <>
                     <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-                    <div className="absolute right-0 top-full mt-2 z-40 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl p-4 w-80 max-h-[70vh] overflow-y-auto">
+                    <div style={{ top: pos.top, right: pos.right }} className="fixed z-40 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl p-4 w-80 max-h-[70vh] overflow-y-auto">
                         <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Columns</h3>
                         <p className="text-[10px] text-zinc-400 mb-3">Drag to reorder · Toggle to show/hide</p>
                         <div className="space-y-0.5">
