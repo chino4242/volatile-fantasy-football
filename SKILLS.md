@@ -851,7 +851,7 @@ Based on actual FantasyCalc pick values in the database.
 ## Prospect Guide Integration
 
 ### Overview
-Late Round Fantasy Football prospect data (ZAP scores, categories, breakout scores, draft capital delta, statistical comparables) is ingested from PDF guides and stored in the database for integration with the mock draft feature.
+Late Round Fantasy Football prospect data (ZAP scores, categories, breakout scores, draft capital delta, statistical comparables) is ingested from PDF guides and stored in the database. Integrated into both a standalone prospect guide page and the mock draft simulator.
 
 ### Database Schema
 
@@ -864,13 +864,13 @@ export const prospectData = pgTable("prospect_data", {
     full_name: text("full_name").notNull(),
     position: text("position").notNull(), // WR, RB, TE
     college: text("college"),
-    draft_year: integer("draft_year").notNull(), // e.g., 2025
+    draft_year: integer("draft_year").notNull(),
     
     // ZAP Model Data
     zap_score: decimal("zap_score", { precision: 5, scale: 2 }),
-    zap_category: text("zap_category"), // Elite Producer, Weekly Starter, etc.
+    zap_category: text("zap_category"),
     breakout_score: decimal("breakout_score", { precision: 5, scale: 2 }),
-    draft_capital_delta: text("draft_capital_delta"), // Low Risk, Neutral, High Risk
+    draft_capital_delta: text("draft_capital_delta"),
     
     // Physical Attributes
     height: text("height"),
@@ -883,25 +883,54 @@ export const prospectData = pgTable("prospect_data", {
     // Year 2 Data (for returning players)
     is_year_2: boolean("is_year_2").default(false),
     
-    created_at: timestamp("created_at").defaultNow(),
-    updated_at: timestamp("updated_at").defaultNow(),
-}, (table) => {
-    return {
-        nameIdx: index("idx_prospect_name").on(table.full_name),
-        yearIdx: index("idx_prospect_year").on(table.draft_year),
-    };
+    // Rookie Rankings (from Late Round guide)
+    rookie_rank: integer("rookie_rank"),
+    rookie_pos_rank: integer("rookie_pos_rank"),
+    rookie_tier: integer("rookie_tier"),
 });
 ```
+
+### Prospect Guide Page (`/prospects`)
+
+Standalone page for browsing prospect data:
+- **Rookie / Year 2 tabs** — Rookies filtered by `draft_year = current AND is_year_2 = false`, Year 2 by `is_year_2 = true`
+- **Position filters** — ALL / WR / RB / TE
+- **Sortable columns** — Player, Pos, College, ZAP Score, Category, Breakout Score, Risk, Comps
+- **Color-coded category badges** — Purple (Legendary), Green (Elite), Blue (Weekly Starter), Yellow (Flex), Orange (Benchwarmer), Gray (Waiver Wire), Red (Dart Throw)
+- **Risk indicators** — Green (Low Risk), Gray (Neutral), Red (High Risk)
+- **Expandable analysis** — Click any row to open a detail panel with full analysis text, comps, and metadata
+- **Mobile responsive** — Columns hide progressively on smaller screens
+
+### Mock Draft Integration
+
+Prospect data is joined by normalized name in both Fleaflicker and Sleeper mock draft server pages.
+
+**Columns in available players table (Prospect group, emerald-tinted):**
+- **ZAP / Yr 2** — Year 2 score takes priority over ZAP. Stale ZAP (non-rookie without Year 2 profile) shown dimmed italic with "(stale)" tooltip
+- **Pos Rank** — 1QB rookie position rank from Late Round guide (e.g., RB3, WR14)
+- **Tier** — 1QB rookie tier (1-11)
+
+**Expandable prospect profiles:**
+- Click any player name with prospect data to expand inline profile
+- Shows ZAP category, statistical comparables, and full analysis text
+- Arrow indicator (▼/▲) shows which names are clickable
+
+**Score priority logic:**
+- Rookie (`years_exp === 0`) with ZAP → show ZAP score
+- Non-rookie with Year 2 record → show Year 2 score
+- Non-rookie with only ZAP (no Year 2 profile) → show stale ZAP (dimmed italic)
+- No data → "—"
 
 ### ZAP Categories
 
 From Late Round's proprietary model:
-- **Elite Producer** — Top-tier prospects (ZAP 90+)
-- **Weekly Starter** — High-quality starters (ZAP 80-89)
-- **Flex Play** — Solid depth pieces (ZAP 70-79)
-- **Waiver Wire Add** — Streaming options (ZAP 60-69)
-- **Benchwarmer** — Deep stashes (ZAP 50-59)
-- **Dart Throw** — High-risk fliers (ZAP <50)
+- **Legendary Performer** — Generational talent (ZAP 90-100)
+- **Elite Producer** — Top-tier prospects (ZAP 80-89)
+- **Weekly Starter** — High-quality starters (ZAP 60-79)
+- **Flex Play** — Solid depth pieces (ZAP 50-59)
+- **Benchwarmer** — Deep stashes (ZAP 30-49)
+- **Waiver Wire Add** — Streaming options (ZAP 20-29)
+- **Dart Throw** — High-risk fliers (ZAP <20)
 
 ### Ingestion Process
 
@@ -911,62 +940,18 @@ From Late Round's proprietary model:
 python3 scripts/ingest-prospects.py <pdf_path> <draft_year>
 ```
 
-Example:
-```bash
-python3 scripts/ingest-prospects.py ~/Documents/LRProspectGuide2025.pdf 2025
-```
+The script dynamically scans all PDF pages (no hardcoded page ranges):
+1. **Pass 1 — Rookie profiles:** Scans every page for `Name • POS Score` header pattern, extracts height/weight, college, category, risk, comps, analysis text
+2. **Pass 2 — Year 2 profiles:** Finds Year 2 TOC pages, maps names to page numbers, extracts scores from pages without the standard header format
+3. **Ranking data:** 1QB rookie rankings (rank, pos rank, tier) ingested separately and updated via SQL
 
-The script:
-1. Parses the PDF using `pypdf` library
-2. Extracts player profiles from specific page ranges:
-   - Pages 31-80: Wide Receiver prospects
-   - Pages 81-112: Running Back prospects
-   - Pages 120-143: Year 2 Wide Receivers
-   - Pages 144-158: Year 2 Running Backs
-3. Uses regex patterns to extract structured data:
-   - Player name and ZAP score from header
-   - Physical attributes (height/weight)
-   - College and ZAP category
-   - Draft capital delta (risk assessment)
-   - Statistical comparables
-   - Full analysis text
-4. Inserts/updates database records (handles duplicates via unique constraint)
-
-### Data Extraction Patterns
-
-**Player Header:**
-```
-LUTHER BURDEN • WR 96.3
-```
-Regex: `^([A-Z\'\-\s]+)\s*•\s*(WR|RB|TE)\s+([\d\.]+)`
-
-**Physical Attributes:**
-```
-Height: 6'0 Weight: 188
-```
-Regex: `Height:\s*([\d'\"]+)\s*Weight:\s*(\d+)`
-
-**College & Category:**
-```
-MISSOURI ELITE PRODUCER
-```
-Regex: `\n([A-Z\s]+)\s+(ELITE PRODUCER|WEEKLY STARTER|...)`
+Handles edge cases: smart quotes in names, `&` in college names (Texas A&M), parentheses (Miami (FL)), hyphens (Texas-El Paso).
 
 ### Current Data
 
-- **2025 Draft Class:** 75 prospects ingested
-  - Wide Receivers: ~46 players
-  - Running Backs: ~29 players
-  - Top prospects: Ashton Jeanty (99.2), Omarion Hampton (97.0), Luther Burden (96.5)
-
-### Future Integration
-
-Planned features for mock draft:
-1. Add prospect data columns to available players table
-2. Create filters for ZAP categories
-3. Display prospect analysis in player detail modals
-4. Highlight rookies with high ZAP scores
-5. Sort by ZAP score or breakout score
+- **2026 Draft Class:** 93 rookies (46 WR, 20 RB, 27 TE) + 29 Year 2 (17 WR, 12 RB)
+- **1QB Rankings:** Top 48 with position rank and tier
+- **2025 Draft Class:** 75 prospects (legacy data, used for stale ZAP display)
 
 See [`scripts/README-PROSPECTS.md`](scripts/README-PROSPECTS.md) for detailed ingestion instructions.
 

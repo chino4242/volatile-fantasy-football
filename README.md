@@ -24,7 +24,10 @@ A high-performance dynasty fantasy football analytics platform built with **Next
   - **Positional Need Calculation** — Factors in lineup-derived target allocation (from Fleaflicker roster requirements API), depth vs starting slots, waiver wire scarcity, and players drafted during the mock
   - **Pick Reasoning** — Shows score breakdown below each CPU pick (rank, value, need %, composite score)
   - **User Recommendations** — When on the clock, displays top 3 recommended picks with full score breakdown; click to draft instantly
-- **Prospect Guide Integration** — Late Round Fantasy Football prospect data (ZAP scores, categories, breakout scores, draft capital delta, statistical comparables) ingested from PDF and ready for mock draft integration. Easy-to-use Python script for importing new prospect guides
+- **Prospect Guide Integration** — Late Round Fantasy Football prospect data (ZAP scores, categories, breakout scores, draft capital delta, statistical comparables) ingested from PDF and stored in the database. Features:
+  - **Prospect Guide Page** (`/prospects`) — Sortable table with rookie/Year 2 tabs, position filters, color-coded ZAP categories, expandable analysis text per player
+  - **Mock Draft Integration** — ZAP / Yr 2 score, Pos Rank, and Tier columns in the available players table. Year 2 scores take priority; stale ZAP shown dimmed italic. Click any prospect name to expand inline profile with comps and analysis
+  - **Smart Ingestion** — Python script dynamically scans PDF pages (no hardcoded ranges), handles both rookie and Year 2 profiles, supports 1QB rookie rankings
 - **Soft Login / Dashboard** — Enter your Sleeper username to get a personalized dashboard showing all your 2025 leagues. Supports Fleaflicker accounts too
 - **Player Rankings** — Browse the top 50 dynasty players by FantasyCalc value
 - **Live Sleeper Integration** — Roster data is fetched in real-time from the [Sleeper API](https://docs.sleeper.com/)
@@ -113,6 +116,9 @@ volatile-fantasy-football/
 │   │   ├── providers.tsx       # Client-side context providers (AuthProvider)
 │   │   ├── players/
 │   │   │   └── page.tsx        # Top 50 players list
+│   │   ├── prospects/
+│   │   │   ├── page.tsx        # Prospect guide page (server component)
+│   │   │   └── ProspectsTable.tsx  # Prospect table (client, tabs/filters/sort)
 │   │   ├── league/
 │   │   │   └── [leagueId]/
 │   │   │       ├── page.tsx    # League dashboard (all teams ranked)
