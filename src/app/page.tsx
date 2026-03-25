@@ -322,8 +322,8 @@ export default function Home() {
                                     type="number"
                                     min="1"
                                     max="20"
-                                    value={keeperCounts[league.league_id] || 3}
-                                    onChange={(e) => setKeeperCount(league.league_id, parseInt(e.target.value) || 3)}
+                                    value={keeperCounts[league.league_id] === 0 ? '' : (keeperCounts[league.league_id] || 3)}
+                                    onChange={(e) => setKeeperCount(league.league_id, e.target.value === '' ? 0 : parseInt(e.target.value))}
                                     className="w-12 px-2 py-1 text-xs text-center border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
                                   />
                                   <button
@@ -431,8 +431,8 @@ export default function Home() {
                                 type="number"
                                 min="1"
                                 max="20"
-                                value={keeperCounts[league.id] || 3}
-                                onChange={(e) => setKeeperCount(league.id, parseInt(e.target.value) || 3)}
+                                value={keeperCounts[league.id] === 0 ? '' : (keeperCounts[league.id] || 3)}
+                                onChange={(e) => setKeeperCount(league.id, e.target.value === '' ? 0 : parseInt(e.target.value))}
                                 className="w-16 px-2 py-1 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
                               />
                             </div>
