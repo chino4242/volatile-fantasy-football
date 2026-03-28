@@ -10,11 +10,12 @@ export default async function FleaflickerMockDraftPage({
     searchParams
 }: {
     params: Promise<{ leagueId: string }>;
-    searchParams: Promise<{ format?: string }>;
+    searchParams: Promise<{ format?: string; keepers?: string }>;
 }) {
     const { leagueId } = await params;
-    const { format = 'sf' } = await searchParams;
+    const { format = 'sf', keepers: keepersParam } = await searchParams;
     const sf = format === 'sf';
+    const keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
 
     // Fetch league data
     const [leagueData, rosterSlots] = await Promise.all([
@@ -129,6 +130,7 @@ export default async function FleaflickerMockDraftPage({
             format={format}
             rankingsVintage={rankingsVintage}
             rosterSlots={rosterSlots}
+            keeperCount={keeperCount}
         />
     );
 }

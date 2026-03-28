@@ -34,6 +34,7 @@ interface Player {
     rookie_rank?: number | null;
     rookie_pos_rank?: number | null;
     rookie_tier?: number | null;
+    droppedByTeam?: string;
 }
 
 interface Team {
@@ -72,6 +73,7 @@ interface MockDraftClientProps {
     rankingsVintage?: string | null;
     platform?: 'sleeper' | 'fleaflicker';
     rosterSlots?: { QB: number; RB: number; WR: number; TE: number; FLEX: number };
+    keeperCount?: number;
 }
 
 const ROUNDS = 5;
@@ -93,7 +95,7 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'rookie_tier', label: 'Tier', defaultOn: true, group: 'prospect' },
 ];
 
-export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, platform = 'fleaflicker', rosterSlots }: MockDraftClientProps) {
+export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, platform = 'fleaflicker', rosterSlots, keeperCount }: MockDraftClientProps) {
     // Generate draft order from current year picks
     const draftOrder = useMemo(() => {
         const currentYear = new Date().getFullYear();
@@ -124,10 +126,71 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     const [picks, setPicks] = useState<DraftPick[]>(draftOrder);
     const [currentPickIndex, setCurrentPickIndex] = useState(0);
     const [availablePlayers, setAvailablePlayers] = useState<Player[]>(freeAgents);
+    const [activeTeams, setActiveTeams] = useState<Team[]>(teams);
     const [userTeamId, setUserTeamId] = useState<number | null>(null);
     const [draftStarted, setDraftStarted] = useState(false);
     const isSleeper = platform === 'sleeper';
     const [setupComplete, setSetupComplete] = useState(!isSleeper);
+    const [keepersConfirmed, setKeepersConfirmed] = useState(!keeperCount || keeperCount === 0);
+    const [selectedKeepers, setSelectedKeepers] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (userTeamId && keeperCount && keeperCount > 0 && !keepersConfirmed) {
+            const userTeam = activeTeams.find(t => t.id === userTeamId);
+            if (userTeam && selectedKeepers.size === 0) {
+                const sortedPlayers = [...userTeam.players].sort((a,b) => (b.fc_value || 0) - (a.fc_value || 0));
+                const topKeepers = sortedPlayers.slice(0, keeperCount).map(p => p.id);
+                setSelectedKeepers(new Set(topKeepers));
+            }
+        }
+    }, [userTeamId, keeperCount, keepersConfirmed, activeTeams]); // run when team selected or count changes
+
+    const handleConfirmKeepers = () => {
+        if (!keeperCount) return;
+
+        const updatedTeams = [...activeTeams];
+        const newDroppedPlayers: (Player & { droppedByTeam?: string })[] = [];
+
+        for (let i = 0; i < updatedTeams.length; i++) {
+            const team = updatedTeams[i];
+            let keptPlayers = [...team.players];
+
+            if (team.id === userTeamId) {
+                // Keep only selected
+                keptPlayers = team.players.filter(p => selectedKeepers.has(p.id));
+                const dropped = team.players.filter(p => !selectedKeepers.has(p.id));
+                newDroppedPlayers.push(...dropped.map(p => ({ ...p, droppedByTeam: team.name })));
+            } else {
+                // Auto-prune
+                if (team.players.length > keeperCount) {
+                    const sorted = [...team.players].sort((a,b) => (b.fc_value || 0) - (a.fc_value || 0));
+                    keptPlayers = sorted.slice(0, keeperCount);
+                    const dropped = sorted.slice(keeperCount);
+                    newDroppedPlayers.push(...dropped.map(p => ({ ...p, droppedByTeam: team.name })));
+                }
+            }
+
+            // Recalculate position values
+            const positionValues = { QB: 0, RB: 0, WR: 0, TE: 0 };
+            keptPlayers.forEach(p => {
+                if (p.position && p.fc_value) {
+                    positionValues[p.position as keyof typeof positionValues] += p.fc_value;
+                }
+            });
+
+            updatedTeams[i] = {
+                ...team,
+                players: keptPlayers,
+                positionValues
+            };
+        }
+
+        const newFreeAgents = [...availablePlayers, ...newDroppedPlayers].sort((a,b) => (b.fc_value || 0) - (a.fc_value || 0));
+        
+        setActiveTeams(updatedTeams);
+        setAvailablePlayers(newFreeAgents);
+        setKeepersConfirmed(true);
+    };
 
     // Draft setup: slot assignments per round — Record<`${round}.${slot}`, teamId>
     // Default: each team owns their slot in every round (no trades)
@@ -282,7 +345,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     }, [availablePlayers, teams.length]);
 
     const calculatePositionalNeed = (teamId: number): Record<string, number> => {
-        const team = teams.find(t => t.id === teamId);
+        const team = activeTeams.find(t => t.id === teamId);
         if (!team) return { QB: 0, RB: 0, WR: 0, TE: 0 };
 
         // Count rostered + drafted players at each position
@@ -328,7 +391,16 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     };
 
     const scorePlayer = (player: Player, teamId: number): number => {
-        const value = player.fc_value || 0;
+        let value = player.fc_value || 0;
+        
+        // Draft Supply/Demand Adjustments
+        // FantasyCalc raw trade values overvalue elite QBs in a vacuum compared to actual startup draft capital
+        if (player.position === 'QB') {
+            value *= format === 'sf' ? 0.85 : 0.55; // 15% penalty in SF, 45% penalty in 1QB
+        } else if (player.position === 'TE') {
+            value *= 0.85; // Slight TE penalty unless TE premium (which we don't track explicitly yet)
+        }
+
         const needs = calculatePositionalNeed(teamId);
         const posNeed = needs[player.position || ''] || 0;
 
@@ -369,6 +441,11 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         setPicks(isSleeper ? setupDraftOrder : draftOrder);
         setCurrentPickIndex(0);
         setAvailablePlayers(freeAgents);
+        setActiveTeams(teams);
+        setUserTeamId(null);
+        setKeepersConfirmed(!keeperCount || keeperCount === 0);
+        setSelectedKeepers(new Set());
+        setSetupComplete(!isSleeper);
         setDraftStarted(false);
     };
 
@@ -464,7 +541,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
 
     // Calculate trade value
     const calculateTradeValue = () => {
-        const userTeam = teams.find(t => t.id === userTeamId);
+        const userTeam = activeTeams.find(t => t.id === userTeamId);
         if (!userTeam || !currentPick) return 0;
 
         let totalValue = 0;
@@ -528,7 +605,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
 
         // Get all rostered players from OTHER teams
         const rosteredPlayers: (Player & { teamName: string })[] = [];
-        teams.forEach(team => {
+        activeTeams.forEach(team => {
             if (team.id !== userTeamId) {
                 team.players.forEach(player => {
                     rosteredPlayers.push({ ...player, teamName: team.name });
@@ -621,8 +698,85 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                     </div>
                 )}
 
+                {/* Select Keepers Screen */}
+                {userTeamId !== null && keeperCount && keeperCount > 0 && !keepersConfirmed && (
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 mb-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+                            <div>
+                                <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                                    Select Your Keepers
+                                </h2>
+                                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                                    Choose exactly {keeperCount} players to keep. The CPU teams will have their highest value players automatically retained.
+                                </p>
+                            </div>
+                            <div className={`mt-4 sm:mt-0 font-bold text-lg ${selectedKeepers.size === keeperCount ? 'text-green-600 dark:text-green-400' : selectedKeepers.size > keeperCount ? 'text-red-500' : 'text-amber-500'}`}>
+                                {selectedKeepers.size} / {keeperCount} Selected
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+                            {(() => {
+                                const userTeam = activeTeams.find(t => t.id === userTeamId);
+                                if (!userTeam) return null;
+                                const sortedPlayers = [...userTeam.players].sort((a,b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                
+                                return sortedPlayers.map(player => {
+                                    const isSelected = selectedKeepers.has(player.id);
+                                    return (
+                                        <button
+                                            key={player.id}
+                                            onClick={() => {
+                                                setSelectedKeepers(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(player.id)) next.delete(player.id);
+                                                    else next.add(player.id);
+                                                    return next;
+                                                });
+                                            }}
+                                            className={`p-4 text-left border-2 rounded-lg transition-colors ${
+                                                isSelected 
+                                                    ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-500 dark:bg-indigo-950/20' 
+                                                    : 'border-zinc-200 dark:border-zinc-700 hover:border-indigo-300 dark:hover:border-indigo-700'
+                                            }`}
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div className="font-semibold text-zinc-900 dark:text-zinc-100">
+                                                    {player.full_name}
+                                                </div>
+                                                <div className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                                                    {player.fc_value?.toFixed(0) || '0'}
+                                                </div>
+                                            </div>
+                                            <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                                                {player.position} {player.team ? `• ${player.team}` : ''}
+                                            </div>
+                                        </button>
+                                    );
+                                });
+                            })()}
+                        </div>
+
+                        <div className="flex gap-3 justify-center">
+                            <button
+                                onClick={() => setUserTeamId(null)}
+                                className="px-6 py-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                            >
+                                Back
+                            </button>
+                            <button
+                                onClick={handleConfirmKeepers}
+                                disabled={selectedKeepers.size !== keeperCount}
+                                className="px-8 py-3 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Confirm Keepers
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Start Draft Button */}
-                {userTeamId !== null && !draftStarted && !setupComplete && (
+                {userTeamId !== null && keepersConfirmed && !draftStarted && !setupComplete && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 mb-6">
                         <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
                             Draft Setup — {teams.find(t => t.id === userTeamId)?.name}
@@ -765,7 +919,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                 )}
 
                 {/* Ready screen after setup */}
-                {userTeamId !== null && setupComplete && !draftStarted && (
+                {userTeamId !== null && keepersConfirmed && setupComplete && !draftStarted && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 mb-6 text-center">
                         <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
                             Ready to draft as {teams.find(t => t.id === userTeamId)?.name}{isSleeper && userDraftSlot ? ` (Slot ${userDraftSlot})` : ''}?
@@ -923,6 +1077,11 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                                         {player.full_name} <span className="text-[10px] text-zinc-400">{expandedProspect === player.id ? '▲' : '▼'}</span>
                                                     </button>
                                                 ) : player.full_name}
+                                                {player.droppedByTeam && (
+                                                    <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                                                        Dropped by {player.droppedByTeam}
+                                                    </span>
+                                                )}
                                             </td>
                                             {orderedVisible.map(key => renderCell(key, player))}
                                             <td className="px-3 sm:px-4 py-2 sm:py-3 text-right">
@@ -1020,7 +1179,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                             <div className="space-y-4">
                                 {/* Position Groups */}
                                 {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => {
-                                    const userTeam = teams.find(t => t.id === userTeamId);
+                                    const userTeam = activeTeams.find(t => t.id === userTeamId);
                                     const existingPlayers = userTeam?.players.filter(p => p.position === pos) || [];
                                     const draftedPlayers = picks
                                         .filter(p => p.teamId === userTeamId && p.playerId && p.playerPosition === pos)
@@ -1117,7 +1276,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                     
                                     {/* Future Picks */}
                                     {(() => {
-                                        const userTeam = teams.find(t => t.id === userTeamId);
+                                        const userTeam = activeTeams.find(t => t.id === userTeamId);
                                         const futurePicks = userTeam?.draftPicks.filter(p => p.season > new Date().getFullYear()) || [];
                                         
                                         return futurePicks.length > 0 && (
@@ -1148,7 +1307,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
 
                                     {/* Rostered Players */}
                                     {(() => {
-                                        const userTeam = teams.find(t => t.id === userTeamId);
+                                        const userTeam = activeTeams.find(t => t.id === userTeamId);
                                         const rosteredPlayers = userTeam?.players || [];
                                         
                                         return rosteredPlayers.length > 0 && (

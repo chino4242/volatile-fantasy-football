@@ -12,11 +12,12 @@ export default async function SleeperMockDraftPage({
     searchParams,
 }: {
     params: Promise<{ leagueId: string }>;
-    searchParams: Promise<{ format?: string }>;
+    searchParams: Promise<{ format?: string; keepers?: string }>;
 }) {
     const { leagueId } = await params;
-    const { format = 'sf' } = await searchParams;
+    const { format = 'sf', keepers: keepersParam } = await searchParams;
     const sf = format === 'sf';
+    const keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
 
     const { users, rosters, tradedPicks } = await getLeagueData(leagueId);
     const allPicks = getAllDraftPicks(rosters, tradedPicks);
@@ -207,6 +208,7 @@ export default async function SleeperMockDraftPage({
             format={format}
             rankingsVintage={rankingsVintage}
             platform="sleeper"
+            keeperCount={keeperCount}
         />
     );
 }
