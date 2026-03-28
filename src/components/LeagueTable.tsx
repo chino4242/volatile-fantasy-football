@@ -17,6 +17,7 @@ export interface LeagueTeamStat {
     pickValue: number;
     pickCount: number;
     valueDropped?: number;
+    valueKept?: number;
 }
 
 interface LeagueTableProps {
@@ -27,7 +28,7 @@ interface LeagueTableProps {
     keeperCount?: number;
 }
 
-type SortColumn = 'totalValue' | 'qbValue' | 'rbValue' | 'wrValue' | 'teValue' | 'pickValue' | 'valueDropped';
+type SortColumn = 'totalValue' | 'qbValue' | 'rbValue' | 'wrValue' | 'teValue' | 'pickValue' | 'valueDropped' | 'valueKept';
 type SortDirection = 'asc' | 'desc';
 
 export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: LeagueTableProps) {
@@ -98,9 +99,14 @@ export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: 
                                     Picks <SortIcon column="pickValue" />
                                 </th>
                                 {keeperCount && keeperCount > 0 && (
-                                    <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider whitespace-nowrap cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('valueDropped')}>
-                                        Value Dropped <SortIcon column="valueDropped" />
-                                    </th>
+                                    <>
+                                        <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider whitespace-nowrap cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('valueKept')}>
+                                            Value Kept <SortIcon column="valueKept" />
+                                        </th>
+                                        <th scope="col" className="px-2 sm:px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider whitespace-nowrap cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('valueDropped')}>
+                                            Value Dropped <SortIcon column="valueDropped" />
+                                        </th>
+                                    </>
                                 )}
                                 <th scope="col" className="relative px-2 sm:px-3 py-3">
                                     <span className="sr-only">View</span>
@@ -165,9 +171,14 @@ export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: 
                                         {team.pickValue.toLocaleString()}
                                     </td>
                                     {keeperCount && keeperCount > 0 && (
-                                        <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-mono text-red-600 dark:text-red-400">
-                                            {team.valueDropped?.toLocaleString() || '0'}
-                                        </td>
+                                        <>
+                                            <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-mono text-emerald-600 dark:text-emerald-400">
+                                                {team.valueKept?.toLocaleString() || '0'}
+                                            </td>
+                                            <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-mono text-red-600 dark:text-red-400">
+                                                {team.valueDropped?.toLocaleString() || '0'}
+                                            </td>
+                                        </>
                                     )}
                                     <td className="px-2 sm:px-3 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium">
                                         <ChevronRight className="h-5 w-5 text-zinc-400 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors" />

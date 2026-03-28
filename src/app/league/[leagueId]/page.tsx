@@ -74,6 +74,7 @@ export default async function LeagueSummaryPage({ params, searchParams }: PagePr
                 pickValue: pickData.totalValue,
                 pickCount: pickData.count,
                 valueDropped: 0,
+                valueKept: 0,
             };
 
             // Collect players with values for keeper calculation
@@ -94,10 +95,13 @@ export default async function LeagueSummaryPage({ params, searchParams }: PagePr
 
             stats.totalValue += stats.pickValue;
 
-            // Calculate value dropped for keeper leagues
-            if (keeperCount && keeperCount > 0 && playersWithValues.length > keeperCount) {
+            // Calculate value dropped and kept for keeper leagues
+            if (keeperCount && keeperCount > 0) {
                 const sortedPlayers = playersWithValues.sort((a, b) => b.value - a.value);
-                stats.valueDropped = sortedPlayers.slice(keeperCount).reduce((sum, p) => sum + p.value, 0);
+                stats.valueKept = sortedPlayers.slice(0, keeperCount).reduce((sum, p) => sum + p.value, 0);
+                if (playersWithValues.length > keeperCount) {
+                    stats.valueDropped = sortedPlayers.slice(keeperCount).reduce((sum, p) => sum + p.value, 0);
+                }
             }
 
             return stats;

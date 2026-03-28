@@ -21,6 +21,8 @@ interface TeamWithValue {
     teValue: number;
     pickValue: number;
     pickCount: number;
+    valueDropped?: number;
+    valueKept?: number;
 }
 
 export default async function FleaflickerLeaguePage({
@@ -126,11 +128,15 @@ export default async function FleaflickerLeaguePage({
                 totalValue += value;
             });
 
-            // Calculate value dropped for keeper leagues
+            // Calculate value dropped and kept for keeper leagues
             let valueDropped = 0;
-            if (keeperCount && keeperCount > 0 && playersWithValues.length > keeperCount) {
+            let valueKept = 0;
+            if (keeperCount && keeperCount > 0) {
                 const sortedPlayers = playersWithValues.sort((a, b) => b.value - a.value);
-                valueDropped = sortedPlayers.slice(keeperCount).reduce((sum, p) => sum + p.value, 0);
+                valueKept = sortedPlayers.slice(0, keeperCount).reduce((sum, p) => sum + p.value, 0);
+                if (playersWithValues.length > keeperCount) {
+                    valueDropped = sortedPlayers.slice(keeperCount).reduce((sum, p) => sum + p.value, 0);
+                }
             }
 
             return {
@@ -145,6 +151,7 @@ export default async function FleaflickerLeaguePage({
                 pickValue,
                 pickCount: roster.draftPicks.length,
                 valueDropped,
+                valueKept,
             };
         });
 
