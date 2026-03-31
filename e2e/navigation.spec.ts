@@ -18,7 +18,7 @@ test.describe('Critical User Journey: Navigation & Rendering', () => {
             // In mobile, header text changes to "Volatile"
             await page.getByRole('link', { name: 'Volatile' }).click();
         } else {
-            await page.getByRole('link', { name: 'The Proving Ground' }).click();
+            await page.getByRole('link', { name: 'Volatile Fantasy Football' }).click();
         }
         await expect(page.getByRole('heading', { name: 'Volatile Fantasy Football' })).toBeVisible();
 

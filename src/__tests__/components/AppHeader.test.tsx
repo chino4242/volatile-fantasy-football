@@ -9,7 +9,7 @@ describe('AppHeader Component', () => {
         expect(document.querySelector('svg.lucide-trophy')).toBeInTheDocument();
 
         // Desktop Branding
-        expect(screen.getByText('The Proving Ground')).toBeInTheDocument();
+        expect(screen.getByText('Volatile Fantasy Football')).toBeInTheDocument();
         // Mobile Branding
         expect(screen.getByText('Volatile')).toBeInTheDocument();
     });

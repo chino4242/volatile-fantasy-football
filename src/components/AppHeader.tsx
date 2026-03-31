@@ -15,7 +15,7 @@ export function AppHeader() {
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
                         <Trophy className="h-5 w-5" />
                     </div>
-                    <span className="hidden sm:inline-block">The Proving Ground</span>
+                    <span className="hidden sm:inline-block">Volatile Fantasy Football</span>
                     <span className="sm:hidden">Volatile</span>
                 </Link>
 
