@@ -276,3 +276,22 @@ export const prospectData = pgTable("prospect_data", {
         yearIdx: index("idx_prospect_year").on(table.draft_year),
     };
 });
+
+// Prospect Writeups Table (multi-source, reusable)
+export const prospectWriteups = pgTable("prospect_writeups", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
+    full_name: text("full_name").notNull(),
+    position: text("position"),
+    source: text("source").notNull(), // e.g., 'reception_perception', 'pff', etc.
+    draft_year: integer("draft_year").notNull(),
+    analysis_text: text("analysis_text").notNull(),
+    created_at: timestamp("created_at").defaultNow(),
+}, (table) => {
+    return {
+        nameIdx: index("idx_writeup_name").on(table.full_name),
+        sourceIdx: index("idx_writeup_source").on(table.source),
+        sleeperSourceIdx: index("idx_writeup_sleeper_source").on(table.sleeper_id, table.source),
+        uniqueNameSource: unique("unique_writeup_name_source").on(table.full_name, table.source, table.draft_year),
+    };
+});

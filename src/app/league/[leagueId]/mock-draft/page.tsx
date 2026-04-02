@@ -1,5 +1,5 @@
 import { db } from '@/db';
-import { players, playerValues, prospectData } from '@/db/schema';
+import { players, playerValues, prospectData, prospectWriteups } from '@/db/schema';
 import { getLeagueData, getAllDraftPicks, getPickFantasyCalcId, getLeagueDrafts, getDraftTradedPicks } from '@/lib/sleeper';
 import { eq, inArray, and, notInArray, not, like, desc, sql } from 'drizzle-orm';
 import MockDraftClient from '@/app/fleaflicker/[leagueId]/mock-draft/MockDraftClient';
@@ -134,13 +134,22 @@ export default async function SleeperMockDraftPage({
         const existing = zapByName.get(key);
         if (!existing || (p.is_year_2 && !existing.is_year_2)) zapByName.set(key, p);
     }
+    const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text })
+        .from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
+    const writeupsByName = new Map<string, { source: string; analysis_text: string }[]>();
+    for (const w of writeups) {
+        const key = normalizeName(w.full_name);
+        if (!writeupsByName.has(key)) writeupsByName.set(key, []);
+        writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text });
+    }
     const addZap = <T extends { full_name: string; years_exp?: number | null }>(p: T) => {
         const zap = zapByName.get(normalizeName(p.full_name));
-        if (!zap) return { ...p, zap_score: null, zap_category: null, zap_stale: false, zap_comps: null, zap_analysis: null, rookie_rank: null, rookie_pos_rank: null, rookie_tier: null };
+        const w = writeupsByName.get(normalizeName(p.full_name)) || null;
+        if (!zap) return { ...p, zap_score: null, zap_category: null, zap_stale: false, zap_comps: null, zap_analysis: null, rookie_rank: null, rookie_pos_rank: null, rookie_tier: null, writeups: w };
         const score = parseFloat(zap.zap_score || '0');
         const isRookie = p.years_exp === 0;
         const stale = !isRookie && !zap.is_year_2;
-        return { ...p, zap_score: score, zap_category: zap.zap_category || null, zap_stale: stale, zap_comps: zap.statistical_comparables || null, zap_analysis: zap.analysis_text || null, rookie_rank: zap.rookie_rank, rookie_pos_rank: zap.rookie_pos_rank, rookie_tier: zap.rookie_tier };
+        return { ...p, zap_score: score, zap_category: zap.zap_category || null, zap_stale: stale, zap_comps: zap.statistical_comparables || null, zap_analysis: zap.analysis_text || null, rookie_rank: zap.rookie_rank, rookie_pos_rank: zap.rookie_pos_rank, rookie_tier: zap.rookie_tier, writeups: w };
     };
 
     const rosteredPlayersWithZap = rosteredPlayers.map(addZap);

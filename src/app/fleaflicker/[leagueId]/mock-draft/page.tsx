@@ -1,6 +1,6 @@
 import { getFleaflickerLeague, getFleaflickerRosterSlots } from '@/lib/fleaflicker';
 import { db } from '@/db';
-import { players, playerValues, prospectData } from '@/db/schema';
+import { players, playerValues, prospectData, prospectWriteups } from '@/db/schema';
 import { eq, inArray, sql } from 'drizzle-orm';
 import MockDraftClient from './MockDraftClient';
 import { getRankingsVintage, formatVintage } from '@/lib/rankings-vintage';
@@ -82,12 +82,26 @@ export default async function FleaflickerMockDraftPage({
     // Rookies: show ZAP. Non-rookies: only show if they have a Year 2 record.
     const allPlayersWithZap = allPlayersData.map(p => {
         const zap = zapByName.get(normalizeName(p.full_name));
-        if (!zap) return { ...p, zap_score: null, zap_category: null, zap_stale: false, zap_comps: null, zap_analysis: null, rookie_rank: null, rookie_pos_rank: null, rookie_tier: null };
+        if (!zap) return { ...p, zap_score: null, zap_category: null, zap_stale: false, zap_comps: null, zap_analysis: null, rookie_rank: null, rookie_pos_rank: null, rookie_tier: null, writeups: null };
         const score = parseFloat(zap.zap_score || '0');
         const isRookie = p.years_exp === 0;
         const stale = !isRookie && !zap.is_year_2;
-        return { ...p, zap_score: score, zap_category: zap.zap_category || null, zap_stale: stale, zap_comps: zap.statistical_comparables || null, zap_analysis: zap.analysis_text || null, rookie_rank: zap.rookie_rank, rookie_pos_rank: zap.rookie_pos_rank, rookie_tier: zap.rookie_tier };
+        return { ...p, zap_score: score, zap_category: zap.zap_category || null, zap_stale: stale, zap_comps: zap.statistical_comparables || null, zap_analysis: zap.analysis_text || null, rookie_rank: zap.rookie_rank, rookie_pos_rank: zap.rookie_pos_rank, rookie_tier: zap.rookie_tier, writeups: null as { source: string; analysis_text: string }[] | null };
     });
+
+    // Fetch and merge prospect writeups
+    const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text })
+        .from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
+    const writeupsByName = new Map<string, { source: string; analysis_text: string }[]>();
+    for (const w of writeups) {
+        const key = normalizeName(w.full_name);
+        if (!writeupsByName.has(key)) writeupsByName.set(key, []);
+        writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text });
+    }
+    for (const p of allPlayersWithZap) {
+        const w = writeupsByName.get(normalizeName(p.full_name));
+        if (w) (p as any).writeups = w;
+    }
 
     // Filter to free agents only (by name matching)
     const freeAgents = allPlayersWithZap.filter(p => !rosteredPlayerNames.has(normalizeName(p.full_name)));

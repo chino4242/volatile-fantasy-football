@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getFleaflickerLeague } from "@/lib/fleaflicker";
 import { db } from "@/db";
-import { players, playerValues } from "@/db/schema";
+import { players, playerValues, leagues } from "@/db/schema";
 import { inArray, eq } from "drizzle-orm";
 import { getPickFantasyCalcId } from "@/lib/sleeper";
 import { ChevronRight } from "lucide-react";

@@ -31,6 +31,7 @@ interface Player {
     zap_stale?: boolean;
     zap_comps?: string | null;
     zap_analysis?: string | null;
+    writeups?: { source: string; analysis_text: string }[] | null;
     rookie_rank?: number | null;
     rookie_pos_rank?: number | null;
     rookie_tier?: number | null;
@@ -269,6 +270,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     const [showTradeModal, setShowTradeModal] = useState(false);
     const [selectedTradeAssets, setSelectedTradeAssets] = useState<Set<string>>(new Set());
     const [expandedProspect, setExpandedProspect] = useState<string | null>(null);
+    const [activeWriteupTab, setActiveWriteupTab] = useState<string>('late_round');
 
     // Auto-simulate CPU picks
     const currentPick = picks[currentPickIndex];
@@ -1072,8 +1074,8 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                         <React.Fragment key={player.id}>
                                         <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                                             <td className="px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
-                                                {player.zap_analysis ? (
-                                                    <button className="text-left hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors" onClick={() => setExpandedProspect(expandedProspect === player.id ? null : player.id)}>
+                                                {(player.zap_analysis || (player.writeups && player.writeups.length > 0)) ? (
+                                                    <button className="text-left hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors" onClick={() => { setExpandedProspect(expandedProspect === player.id ? null : player.id); setActiveWriteupTab('late_round'); }}>
                                                         {player.full_name} <span className="text-[10px] text-zinc-400">{expandedProspect === player.id ? '▲' : '▼'}</span>
                                                     </button>
                                                 ) : player.full_name}
@@ -1093,19 +1095,38 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                                 </button>
                                             </td>
                                         </tr>
-                                        {expandedProspect === player.id && player.zap_analysis && (
-                                            <tr className="bg-zinc-50 dark:bg-zinc-800/50">
-                                                <td colSpan={orderedVisible.length + 2} className="px-4 py-3">
-                                                    <div className="max-w-3xl">
-                                                        <div className="flex items-center gap-3 mb-2">
-                                                            <span className="text-xs font-medium text-zinc-500">{player.zap_category}</span>
-                                                            {player.zap_comps && <span className="text-xs text-zinc-400">Comps: {player.zap_comps}</span>}
-                                                        </div>
-                                                        <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{player.zap_analysis}</p>
+                                        {expandedProspect === player.id && (player.zap_analysis || (player.writeups && player.writeups.length > 0)) && (() => {
+                                            const sources: { key: string; label: string; content: React.ReactNode }[] = [];
+                                            if (player.zap_analysis) sources.push({ key: 'late_round', label: 'Late Round', content: (
+                                                <>
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <span className="text-xs font-medium text-zinc-500">{player.zap_category}</span>
+                                                        {player.zap_comps && <span className="text-xs text-zinc-400">Comps: {player.zap_comps}</span>}
                                                     </div>
-                                                </td>
-                                            </tr>
-                                        )}
+                                                    <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{player.zap_analysis}</p>
+                                                </>
+                                            )});
+                                            player.writeups?.forEach(w => sources.push({ key: w.source, label: w.source.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), content: (
+                                                <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{w.analysis_text}</p>
+                                            )}));
+                                            const active = sources.find(s => s.key === activeWriteupTab) || sources[0];
+                                            return (
+                                                <tr className="bg-zinc-50 dark:bg-zinc-800/50">
+                                                    <td colSpan={orderedVisible.length + 2} className="px-4 py-3">
+                                                        <div className="max-w-3xl">
+                                                            {sources.length > 1 && (
+                                                                <div className="flex gap-1 mb-3">
+                                                                    {sources.map(s => (
+                                                                        <button key={s.key} onClick={() => setActiveWriteupTab(s.key)} className={`px-2 py-1 text-[11px] font-medium rounded ${(active.key === s.key) ? 'bg-indigo-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'}`}>{s.label}</button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            {active.content}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })()}
                                         </React.Fragment>
                                         ))}
                                 </tbody>
