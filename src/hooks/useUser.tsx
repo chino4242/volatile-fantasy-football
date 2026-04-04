@@ -134,10 +134,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (platform === 'sleeper') {
                     const nextFormats = { ...prev.sleeperLeagueFormats, [leagueId]: format };
                     localStorage.setItem(STORAGE_KEYS.sleeperLeagueFormats, JSON.stringify(nextFormats));
+
+                    fetch('/api/league-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ leagueId, platform, leagueType: prev.leagueTypes[leagueId] || 'dynasty', keeperCount: prev.keeperCounts[leagueId], scoringFormat: format }),
+                    }).catch(err => console.error('Failed to save to DB:', err));
+
                     return { ...prev, sleeperLeagueFormats: nextFormats };
                 } else {
                     const nextFormats = { ...prev.fleaflickerLeagueFormats, [leagueId]: format };
                     localStorage.setItem(STORAGE_KEYS.fleaflickerLeagueFormats, JSON.stringify(nextFormats));
+
+                    fetch('/api/league-settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ leagueId, platform, leagueType: prev.leagueTypes[leagueId] || 'dynasty', keeperCount: prev.keeperCounts[leagueId], scoringFormat: format }),
+                    }).catch(err => console.error('Failed to save to DB:', err));
+
                     return { ...prev, fleaflickerLeagueFormats: nextFormats };
                 }
             });

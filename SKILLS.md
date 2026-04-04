@@ -719,6 +719,7 @@ Full snake draft simulation with intelligent CPU auto-pick logic, manual user pi
 - **Reset Button:** Clears localStorage and resets to defaults
 - **Persistence:** Saved to localStorage keyed by `vff_draft_setup_{leagueId}`
 - Fleaflicker skips setup entirely (draft order comes from API)
+- **Auto-skip:** When Sleeper API has a valid draft with `slot_to_roster_id`, setup is skipped entirely (same as Fleaflicker)
 
 #### Draft Mechanics
 - **Snake Draft Logic:** Draft order from Fleaflicker API or Sleeper setup (handles traded picks)
@@ -845,6 +846,117 @@ Based on actual FantasyCalc pick values in the database.
 ### Platform Support
 - ✅ Fleaflicker leagues (full support with roster requirements API)
 - ✅ Sleeper leagues (full support with draft setup screen)
+
+---
+
+## Cross-Season Draft Resolution (Sleeper)
+
+Sleeper creates a new `league_id` each season, linked via `previous_league_id`. The `getCurrentSeasonDraft()` function in `src/lib/sleeper.ts` resolves this chain:
+
+1. Check if the current league has an upcoming draft (`pre_draft` or `drafting` status)
+2. If not, fetch a user's leagues for the current year
+3. Find the league whose `previous_league_id` matches the current league
+4. Fetch that league's draft directly via `/draft/{id}` (the list endpoint omits `slot_to_roster_id`)
+5. Return the resolved draft with full slot assignments and traded picks
+
+This allows users to navigate via the old league ID (from bookmarks/dashboard) and still get the correct draft order.
+
+## Prospect Writeups (Multi-Source)
+
+### Overview
+Reusable system for ingesting scouting writeups from any source. Writeups are matched to players by name and displayed as tabbed expandable rows in the mock draft.
+
+### Database Schema
+```sql
+prospect_writeups (
+  id UUID PRIMARY KEY,
+  sleeper_id TEXT REFERENCES players(sleeper_id),
+  full_name TEXT NOT NULL,
+  position TEXT,
+  source TEXT NOT NULL,        -- e.g., 'rp', 'pff'
+  draft_year INTEGER NOT NULL,
+  analysis_text TEXT NOT NULL,
+  UNIQUE(full_name, source, draft_year)
+)
+```
+
+### Ingestion
+```bash
+npx tsx scripts/ingest-writeups.ts ./data/prospect_writeups 2026 rp
+```
+- File naming: `firstname_lastname_source.txt`
+- Upsert on `(full_name, source, draft_year)` — safe to re-run
+- Matches players by normalized name (lowercase, stripped punctuation)
+- Reports matched vs unmatched players
+
+### Display
+- Mock draft expandable rows show tabs when multiple sources exist (e.g., "Late Round" | "Rp")
+- Single source shows content directly without tabs
+- Both Sleeper and Fleaflicker mock draft pages query and merge writeups
+
+## In-Draft Trading
+
+### Trade Flow
+1. User clicks "Evaluate Trades" when on the clock
+2. **Search mode**: Type a player name → dropdown shows matches from other teams
+3. **Browse mode**: Value-matched targets shown based on current pick value
+4. Select a target → side-by-side deal builder opens
+
+### Deal Builder
+- **Left (You Send)**: Current pick (always included) + your roster players + your future picks
+- **Right (You Get)**: Target player (always included) + their roster players + their draft picks
+- **Value bar**: Live comparison with ±% and "✓ Fair" / "✗ Out of range" badge
+- **Position filters**: Filter both sides by QB/RB/WR/TE
+- **Execute**: Enabled only when within 10% fair value
+
+### Pick Valuation
+```typescript
+const estimatePickValue = (round, pick) => {
+    const overall = (round - 1) * teams.length + pick;
+    const sorted = [...freeAgents].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+    return sorted[overall - 1]?.fc_value || 0;
+};
+```
+Uses the Nth-best player from the original free agent pool — accurate for both startup and rookie drafts.
+
+### Trade Execution
+1. Players swap between rosters
+2. Current pick ownership transfers to the other team
+3. CPU auto-drafts with the acquired pick
+4. Modal closes, draft continues
+
+## Draft Grades
+
+### Starter Classification
+Progressive roster simulation: each drafted pick is evaluated against the current lineup (including previously drafted players), not a static pre-draft threshold.
+
+```typescript
+// For each pick in order:
+// 1. Check if value > worst starter at that position
+// 2. Add player to roster, re-sort
+// 3. Next pick evaluated against updated roster
+```
+
+### Grading Formula
+```
+score = (starterValue × 3) + benchValue
+```
+Teams ranked by score. Grades assigned relative to the best team (A+ for ≥90% of max, down to C).
+
+### Display
+- **Your Picks card**: Pick table with STARTER/BENCH badges, position group cards (pre → +added → post)
+- **League table**: All teams ranked with grade, per-position values with green "+X" deltas, starter count (e.g., "2/5")
+
+## Settings Persistence
+
+### Scoring Format
+- Saved to `leagues.scoring_format` via `/api/league-settings` when toggled on dashboard
+- All 8 league-scoped server pages: URL param → DB fallback → default (SF)
+
+### Keeper Settings
+- Saved to `leagues.keeper_count` and `leagues.league_type` via same API
+- `keeper_count` cleared to null when `league_type` is not `'keeper'`
+- All pages check `league_type === 'keeper'` before using keeper count
 
 ---
 

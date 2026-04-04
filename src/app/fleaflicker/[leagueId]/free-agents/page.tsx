@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { players, playerValues } from "@/db/schema";
+import { players, playerValues, leagues } from "@/db/schema";
 import { getFleaflickerLeague } from "@/lib/fleaflicker";
 import { desc, eq, and, not, like, inArray } from "drizzle-orm";
 import { FreeAgentTable } from "@/components/FreeAgentTable";
@@ -15,7 +15,12 @@ interface PageProps {
 export default async function FleaflickerFreeAgentsPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string }> }) {
     const { leagueId } = await params;
     const { format: formatParam } = await searchParams;
-    const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
+    let format: '1qb' | 'sf' | undefined = (formatParam === 'sf' || formatParam === '1qb') ? formatParam : undefined;
+    if (!format) {
+        const leagueData = await db.select({ scoring_format: leagues.scoring_format }).from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
+        if (leagueData[0]?.scoring_format) format = leagueData[0].scoring_format as '1qb' | 'sf';
+    }
+    if (!format) format = 'sf';
 
     try {
         // 1. Fetch live Fleaflicker data

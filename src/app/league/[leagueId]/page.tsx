@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { players, playerValues } from "@/db/schema";
+import { players, playerValues, leagues } from "@/db/schema";
 import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from "@/lib/sleeper";
 import { desc, eq, inArray } from "drizzle-orm";
 import { LeagueTable } from "@/components/LeagueTable";
@@ -16,8 +16,14 @@ interface PageProps {
 export default async function LeagueSummaryPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string; keepers?: string }> }) {
     const { leagueId } = await params;
     const { format: formatParam, keepers: keepersParam } = await searchParams;
-    const format = (formatParam === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
-    const keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
+    let format = (formatParam === 'sf' || formatParam === '1qb') ? formatParam as '1qb' | 'sf' : undefined;
+    let keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
+    if (!format || !keeperCount) {
+        const leagueData = await db.select({ keeper_count: leagues.keeper_count, league_type: leagues.league_type, scoring_format: leagues.scoring_format }).from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
+        if (!format && leagueData[0]?.scoring_format) format = leagueData[0].scoring_format as '1qb' | 'sf';
+        if (!keeperCount && leagueData[0]?.league_type === 'keeper' && leagueData[0]?.keeper_count) keeperCount = leagueData[0].keeper_count;
+    }
+    if (!format) format = 'sf';
 
     try {
         // 1. Fetch live Sleeper data

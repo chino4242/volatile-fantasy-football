@@ -71,6 +71,40 @@ If your contribution modifies the database schema:
 3. Test thoroughly — schema changes affect all pages that query the database
 4. Document any new tables or columns in your PR description
 
+## Data Ingestion
+
+### Player Data (FantasyCalc)
+```bash
+npx tsx scripts/ingest-players.ts
+```
+
+### Prospect Guide (Late Round PDF)
+```bash
+python3 scripts/ingest-prospects.py <pdf_path> <draft_year>
+```
+
+### Prospect Writeups (Multi-Source)
+```bash
+npx tsx scripts/ingest-writeups.ts <directory> <draft_year> <source>
+```
+- Files go in `data/prospect_writeups/` (gitignored — copyrighted material)
+- Naming: `firstname_lastname_source.txt`
+- Safe to re-run (upserts on name + source + year)
+
+## League Settings
+
+League settings (scoring format, league type, keeper count) are persisted to the `leagues` table via `/api/league-settings`. All league-scoped server pages fall back to the database when URL params are missing. When adding new league-scoped pages, follow this pattern:
+
+```typescript
+let format = (formatParam === 'sf' || formatParam === '1qb') ? formatParam : undefined;
+if (!format) {
+    const leagueData = await db.select({ scoring_format: leagues.scoring_format })
+        .from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
+    if (leagueData[0]?.scoring_format) format = leagueData[0].scoring_format;
+}
+if (!format) format = 'sf';
+```
+
 ## Adding a New Page
 
 1. Create a new directory under `src/app/` following Next.js conventions

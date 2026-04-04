@@ -1,6 +1,6 @@
 import { db } from '@/db';
-import { players, playerValues, prospectData, prospectWriteups } from '@/db/schema';
-import { getLeagueData, getAllDraftPicks, getPickFantasyCalcId, getLeagueDrafts, getDraftTradedPicks } from '@/lib/sleeper';
+import { players, playerValues, prospectData, prospectWriteups, leagues } from '@/db/schema';
+import { getLeagueData, getAllDraftPicks, getPickFantasyCalcId, getDraftTradedPicks, getCurrentSeasonDraft, type SleeperTradedPick } from '@/lib/sleeper';
 import { eq, inArray, and, notInArray, not, like, desc, sql } from 'drizzle-orm';
 import MockDraftClient from '@/app/fleaflicker/[leagueId]/mock-draft/MockDraftClient';
 import { getRankingsVintage, formatVintage } from '@/lib/rankings-vintage';
@@ -15,27 +15,36 @@ export default async function SleeperMockDraftPage({
     searchParams: Promise<{ format?: string; keepers?: string }>;
 }) {
     const { leagueId } = await params;
-    const { format = 'sf', keepers: keepersParam } = await searchParams;
+    const { format: formatParam, keepers: keepersParam } = await searchParams;
+    let format = (formatParam === 'sf' || formatParam === '1qb') ? formatParam as '1qb' | 'sf' : undefined;
+    let keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
+    if (!format || !keeperCount) {
+        const leagueData = await db.select({ keeper_count: leagues.keeper_count, league_type: leagues.league_type, scoring_format: leagues.scoring_format }).from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
+        if (!format && leagueData[0]?.scoring_format) format = leagueData[0].scoring_format as '1qb' | 'sf';
+        if (!keeperCount && leagueData[0]?.league_type === 'keeper' && leagueData[0]?.keeper_count) keeperCount = leagueData[0].keeper_count;
+    }
+    if (!format) format = 'sf';
     const sf = format === 'sf';
-    const keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
 
     const { users, rosters, tradedPicks } = await getLeagueData(leagueId);
-    const allPicks = getAllDraftPicks(rosters, tradedPicks);
 
-    // Fetch draft info for slot assignments
-    const drafts = await getLeagueDrafts(leagueId);
-    // Find the most recent upcoming/current draft
-    const draft = drafts.find(d => d.status === 'pre_draft' || d.status === 'drafting') || drafts[0];
+    // Fetch draft info — resolve current season's draft across league chain
+    const draftResult = await getCurrentSeasonDraft(leagueId);
+    const draft = draftResult?.draft || null;
+
+    // If the draft is on a newer league, also fetch that league's traded picks for accurate pick ownership
+    const currentSeasonTradedPicks = draftResult && draftResult.leagueId !== leagueId
+        ? await (await fetch(`https://api.sleeper.app/v1/league/${draftResult.leagueId}/traded_picks`)).json() as SleeperTradedPick[]
+        : tradedPicks;
+    const allPicks = getAllDraftPicks(rosters, currentSeasonTradedPicks);
 
     // Build slot-to-roster mapping from draft order
     let slotToRoster: Record<number, number> = {};
     if (draft?.slot_to_roster_id) {
-        // slot_to_roster_id: { slot -> roster_id } (available on pre_draft/drafting)
         for (const [slot, rosterId] of Object.entries(draft.slot_to_roster_id)) {
             slotToRoster[Number(slot)] = rosterId;
         }
     } else if (draft?.draft_order) {
-        // draft_order: { user_id -> slot } (available on completed drafts)
         const userToSlot = draft.draft_order as Record<string, number>;
         for (const [userId, slot] of Object.entries(userToSlot)) {
             const roster = rosters.find(r => r.owner_id === userId);

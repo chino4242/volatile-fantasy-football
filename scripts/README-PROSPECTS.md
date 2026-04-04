@@ -43,9 +43,37 @@ The script will:
 
 To integrate this data into the mock draft:
 
-1. **Add prospect columns** to the available players table
+1. **Add prospect columns** to the available players table ✅
 2. **Create filters** for ZAP categories (Elite Producer, Weekly Starter, etc.)
-3. **Display prospect analysis** when viewing player details
-4. **Highlight rookies** with ZAP data in the draft interface
+3. **Display prospect analysis** when viewing player details ✅
+4. **Highlight rookies** with ZAP data in the draft interface ✅
 
-The infrastructure is ready - just need to wire it up to the UI!
+## Prospect Writeups (Multi-Source)
+
+In addition to the Late Round PDF data, the platform supports ingesting scouting writeups from any source as `.txt` files.
+
+### Ingestion
+
+```bash
+npx tsx scripts/ingest-writeups.ts <directory> <draft_year> <source>
+```
+
+Example:
+```bash
+npx tsx scripts/ingest-writeups.ts ./data/prospect_writeups 2026 rp
+```
+
+### File Format
+- One file per player: `firstname_lastname_source.txt`
+- File content is the full analysis text
+- Player matched by normalized name against the `players` table
+
+### Storage
+- Table: `prospect_writeups` with unique constraint on `(full_name, source, draft_year)`
+- Safe to re-run — uses upsert (updates existing, inserts new)
+- Source column enables multiple writeup sources per player
+
+### Display
+- Mock draft: tabbed expandable rows when multiple sources exist
+- Single source: content shown directly without tabs
+- Both Sleeper and Fleaflicker mock drafts supported

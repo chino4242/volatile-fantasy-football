@@ -134,6 +134,52 @@ export async function getDraftTradedPicks(draftId: string): Promise<SleeperDraft
     return data;
 }
 
+/**
+ * Resolve the current season's league ID by following the Sleeper league chain.
+ * Sleeper creates a new league_id each season linked via previous_league_id.
+ * Returns the current season's draft if available, otherwise null.
+ */
+export async function getCurrentSeasonDraft(leagueId: string): Promise<{ draft: SleeperDraft; leagueId: string } | null> {
+    const cacheKey = `sleeper:current_season_draft:${leagueId}`;
+    const cached = cache.get<{ draft: SleeperDraft; leagueId: string }>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+
+    // Check if this league's draft is already current
+    const drafts = await getLeagueDrafts(leagueId);
+    const upcoming = drafts.find(d => d.status === 'pre_draft' || d.status === 'drafting');
+    if (upcoming) {
+        const result = { draft: upcoming, leagueId };
+        cache.set(cacheKey, result);
+        return result;
+    }
+
+    // League is complete — find the current season's league via a user
+    const users = await getLeagueUsers(leagueId);
+    if (!users.length) return null;
+
+    const currentYear = new Date().getFullYear();
+    const res = await fetch(`${BASE_URL}/user/${users[0].user_id}/leagues/nfl/${currentYear}`);
+    if (!res.ok) return null;
+    const userLeagues = await res.json();
+    if (!Array.isArray(userLeagues)) return null;
+
+    const nextLeague = userLeagues.find((l: any) => l.previous_league_id === leagueId);
+    if (!nextLeague) return null;
+
+    const nextDrafts = await getLeagueDrafts(nextLeague.league_id);
+    const nextDraft = nextDrafts.find(d => d.status === 'pre_draft' || d.status === 'drafting') || nextDrafts[0];
+    if (!nextDraft) return null;
+
+    // Fetch draft directly to get full details (slot_to_roster_id not always in list endpoint)
+    const draftRes = await fetch(`${BASE_URL}/draft/${nextDraft.draft_id}`);
+    if (!draftRes.ok) return null;
+    const fullDraft = await draftRes.json() as SleeperDraft;
+
+    const result = { draft: fullDraft, leagueId: nextLeague.league_id };
+    cache.set(cacheKey, result);
+    return result;
+}
+
 export function getAllDraftPicks(rosters: SleeperRoster[], tradedPicks: SleeperTradedPick[], currentYear: number = 2026): DraftPick[] {
     const picks: DraftPick[] = [];
     const numTeams = rosters.length;

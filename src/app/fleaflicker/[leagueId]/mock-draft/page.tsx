@@ -1,6 +1,6 @@
 import { getFleaflickerLeague, getFleaflickerRosterSlots } from '@/lib/fleaflicker';
 import { db } from '@/db';
-import { players, playerValues, prospectData, prospectWriteups } from '@/db/schema';
+import { players, playerValues, prospectData, prospectWriteups, leagues } from '@/db/schema';
 import { eq, inArray, sql } from 'drizzle-orm';
 import MockDraftClient from './MockDraftClient';
 import { getRankingsVintage, formatVintage } from '@/lib/rankings-vintage';
@@ -13,9 +13,16 @@ export default async function FleaflickerMockDraftPage({
     searchParams: Promise<{ format?: string; keepers?: string }>;
 }) {
     const { leagueId } = await params;
-    const { format = 'sf', keepers: keepersParam } = await searchParams;
+    const { format: formatParam, keepers: keepersParam } = await searchParams;
+    let format = (formatParam === 'sf' || formatParam === '1qb') ? formatParam as '1qb' | 'sf' : undefined;
+    let keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
+    if (!format || !keeperCount) {
+        const leagueData = await db.select({ keeper_count: leagues.keeper_count, league_type: leagues.league_type, scoring_format: leagues.scoring_format }).from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
+        if (!format && leagueData[0]?.scoring_format) format = leagueData[0].scoring_format as '1qb' | 'sf';
+        if (!keeperCount && leagueData[0]?.league_type === 'keeper' && leagueData[0]?.keeper_count) keeperCount = leagueData[0].keeper_count;
+    }
+    if (!format) format = 'sf';
     const sf = format === 'sf';
-    const keeperCount = keepersParam ? parseInt(keepersParam) : undefined;
 
     // Fetch league data
     const [leagueData, rosterSlots] = await Promise.all([
