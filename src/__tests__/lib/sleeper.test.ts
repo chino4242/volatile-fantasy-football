@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getLeagueUsers, getLeagueRosters, getTradedPicks, getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from '@/lib/sleeper';
+import { cache } from '@/lib/cache';
 
 // Mock the global fetch
 global.fetch = vi.fn();
@@ -7,6 +8,7 @@ global.fetch = vi.fn();
 describe('Sleeper API Library', () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        cache.clear(); // Important: clear cache so fetch is always called
     });
 
     const mockLeagueId = '12345';

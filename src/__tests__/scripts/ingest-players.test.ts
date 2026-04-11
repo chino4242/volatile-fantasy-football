@@ -87,7 +87,8 @@ describe('Player Ingestion Script', () => {
                 position: 'WR',
                 team: 'MIN',
                 age: 25, // 25.4 should round to 25
-                status: 'Active'
+                status: 'Active',
+                years_exp: null
             }
         ]);
 

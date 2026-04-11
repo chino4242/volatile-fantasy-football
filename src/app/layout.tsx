@@ -8,6 +8,12 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Volatile Fantasy Football",
   description: "Advanced Dynasty Analysis",
+  themeColor: "#4f46e5",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Volatile FF",
+  },
 };
 
 import { ClientProviders } from "./providers";

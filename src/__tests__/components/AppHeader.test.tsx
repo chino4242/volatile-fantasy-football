@@ -1,5 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import { AppHeader } from '@/components/AppHeader';
+import { vi } from 'vitest';
+
+// Mock useAuth
+vi.mock('@/hooks/useUser', () => ({
+    useAuth: () => ({
+        sleeperUsername: null,
+        fleaflickerUsername: null,
+    }),
+}));
 
 describe('AppHeader Component', () => {
     it('should render the logo and branding', () => {

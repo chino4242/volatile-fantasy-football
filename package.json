@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@camfleety/nfl-data-js": "^1.0.0",
+    "@ducanh2912/next-pwa": "^10.2.9",
     "clsx": "^2.1.1",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",
