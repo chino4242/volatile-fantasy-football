@@ -4,6 +4,7 @@ import Link from "next/link";
 import { LogOut, Loader2, Plus, X } from "lucide-react";
 import { useAuth } from "@/hooks/useUser";
 import { useState, useEffect } from "react";
+import { InstallBanner } from "@/components/InstallBanner";
 
 interface SleeperLeague {
   name: string;
@@ -228,6 +229,7 @@ export default function Home() {
         ) : (
           // ── DASHBOARD ──
           <div className="flex flex-col gap-8">
+            <InstallBanner />
             {/* Header */}
             <div className="flex items-center justify-between pb-6 border-b border-zinc-200 dark:border-zinc-800">
               <div className="flex items-center gap-4">
