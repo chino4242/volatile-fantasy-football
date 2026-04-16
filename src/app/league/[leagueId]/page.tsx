@@ -137,6 +137,12 @@ export default async function LeagueSummaryPage({ params, searchParams }: PagePr
                             >
                                 Mock Draft
                             </Link>
+                            <Link
+                                href={`/league/${leagueId}/live-draft?format=${format}${keeperCount ? `&keepers=${keeperCount}` : ''}`}
+                                className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+                            >
+                                Live Draft
+                            </Link>
                         </div>
                     </div>
                     <LeagueTable teams={teamStats.map(t => ({ id: t.rosterId, ...t }))} platform="sleeper" leagueId={leagueId} format={format} keeperCount={keeperCount} />

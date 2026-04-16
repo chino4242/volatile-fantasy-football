@@ -75,6 +75,7 @@ interface MockDraftClientProps {
     platform?: 'sleeper' | 'fleaflicker';
     rosterSlots?: { QB: number; RB: number; WR: number; TE: number; FLEX: number };
     keeperCount?: number;
+    mode?: 'mock' | 'live';
 }
 
 const ROUNDS = 5;
@@ -96,7 +97,7 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'rookie_tier', label: 'Tier', defaultOn: true, group: 'prospect' },
 ];
 
-export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, platform = 'fleaflicker', rosterSlots, keeperCount }: MockDraftClientProps) {
+export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock' }: MockDraftClientProps) {
     // Generate draft order from current year picks
     const draftOrder = useMemo(() => {
         const currentYear = new Date().getFullYear();
@@ -275,6 +276,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     const [tradeTargetPlayer, setTradeTargetPlayer] = useState<(Player & { teamName: string; teamId: number }) | null>(null);
     const [theirTradeAssets, setTheirTradeAssets] = useState<Set<string>>(new Set());
     const [tradePosFilter, setTradePosFilter] = useState<string>('ALL');
+    const [tradeForPick, setTradeForPick] = useState(false); // true when trading TO ACQUIRE the current pick
     const [expandedProspect, setExpandedProspect] = useState<string | null>(null);
     const [activeWriteupTab, setActiveWriteupTab] = useState<string>('late_round');
     const [searchQuery, setSearchQuery] = useState('');
@@ -297,6 +299,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     };
 
     // Auto-simulate CPU picks
+    const isLive = mode === 'live';
     const currentPick = picks[currentPickIndex];
     const isUserPick = currentPick && userTeamId !== null && currentPick.teamId === userTeamId;
     const isDraftComplete = currentPickIndex >= picks.length;
@@ -323,7 +326,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     // Auto-simulate non-user picks
     const pickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
-        if (draftStarted && !isDraftComplete && currentPick && !isUserPick && userTeamId !== null && availablePlayers.length > 0) {
+        if (!isLive && draftStarted && !isDraftComplete && currentPick && !isUserPick && userTeamId !== null && availablePlayers.length > 0) {
             if (pickTimerRef.current) return; // already scheduled
             pickTimerRef.current = setTimeout(() => {
                 pickTimerRef.current = null;
@@ -336,7 +339,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         return () => {
             if (pickTimerRef.current) { clearTimeout(pickTimerRef.current); pickTimerRef.current = null; }
         };
-    }, [currentPickIndex, draftStarted, userTeamId]);
+    }, [currentPickIndex, draftStarted, userTeamId, picks]);
 
     // Default roster slots if not provided (1QB, 2RB, 3WR, 1TE, 2FLEX)
     const slots = rosterSlots || { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
@@ -722,7 +725,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                             <ArrowLeft className="h-5 w-5" />
                         </Link>
                         <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100">
-                            Mock Draft
+                            {isLive ? 'Live Draft' : 'Mock Draft'}
                         </h1>
                     </div>
                     <div className="flex gap-2">
@@ -1034,7 +1037,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                             {isUserPick && (
                                 <div className="space-y-3">
                                     <div className="text-base sm:text-lg text-indigo-600 dark:text-indigo-400 font-semibold">
-                                        Your pick! Select a player below or evaluate trades.
+                                        Your pick! Select a player below{isLive ? '.' : ' or evaluate trades.'}
                                     </div>
                                     {(() => {
                                         const needs = calculatePositionalNeed(userTeamId!);
@@ -1076,6 +1079,52 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                     >
                                         Evaluate Trades
                                     </button>
+                                </div>
+                            )}
+                            {!isUserPick && isLive && (
+                                <div className="space-y-3">
+                                    <div className="text-sm text-zinc-500">Select the player they drafted from the table below</div>
+                                    {/* Suggested picks for this team */}
+                                    {(() => {
+                                        const needs = calculatePositionalNeed(currentPick.teamId);
+                                        const top3 = availablePlayers
+                                            .map(p => ({ player: p, score: scorePlayer(p, currentPick.teamId), value: p.fc_value || 0, posNeed: needs[p.position || ''] || 0 }))
+                                            .sort((a, b) => b.score - a.score)
+                                            .slice(0, 3);
+                                        return (
+                                            <div className="flex flex-col sm:flex-row gap-2 justify-center mt-2">
+                                                {top3.map((c, i) => (
+                                                    <div key={c.player.id} onClick={() => makePick(c.player.id)} className={`text-left px-3 py-2 rounded-lg border-2 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors ${i === 0 ? 'border-zinc-300 dark:border-zinc-600' : 'border-zinc-200 dark:border-zinc-700'}`}>
+                                                        <div className="text-xs text-zinc-400">Projected #{i + 1}</div>
+                                                        <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">{c.player.full_name} <span className="text-zinc-400">{c.player.position}</span></div>
+                                                        <div className="text-[10px] text-zinc-500">Value: {c.value} | {c.player.position} need: {(c.posNeed * 100).toFixed(0)}% | Score: {c.score.toFixed(0)}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    })()}
+                                    <div className="flex gap-2 justify-center">
+                                        <button
+                                            onClick={() => setShowTradeModal(true)}
+                                            className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium transition-colors"
+                                        >
+                                            Execute Trade
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (!userTeamId) return;
+                                                const targetTeam = activeTeams.find(t => t.id === currentPick.teamId);
+                                                if (!targetTeam) return;
+                                                setTradeForPick(true);
+                                                setTradeTargetPlayer(null);
+                                                setTradeSearch('');
+                                                setShowTradeModal(true);
+                                            }}
+                                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition-colors"
+                                        >
+                                            Suggest Trade
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -1222,8 +1271,8 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                     );
                 })()}
 
-                {/* Available Players (when user's pick) */}
-                {draftStarted && !isDraftComplete && isUserPick && (
+                {/* Available Players (when user's pick, or always in live mode) */}
+                {draftStarted && !isDraftComplete && (isUserPick || isLive) && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 mb-6">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                             <h2 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100">
@@ -1325,7 +1374,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                                     onClick={() => makePick(player.id)}
                                                     className="px-2 sm:px-3 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700"
                                                 >
-                                                    Draft
+                                                    {isLive && !isUserPick ? 'Select' : 'Draft'}
                                                 </button>
                                             </td>
                                         </tr>
@@ -1500,7 +1549,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
 
                 {/* Trade Modal */}
                 {showTradeModal && userTeamId !== null && currentPick && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => { setShowTradeModal(false); setTradeTargetPlayer(null); setTradeSearch(''); setSelectedTradeAssets(new Set()); setTheirTradeAssets(new Set()); setTradePosFilter('ALL'); }}>
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => { setShowTradeModal(false); setTradeTargetPlayer(null); setTradeSearch(''); setSelectedTradeAssets(new Set()); setTheirTradeAssets(new Set()); setTradePosFilter('ALL'); setTradeForPick(false); }}>
                         <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                             <div className="sticky top-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 z-10">
                                 <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-3">Trade Evaluator</h2>
@@ -1537,14 +1586,18 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                 })()}
                             </div>
 
-                            {tradeTargetPlayer ? (() => {
+                            {(tradeTargetPlayer || tradeForPick) ? (() => {
                                 const userTeam = activeTeams.find(t => t.id === userTeamId)!;
-                                const theirTeam = activeTeams.find(t => t.id === tradeTargetPlayer.teamId)!;
-                                const myValue = calculateSideValue(selectedTradeAssets, userTeam.players, true);
-                                const theirValue = (tradeTargetPlayer.fc_value || 0) + calculateSideValue(theirTradeAssets, theirTeam.players, false);
+                                const theirTeamId = tradeForPick ? currentPick.teamId : tradeTargetPlayer!.teamId;
+                                const theirTeam = activeTeams.find(t => t.id === theirTeamId)!;
+                                const includeCurrentPick = !tradeForPick; // only include current pick on "You Send" if it's YOUR pick
+                                const myValue = calculateSideValue(selectedTradeAssets, userTeam.players, includeCurrentPick);
+                                const pickValue = tradeForPick ? estimatePickValue(currentPick.round, currentPick.pick) : 0;
+                                const targetPlayerValue = tradeTargetPlayer ? (tradeTargetPlayer.fc_value || 0) : 0;
+                                const theirValue = targetPlayerValue + pickValue + calculateSideValue(theirTradeAssets, theirTeam.players, false);
                                 const diff = myValue - theirValue;
                                 const diffPct = theirValue > 0 ? Math.abs(diff / theirValue) * 100 : 0;
-                                const withinRange = diffPct <= 10;
+                                const withinRange = isLive || diffPct <= 10;
 
                                 return (
                                     <div className="p-4 sm:p-6 space-y-4">
@@ -1571,11 +1624,13 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                             {/* YOUR SIDE */}
                                             <div>
                                                 <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">You Send</h3>
-                                                {/* Current pick (always included) */}
-                                                <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-lg p-2 mb-2 text-sm flex justify-between">
-                                                    <span className="font-medium">{currentPick.round}.{String(currentPick.pick).padStart(2, '0')}</span>
-                                                    <span className="text-zinc-500">~{estimatePickValue(currentPick.round, currentPick.pick).toLocaleString()}</span>
-                                                </div>
+                                                {/* Current pick (only when it's your pick) */}
+                                                {!tradeForPick && (
+                                                    <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-lg p-2 mb-2 text-sm flex justify-between">
+                                                        <span className="font-medium">{currentPick.round}.{String(currentPick.pick).padStart(2, '0')}</span>
+                                                        <span className="text-zinc-500">~{estimatePickValue(currentPick.round, currentPick.pick).toLocaleString()}</span>
+                                                    </div>
+                                                )}
                                                 {/* Your players */}
                                                 <div className="text-xs font-medium text-zinc-500 uppercase mb-1">Your Players</div>
                                                 <div className="space-y-1 max-h-40 overflow-y-auto mb-3">
@@ -1590,17 +1645,22 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                                         );
                                                     })}
                                                 </div>
-                                                {/* Your future picks */}
+                                                {/* Your picks (current draft + future) */}
                                                 {(() => {
-                                                    const fp = userTeam.draftPicks.filter(p => p.season > new Date().getFullYear());
-                                                    return fp.length > 0 && (
+                                                    // Current draft picks owned by user (excluding already-made and the current pick if it's yours)
+                                                    const myCurrentPicks = picks
+                                                        .filter((p, idx) => p.teamId === userTeamId && idx > currentPickIndex && !p.playerId)
+                                                        .map(p => ({ aid: `draftpick_${p.round}_${p.pick}`, label: `${p.round}.${String(p.pick).padStart(2, '0')}`, value: estimatePickValue(p.round, p.pick) }));
+                                                    const fp = userTeam.draftPicks.filter(p => p.season > new Date().getFullYear())
+                                                        .map(p => ({ aid: `pick_${p.season}_${p.round}`, label: `${p.season} R${p.round}`, value: estimateFuturePickValue(p.round) }));
+                                                    const allPicks = [...myCurrentPicks, ...fp];
+                                                    return allPicks.length > 0 && (
                                                         <>
-                                                            <div className="text-xs font-medium text-zinc-500 uppercase mb-1">Future Picks</div>
+                                                            <div className="text-xs font-medium text-zinc-500 uppercase mb-1">Your Picks</div>
                                                             <div className="flex flex-wrap gap-1">
-                                                                {fp.map((p, i) => {
-                                                                    const aid = `pick_${p.season}_${p.round}`;
-                                                                    const sel = selectedTradeAssets.has(aid);
-                                                                    return <button key={i} onClick={() => toggleTradeAsset(aid)} className={`px-2 py-1 rounded text-xs transition-colors ${sel ? 'bg-indigo-100 dark:bg-indigo-950/40 border border-indigo-300 dark:border-indigo-700' : 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-transparent'}`}>{p.season} R{p.round}</button>;
+                                                                {allPicks.map(p => {
+                                                                    const sel = selectedTradeAssets.has(p.aid);
+                                                                    return <button key={p.aid} onClick={() => toggleTradeAsset(p.aid)} className={`px-2 py-1 rounded text-xs transition-colors ${sel ? 'bg-indigo-100 dark:bg-indigo-950/40 border border-indigo-300 dark:border-indigo-700' : 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-transparent'}`}>{p.label} <span className="text-zinc-400">~{p.value.toLocaleString()}</span></button>;
                                                                 })}
                                                             </div>
                                                         </>
@@ -1611,15 +1671,24 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                             {/* THEIR SIDE */}
                                             <div>
                                                 <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">You Get from {theirTeam.name}</h3>
-                                                {/* Target player (always included) */}
-                                                <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-2 mb-2 text-sm flex justify-between">
-                                                    <span className="font-medium">{tradeTargetPlayer.full_name} <span className="text-zinc-500">{tradeTargetPlayer.position}</span></span>
-                                                    <span className="text-zinc-500">{(tradeTargetPlayer.fc_value || 0).toLocaleString()}</span>
-                                                </div>
+                                                {/* Current pick (when trading FOR the pick) */}
+                                                {tradeForPick && (
+                                                    <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-2 mb-2 text-sm flex justify-between">
+                                                        <span className="font-medium">Pick {currentPick.round}.{String(currentPick.pick).padStart(2, '0')}</span>
+                                                        <span className="text-zinc-500">~{estimatePickValue(currentPick.round, currentPick.pick).toLocaleString()}</span>
+                                                    </div>
+                                                )}
+                                                {/* Target player (when trading for a specific player) */}
+                                                {tradeTargetPlayer && (
+                                                    <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-2 mb-2 text-sm flex justify-between">
+                                                        <span className="font-medium">{tradeTargetPlayer.full_name} <span className="text-zinc-500">{tradeTargetPlayer.position}</span></span>
+                                                        <span className="text-zinc-500">{(tradeTargetPlayer.fc_value || 0).toLocaleString()}</span>
+                                                    </div>
+                                                )}
                                                 {/* Their other players */}
                                                 <div className="text-xs font-medium text-zinc-500 uppercase mb-1">Their Players</div>
                                                 <div className="space-y-1 max-h-40 overflow-y-auto mb-3">
-                                                    {theirTeam.players.filter(p => p.id !== tradeTargetPlayer.id).filter(p => tradePosFilter === 'ALL' || p.position === tradePosFilter).sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)).map(p => {
+                                                    {theirTeam.players.filter(p => !tradeTargetPlayer || p.id !== tradeTargetPlayer.id).filter(p => tradePosFilter === 'ALL' || p.position === tradePosFilter).sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)).map(p => {
                                                         const aid = `player_${p.id}`;
                                                         const sel = theirTradeAssets.has(aid);
                                                         return (
@@ -1634,7 +1703,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                                 {(() => {
                                                     // Current draft picks owned by this team (excluding already-made picks)
                                                     const theirCurrentPicks = picks
-                                                        .filter((p, idx) => p.teamId === tradeTargetPlayer.teamId && idx > currentPickIndex && !p.playerId)
+                                                        .filter((p, idx) => p.teamId === theirTeamId && idx > currentPickIndex && !p.playerId)
                                                         .map(p => ({ round: p.round, slot: p.pick, aid: `draftpick_${p.round}_${p.pick}`, label: `${p.round}.${String(p.pick).padStart(2, '0')}`, value: estimatePickValue(p.round, p.pick) }));
                                                     // Future picks
                                                     const theirFuturePicks = theirTeam.draftPicks
@@ -1658,11 +1727,41 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
 
                                         {/* Action buttons */}
                                         <div className="flex justify-between items-center pt-2">
-                                            <button onClick={() => { setTradeTargetPlayer(null); setTradeSearch(''); setSelectedTradeAssets(new Set()); setTheirTradeAssets(new Set()); }} className="px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">
-                                                ← Search again
+                                            <button onClick={() => { setTradeTargetPlayer(null); setTradeForPick(false); setTradeSearch(''); setSelectedTradeAssets(new Set()); setTheirTradeAssets(new Set()); }} className="px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">
+                                                ← Back
                                             </button>
                                             <button
-                                                onClick={() => executeTrade(tradeTargetPlayer)}
+                                                onClick={() => {
+                                                    if (tradeForPick) {
+                                                        // Trading for the pick: reassign pick to user, swap assets
+                                                        if (!userTeamId || !currentPick) return;
+                                                        const theirTeamId = currentPick.teamId;
+                                                        const userOutgoing: string[] = [];
+                                                        selectedTradeAssets.forEach(a => { if (a.startsWith('player_')) userOutgoing.push(a.replace('player_', '')); });
+                                                        const theirOutgoing: string[] = [];
+                                                        theirTradeAssets.forEach(a => { if (a.startsWith('player_')) theirOutgoing.push(a.replace('player_', '')); });
+                                                        setActiveTeams(prev => prev.map(team => {
+                                                            if (team.id === userTeamId) {
+                                                                const after = team.players.filter(p => !userOutgoing.includes(p.id));
+                                                                const them = prev.find(t => t.id === theirTeamId);
+                                                                theirOutgoing.forEach(pid => { const pl = them?.players.find(p => p.id === pid); if (pl) after.push(pl); });
+                                                                return { ...team, players: after };
+                                                            }
+                                                            if (team.id === theirTeamId) {
+                                                                const after = team.players.filter(p => !theirOutgoing.includes(p.id));
+                                                                const us = prev.find(t => t.id === userTeamId);
+                                                                userOutgoing.forEach(pid => { const pl = us?.players.find(p => p.id === pid); if (pl) after.push(pl); });
+                                                                return { ...team, players: after };
+                                                            }
+                                                            return team;
+                                                        }));
+                                                        // Reassign pick to user
+                                                        setPicks(prev => prev.map((p, idx) => idx === currentPickIndex ? { ...p, teamId: userTeamId, teamName: activeTeams.find(t => t.id === userTeamId)?.name || '' } : p));
+                                                        setShowTradeModal(false); setSelectedTradeAssets(new Set()); setTheirTradeAssets(new Set()); setTradeForPick(false); setTradeSearch('');
+                                                    } else if (tradeTargetPlayer) {
+                                                        executeTrade(tradeTargetPlayer);
+                                                    }
+                                                }}
                                                 disabled={!withinRange}
                                                 className={`px-6 py-2 text-sm font-semibold rounded-lg transition-colors ${withinRange ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-400 cursor-not-allowed'}`}
                                             >
