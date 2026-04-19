@@ -18,23 +18,33 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 - **Position Value Analytics** — All Players page and Free Agent pages display summary cards showing total value by position, making it easy to identify position scarcity and opportunity
 - **Rookie Filter** — On the Free Agent page, filter specifically by rookies (identified by `years_exp === 0` from FantasyCalc)
 - **Column Sorting** — All table columns are sortable on League and Free Agent pages
-- **Mock Draft Simulator** — Full snake/linear draft simulation with intelligent CPU auto-pick logic, manual user picks, real-time roster tracking, position filters, column picker (9+ columns), CSV export, and draft board visualization. Supports both Sleeper and Fleaflicker leagues with accurate draft order including traded picks. Features:
+- **Mock Draft Simulator** — Full snake/linear draft simulation with intelligent CPU auto-pick logic, manual user picks, real-time roster tracking, position filters, column picker (9+ columns), CSV export, and visual draft board grid. Supports both Sleeper and Fleaflicker leagues with accurate draft order including traded picks. Features:
   - **Cross-Season Draft Resolution (Sleeper)** — Automatically resolves the current season's draft across Sleeper's league chain (each season creates a new league ID). Falls back to manual setup only when no API draft exists
-  - **Smart CPU Logic** — 92% value weight + 8% positional need, selecting from top 3 candidates with weighted random (squared scores)
+  - **Smart CPU Logic** — 92% value weight + 8% positional need, selecting from top 3 candidates with weighted random (squared scores). ZAP category modifier (+15% Elite to -10% Dart Throw) and AI confidence modifier (±8%) influence scoring
   - **Positional Need Calculation** — Factors in lineup-derived target allocation (from Fleaflicker roster requirements API), depth vs starting slots, waiver wire scarcity, and players drafted during the mock
   - **Pick Reasoning** — Shows score breakdown below each CPU pick (rank, value, need %, composite score)
-  - **User Recommendations** — When on the clock, displays top 3 recommended picks with full score breakdown; click to draft instantly
+  - **User Recommendations** — When on the clock, displays top 3 recommended picks; click to open player detail modal with full scouting data before drafting
+  - **Player Detail Modal** — Full scouting view with FC/VFF rankings, 30-day trend, ZAP data, AI analysis (confidence, summary, comps, bull/bear case), and writeups from all sources. Draft button inside modal
   - **In-Draft Trading** — Full trade evaluator with player search, side-by-side asset builder (your picks/players vs their picks/players), live value comparison, and 10% fair-value auto-acceptance. Pick values estimated from best-available-player projections, not static startup values
+  - **Suggest Trade (Live Draft)** — When another team is on the clock, propose a package from your assets to acquire their pick
   - **Watch List** — Star/pin players of interest; persisted to localStorage per league. Filter available players to show only watched players
   - **Search** — Filter available players by name in real-time
+  - **Undo Last Pick** — Reverts the most recent pick, restoring the player to the available pool
+  - **On-Deck Indicator** — Shows your next pick and how many picks away (e.g., "Your next pick: 2.05 (7 picks away)")
+  - **Last Pick Display** — Shows who was just drafted in the on-the-clock banner
   - **Recent Picks Log** — Scrollable strip showing last 12 picks with team, player, and position
-  - **Draft Grades** — Post-draft league-wide grades based on starter impact (drafted players that crack the starting lineup weighted 3x over bench depth). Per-team position group snapshots (pre-draft → post-draft values) and STARTER/BENCH classification per pick
-- **Prospect Writeups (Multi-Source)** — Ingest scouting writeups from multiple sources (e.g., Reception Perception) as `.txt` files. Matched to players by name, stored in `prospect_writeups` table with source tagging. Displayed in mock draft as tabbed expandable rows alongside Late Round data
+  - **Visual Draft Board** — Grid layout (columns = draft slots, rows = rounds) with position color coding, traded pick indicators, and current pick highlight
+  - **Draft Grades** — Post-draft league-wide grades based on starter impact (drafted players that crack the starting lineup weighted 3x over bench depth). Progressive roster simulation for accurate STARTER/BENCH classification. Per-team position group snapshots (pre-draft → post-draft values)
+  - **Draft History** — Completed drafts auto-saved to database. Collapsible "Past Drafts" section with expandable pick details, grades, and team info. Persists across devices via user login
+- **Live Draft Mode** — Separate mode for tracking real drafts in real-time. Same UI as mock draft but with manual pick entry for all teams, no CPU auto-pick, unrestricted trades (no value check), projected picks for every team, and "Suggest Trade" button. Available at `/league/{id}/live-draft` and `/fleaflicker/{id}/live-draft`
+- **AI Scouting Analysis** — Prospect writeups and Late Round data analyzed by Claude (Anthropic) at ingestion time. Extracts confidence score (1-10), one-line summary, bull/bear cases, and NFL player comparisons. Displayed in player detail modal, writeup tabs, and keeper selection cards. AI confidence feeds into draft recommendation scoring
+- **Prospect Writeups (Multi-Source)** — Ingest scouting writeups from multiple sources (e.g., Reception Perception) as `.txt` files. Matched to players by name, stored in `prospect_writeups` table with source tagging. Displayed across mock draft, live draft, free agent, and team roster pages as tabbed expandable rows
 - **Prospect Guide Integration** — Late Round Fantasy Football prospect data (ZAP scores, categories, breakout scores, draft capital delta, statistical comparables) ingested from PDF and stored in the database. Features:
   - **Prospect Guide Page** (`/prospects`) — Sortable table with rookie/Year 2 tabs, position filters, color-coded ZAP categories, expandable analysis text per player
   - **Mock Draft Integration** — ZAP / Yr 2 score, Pos Rank, and Tier columns in the available players table. Year 2 scores take priority; stale ZAP shown dimmed italic. Click any prospect name to expand inline profile with comps and analysis
   - **Smart Ingestion** — Python script dynamically scans PDF pages (no hardcoded ranges), handles both rookie and Year 2 profiles, supports 1QB rookie rankings
-- **Soft Login / Dashboard** — Enter your Sleeper username to get a personalized dashboard showing all your 2025 leagues. Supports Fleaflicker accounts too
+- **Player Stats Modal** — Click any player on team roster pages to view weekly stats (targets, receptions, yards, TDs, carries, passing stats, fantasy points). Season selector (2020-2025). Stats sourced from Sleeper API and nfl_data_py
+- **Soft Login / Dashboard** — Enter your Sleeper username to get a personalized dashboard showing all your leagues. Supports Fleaflicker accounts too
 - **Player Rankings** — Browse the top 50 dynasty players by FantasyCalc value
 - **Live Sleeper Integration** — Roster data is fetched in real-time from the [Sleeper API](https://docs.sleeper.com/)
 - **FantasyCalc Valuations** — Player trade values sourced from [FantasyCalc](https://fantasycalc.com/)
@@ -114,6 +124,9 @@ volatile-fantasy-football/
 │   ├── ingest-players.ts       # Fetches player + pick data from FantasyCalc API
 │   ├── ingest-prospects.py     # Ingests Late Round Prospect Guide PDF data
 │   ├── ingest-writeups.ts      # Ingests prospect writeups from .txt files (multi-source)
+│   ├── analyze-writeups.ts     # AI analysis of writeups via Claude (confidence, summary, comps)
+│   ├── analyze-prospects.ts    # AI analysis of Late Round prospect data via Claude
+│   ├── ingest-sleeper-stats.py # Ingests weekly player stats from Sleeper API
 │   ├── test-db.js              # Quick DB connection test
 │   └── verify-db.ts            # Verifies DB schema and data
 ├── src/
@@ -172,6 +185,7 @@ The app uses six tables managed by Drizzle ORM:
 | `player_values`   | Dynasty trade values from FantasyCalc and KTC          |
 | `prospect_data`   | Late Round prospect guide data (ZAP scores, categories, analysis) |
 | `prospect_writeups` | Multi-source scouting writeups (matched to players by name)    |
+| `draft_history`   | Saved mock/live draft results (picks, grades, per user/league) |
 | `leagues`         | League metadata (platform, scoring, roster settings)   |
 | `rosters`         | Team rosters within a league (W/L record, points)      |
 | `roster_players`  | Join table linking rosters to players                  |
@@ -228,6 +242,9 @@ See [`scripts/README-PROSPECTS.md`](scripts/README-PROSPECTS.md) for detailed in
 | `npx tsx scripts/ingest-players.ts`| Ingest/update player data from FantasyCalc       |
 | `python3 scripts/ingest-prospects.py <pdf> <year>` | Ingest prospect data from PDF |
 | `npx tsx scripts/ingest-writeups.ts <dir> <year> <source>` | Ingest prospect writeups from .txt files |
+| `npx tsx scripts/analyze-writeups.ts`  | AI-analyze writeups via Claude (confidence, summary, comps) |
+| `npx tsx scripts/analyze-prospects.ts` | AI-analyze Late Round prospect data via Claude |
+| `python3 scripts/ingest-sleeper-stats.py [year]` | Ingest weekly player stats from Sleeper API |
 | `npx tsx scripts/verify-db.ts`     | Verify database connection and data              |
 
 ## Testing

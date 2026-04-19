@@ -91,6 +91,22 @@ npx tsx scripts/ingest-writeups.ts <directory> <draft_year> <source>
 - Naming: `firstname_lastname_source.txt`
 - Safe to re-run (upserts on name + source + year)
 
+### AI Analysis (requires ANTHROPIC_API_KEY in .env.local)
+```bash
+npx tsx scripts/analyze-writeups.ts        # Analyze RP writeups
+npx tsx scripts/analyze-prospects.ts       # Analyze Late Round prospect data
+```
+- Only processes writeups without existing AI analysis (use `--force` to re-analyze all)
+- ~$0.01 per writeup, ~$1 total for full analysis
+
+### Weekly Player Stats (Sleeper API)
+```bash
+python3 scripts/ingest-sleeper-stats.py [year]   # Default: 2025
+```
+- Ingests all 18 weeks from Sleeper API
+- Upserts on (gsis_id, season, week)
+- Links players without gsis_id using sleeper_id fallback
+
 ## League Settings
 
 League settings (scoring format, league type, keeper count) are persisted to the `leagues` table via `/api/league-settings`. All league-scoped server pages fall back to the database when URL params are missing. When adding new league-scoped pages, follow this pattern:

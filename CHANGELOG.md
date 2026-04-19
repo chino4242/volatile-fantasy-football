@@ -4,6 +4,69 @@ All notable changes to the Volatile Fantasy Football platform.
 
 ## [Unreleased]
 
+### Added - Live Draft, AI Analysis, Visual Draft Board (2026-04-19)
+
+#### Live Draft Mode
+- Separate `/live-draft` pages for both Sleeper and Fleaflicker
+- Manual pick entry for all teams, no CPU auto-pick
+- Projected top 3 picks shown for every team (clickable to record)
+- Suggest Trade: propose packages from your assets to acquire the current pick
+- Unrestricted trades (no value check) for recording agreed-upon deals
+- Green "Live Draft" button on league dashboard pages
+
+#### AI Scouting Analysis
+- `analyze-writeups.ts`: Claude analyzes RP writeups → confidence (1-10), summary, bull/bear case, NFL comps
+- `analyze-prospects.ts`: Claude analyzes Late Round prospect data with ZAP context
+- AI fields stored in both `prospect_writeups` and `prospect_data` tables
+- Displayed in player detail modal, writeup tabs, and keeper selection cards
+- AI confidence feeds into `scorePlayer` (±8% modifier)
+
+#### Player Detail Modal
+- Click "View" on any available player to see full scouting data before drafting
+- Shows FC/VFF rankings, 30-day trend, ZAP data, AI analysis, all writeup sources
+- "Draft Player" button inside modal replaces instant-draft behavior
+- Recommendation cards (top 3) now open detail modal instead of drafting
+
+#### Visual Draft Board
+- Grid layout: columns = draft slots, rows = rounds
+- Position color coding (QB red, RB blue, WR green, TE orange)
+- Traded pick indicators, current pick ring highlight
+- Your team's picks highlighted in indigo
+
+#### Draft Enhancements
+- Undo last pick button (restores player to pool)
+- On-deck indicator: "Your next pick: 2.05 (7 picks away)"
+- Last pick result shown in on-the-clock banner
+- Draft history saved to database (cross-device via user login)
+- Collapsible "Past Drafts" section with expandable pick details
+
+#### Keeper Selection Enrichment
+- Cards now show: FC rank, position rank, 30-day trend, VFF rank, years exp
+- ZAP category and score for rookies/prospects
+- AI summary from writeup analysis
+
+#### ZAP Category Scoring
+- ZAP categories influence draft recommendations (+15% Legendary to -10% Dart Throw)
+- Only applies to non-stale data (current rookies and valid Year 2 players)
+
+#### Writeups on All Pages
+- Free agent tables: expandable writeup rows with tabs
+- Team roster: writeups in PlayerStatsModal
+- ZAP score shown in Late Round tab across all views
+
+#### Stats Ingestion
+- `ingest-sleeper-stats.py`: Ingests weekly stats from Sleeper API (2020-2025)
+- 2025 season: 4,846 rows across all 18 weeks
+- Backfilled 2020-2024 for players missing from nfl_data_py
+- PlayerStatsModal defaults to 2025, includes it in season selector
+
+#### Data Fetching Refactor
+- Shared `getFleaflickerDraftData()` and `getSleeperDraftData()` in `src/lib/draft-data.ts`
+- All 4 draft pages reduced to ~10 lines each
+
+#### Branding
+- VFF logo in header, home page, favicon, PWA icons, apple touch icon
+
 ### Added - Mock Draft Enhancements & Prospect Writeups (2026-04-03)
 
 #### Prospect Writeups (Multi-Source)

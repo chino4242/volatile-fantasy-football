@@ -958,6 +958,103 @@ Teams ranked by score. Grades assigned relative to the best team (A+ for ≥90% 
 - `keeper_count` cleared to null when `league_type` is not `'keeper'`
 - All pages check `league_type === 'keeper'` before using keeper count
 
+## Live Draft Mode
+
+Separate mode for tracking real drafts in real-time. Shares `MockDraftClient` component with `mode="live"` prop.
+
+### Key Differences from Mock Draft
+| Feature | Mock | Live |
+|---------|------|------|
+| CPU auto-pick | Yes (1.5s delay) | No — manual entry for all teams |
+| Available players table | Only on your pick | Always visible |
+| Trade restrictions | 10% fair value | Unrestricted |
+| Projected picks | N/A | Shown for every team (clickable) |
+| Suggest Trade | N/A | Propose packages to acquire current pick |
+
+### Suggest Trade Flow
+When another team is on the clock, "Suggest Trade" opens the trade builder with:
+- **You Send**: your players + your draft picks (current + future)
+- **You Get**: the current pick (always included) + their players/picks
+- No value restriction — records agreed-upon trades
+
+### Pages
+- `/league/{id}/live-draft` (Sleeper)
+- `/fleaflicker/{id}/live-draft` (Fleaflicker)
+
+## AI Scouting Analysis
+
+### Overview
+Prospect writeups and Late Round data are analyzed by Claude (Anthropic) at ingestion time to extract structured scouting intelligence.
+
+### Scripts
+- `scripts/analyze-writeups.ts` — Analyzes `prospect_writeups` table
+- `scripts/analyze-prospects.ts` — Analyzes `prospect_data` table (includes ZAP context)
+
+### Extracted Fields
+- `ai_confidence` (1-10): Overall prospect grade
+- `ai_summary`: One-line summary (max 15 words)
+- `ai_bull_case`: Best-case NFL outcome
+- `ai_bear_case`: Worst-case NFL outcome
+- `ai_comps`: 2-3 NFL player comparisons with reasoning
+
+### Scoring Impact
+AI confidence feeds into `scorePlayer`:
+```
+modifier = (confidence - 6) * 0.02  // 10 = +8%, 6 = 0%, 2 = -8%
+```
+Stacks with ZAP category modifier.
+
+### Display
+- Player detail modal: full AI header with confidence badge, summary, comps, bull/bear
+- Writeup tabs: AI header above full analysis text
+- Keeper selection cards: AI summary shown as italic one-liner
+
+## Draft History
+
+### Database
+```sql
+draft_history (id, league_id, user_id, platform, mode, draft_data JSONB, created_at)
+```
+
+### API
+- `POST /api/draft-history` — Save draft results
+- `GET /api/draft-history?leagueId=X&userId=Y` — Fetch history (limit 10)
+
+### Flow
+- Auto-saves on draft completion with picks, grade, and team info
+- Loads on page open, displayed as collapsible "Past Drafts" section
+- Cross-device via user login (Sleeper/Fleaflicker username)
+
+## Player Stats
+
+### Data Sources
+- **2020-2024**: nfl_data_py (GSIS ID based) + Sleeper API backfill
+- **2025**: Sleeper API (`scripts/ingest-sleeper-stats.py`)
+
+### Ingestion
+```bash
+python3 scripts/ingest-sleeper-stats.py 2025  # All 18 weeks
+```
+Players without GSIS IDs get `sleeper_{id}` fallback for linking.
+
+## Visual Draft Board
+
+Grid layout replacing the old table-style draft board:
+- **Columns** = draft slots (based on round 1 pick order)
+- **Rows** = rounds (R1-R5)
+- **Position colors**: QB red, RB blue, WR green, TE orange
+- **Traded picks**: show new owner name in amber when slot owner changed
+- **Current pick**: indigo ring highlight
+- **Your picks**: indigo text
+
+## Data Fetching Architecture
+
+Shared helpers in `src/lib/draft-data.ts`:
+- `getFleaflickerDraftData(leagueId, format, keepers)` — Fleaflicker leagues
+- `getSleeperDraftData(leagueId, format, keepers)` — Sleeper leagues
+
+Both return `{ teams, freeAgents, format, rankingsVintage, rosterSlots?, keeperCount? }` — the exact props needed by `MockDraftClient`. All 4 draft pages (mock + live × 2 platforms) are ~10 lines each.
+
 ---
 
 ## Prospect Guide Integration
