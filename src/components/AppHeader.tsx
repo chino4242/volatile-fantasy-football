@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { User, Trophy } from "lucide-react";
+import Image from "next/image";
+import { User } from "lucide-react";
 import { useAuth } from "@/hooks/useUser";
 import { InstallPWA } from "./InstallPWA";
 
@@ -13,11 +14,9 @@ export function AppHeader() {
         <header className="sticky top-0 z-50 w-full border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
             <div className="mx-auto flex h-14 max-w-7xl items-center px-4 sm:px-6 lg:px-8">
                 <Link href="/" className="flex items-center gap-2 font-bold text-zinc-900 dark:text-zinc-50">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
-                        <Trophy className="h-5 w-5" />
-                    </div>
+                    <Image src="/logo.png" alt="VFF" width={32} height={32} className="rounded-lg" />
                     <span className="hidden sm:inline-block">Volatile Fantasy Football</span>
-                    <span className="sm:hidden">Volatile</span>
+                    <span className="sm:hidden">VFF</span>
                 </Link>
 
                 <nav className="ml-auto flex items-center gap-2 sm:gap-4">

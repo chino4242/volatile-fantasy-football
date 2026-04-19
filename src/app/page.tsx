@@ -169,7 +169,10 @@ export default function Home() {
         {!isLoggedIn ? (
           // ── LOGIN FORM ──
           <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-8 max-w-md mx-auto w-full">
-            <h2 className="text-2xl font-bold text-zinc-900 dark:text-white mb-2">Welcome</h2>
+            <div className="flex justify-center mb-4">
+              <img src="/logo.png" alt="Volatile Fantasy Football" className="h-24 w-auto" />
+            </div>
+            <h2 className="text-2xl font-bold text-zinc-900 dark:text-white mb-2 text-center">Welcome</h2>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">Connect your account to view your leagues.</p>
 
             <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl mb-6">

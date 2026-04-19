@@ -9,6 +9,10 @@ export const metadata: Metadata = {
   title: "Volatile Fantasy Football",
   description: "Advanced Dynasty Analysis",
   themeColor: "#4f46e5",
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

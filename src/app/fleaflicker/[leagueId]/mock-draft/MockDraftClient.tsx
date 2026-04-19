@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, RotateCcw, Download, Play, ArrowUpDown, ArrowUp, ArrowDown, Star } from 'lucide-react';
+import { ArrowLeft, RotateCcw, Download, Play, ArrowUpDown, ArrowUp, ArrowDown, Star, Undo2 } from 'lucide-react';
 import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
 
@@ -323,6 +323,21 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         setCurrentPickIndex(currentPickIndex + 1);
     };
 
+    const undoLastPick = () => {
+        if (currentPickIndex === 0) return;
+        const prevIdx = currentPickIndex - 1;
+        const prevPick = picks[prevIdx];
+        if (!prevPick.playerId) return;
+        // Restore the player to available pool
+        const player = freeAgents.find(p => p.id === prevPick.playerId);
+        if (player) setAvailablePlayers(prev => [...prev, player].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)));
+        // Clear the pick
+        const updatedPicks = [...picks];
+        updatedPicks[prevIdx] = { ...updatedPicks[prevIdx], playerId: undefined, playerName: undefined, playerPosition: undefined, playerValue: undefined, pickReason: undefined };
+        setPicks(updatedPicks);
+        setCurrentPickIndex(prevIdx);
+    };
+
     // Auto-simulate non-user picks
     const pickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
@@ -431,11 +446,16 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         let value = player.fc_value || 0;
         
         // Draft Supply/Demand Adjustments
-        // FantasyCalc raw trade values overvalue elite QBs in a vacuum compared to actual startup draft capital
         if (player.position === 'QB') {
-            value *= format === 'sf' ? 0.85 : 0.55; // 15% penalty in SF, 45% penalty in 1QB
+            value *= format === 'sf' ? 0.85 : 0.55;
         } else if (player.position === 'TE') {
-            value *= 0.85; // Slight TE penalty unless TE premium (which we don't track explicitly yet)
+            value *= 0.85;
+        }
+
+        // ZAP category modifier (prospect scouting signal)
+        if (player.zap_category && !player.zap_stale) {
+            const zapMod: Record<string, number> = { 'LEGENDARY PERFORMER': 0.15, 'ELITE PRODUCER': 0.10, 'WEEKLY STARTER': 0.05, 'FLEX PLAY': 0, 'BENCHWARMER': -0.05, 'WAIVER WIRE ADD': -0.10, 'DART THROW': -0.10 };
+            value *= 1 + (zapMod[player.zap_category.toUpperCase()] || 0);
         }
 
         const needs = calculatePositionalNeed(teamId);
@@ -729,6 +749,14 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                         </h1>
                     </div>
                     <div className="flex gap-2">
+                        <button
+                            onClick={undoLastPick}
+                            disabled={currentPickIndex === 0}
+                            className="flex items-center gap-2 px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <Undo2 className="h-4 w-4" />
+                            Undo
+                        </button>
                         <button
                             onClick={resetDraft}
                             className="flex items-center gap-2 px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700"
@@ -1028,12 +1056,26 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                 {draftStarted && !isDraftComplete && currentPick && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 mb-6">
                         <div className="text-center">
+                            {/* Last pick result */}
+                            {currentPickIndex > 0 && picks[currentPickIndex - 1]?.playerName && (
+                                <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-3 pb-3 border-b border-zinc-100 dark:border-zinc-800">
+                                    {picks[currentPickIndex - 1].teamName} selected <span className="font-semibold text-zinc-900 dark:text-zinc-100">{picks[currentPickIndex - 1].playerName}</span> <span className="text-zinc-400">({picks[currentPickIndex - 1].playerPosition})</span>
+                                </div>
+                            )}
                             <div className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mb-2">
                                 Round {currentPick.round}, Pick {currentPick.pick}
                             </div>
-                            <div className="text-lg sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
+                            <div className="text-lg sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
                                 {currentPick.teamName} is on the clock
                             </div>
+                            {/* On-deck indicator */}
+                            {userTeamId !== null && !isUserPick && (() => {
+                                const nextIdx = picks.findIndex((p, i) => i > currentPickIndex && p.teamId === userTeamId && !p.playerId);
+                                if (nextIdx === -1) return <div className="text-xs text-zinc-400 mb-3">No more picks remaining</div>;
+                                const next = picks[nextIdx];
+                                const away = nextIdx - currentPickIndex;
+                                return <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">Your next pick: <span className="font-semibold text-indigo-600 dark:text-indigo-400">{next.round}.{String(next.pick).padStart(2, '0')}</span> ({away} pick{away !== 1 ? 's' : ''} away)</div>;
+                            })()}
                             {isUserPick && (
                                 <div className="space-y-3">
                                     <div className="text-base sm:text-lg text-indigo-600 dark:text-indigo-400 font-semibold">
