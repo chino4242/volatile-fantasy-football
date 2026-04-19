@@ -32,6 +32,11 @@ type PlayerStatsModalProps = {
   team: string | null;
   sleeperId: string;
   onClose: () => void;
+  writeups?: { source: string; analysis_text: string }[] | null;
+  zapScore?: number | null;
+  zapCategory?: string | null;
+  zapComps?: string | null;
+  zapAnalysis?: string | null;
 };
 
 export function PlayerStatsModal({
@@ -40,10 +45,16 @@ export function PlayerStatsModal({
   team,
   sleeperId,
   onClose,
+  writeups,
+  zapScore,
+  zapCategory,
+  zapComps,
+  zapAnalysis,
 }: PlayerStatsModalProps) {
-  const [selectedSeason, setSelectedSeason] = useState(2024);
+  const [selectedSeason, setSelectedSeason] = useState(new Date().getFullYear() - 1);
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStat[]>([]);
   const [loading, setLoading] = useState(true);
+  const [writeupTab, setWriteupTab] = useState('late_round');
 
   // Fetch stats when season changes
   useEffect(() => {
@@ -139,9 +150,37 @@ export function PlayerStatsModal({
             </button>
           </div>
           
+          {/* Scouting Writeups */}
+          {(zapAnalysis || (writeups && writeups.length > 0)) && (() => {
+            const sources: { key: string; label: string; content: React.ReactNode }[] = [];
+            if (zapAnalysis) sources.push({ key: 'late_round', label: 'Late Round', content: (
+              <>
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-xs font-medium text-zinc-500">{zapCategory}{zapScore ? ` · ZAP: ${zapScore.toFixed(1)}` : ''}</span>
+                  {zapComps && <span className="text-xs text-zinc-400">Comps: {zapComps}</span>}
+                </div>
+                <p className="text-xs text-zinc-600 whitespace-pre-line leading-relaxed">{zapAnalysis}</p>
+              </>
+            )});
+            writeups?.forEach(w => sources.push({ key: w.source, label: w.source.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), content: (
+              <p className="text-xs text-zinc-600 whitespace-pre-line leading-relaxed">{w.analysis_text}</p>
+            )}));
+            const active = sources.find(s => s.key === writeupTab) || sources[0];
+            return (
+              <div className="bg-zinc-50 rounded-lg p-4 mb-4">
+                {sources.length > 1 && (
+                  <div className="flex gap-1 mb-3">
+                    {sources.map(s => <button key={s.key} onClick={() => setWriteupTab(s.key)} className={`px-2 py-1 text-[11px] font-medium rounded ${active.key === s.key ? 'bg-indigo-600 text-white' : 'bg-zinc-200 text-zinc-600'}`}>{s.label}</button>)}
+                  </div>
+                )}
+                <div className="max-h-48 overflow-y-auto">{active.content}</div>
+              </div>
+            );
+          })()}
+
           {/* Season Selector */}
           <div className="flex gap-2">
-            {[2024, 2023, 2022, 2021, 2020].map(year => (
+            {[2025, 2024, 2023, 2022, 2021].map(year => (
               <button
                 key={year}
                 onClick={() => setSelectedSeason(year)}

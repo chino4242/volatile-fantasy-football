@@ -2,9 +2,10 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, RotateCcw, Download, Play, ArrowUpDown, ArrowUp, ArrowDown, Star, Undo2 } from 'lucide-react';
+import { ArrowLeft, RotateCcw, Download, Play, ArrowUpDown, ArrowUp, ArrowDown, Star, Undo2, ChevronDown, ChevronUp } from 'lucide-react';
 import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
+import { useAuth } from '@/hooks/useUser';
 
 interface Player {
     id: string;
@@ -31,7 +32,7 @@ interface Player {
     zap_stale?: boolean;
     zap_comps?: string | null;
     zap_analysis?: string | null;
-    writeups?: { source: string; analysis_text: string }[] | null;
+    writeups?: { source: string; analysis_text: string; ai_confidence?: number | null; ai_summary?: string | null; ai_bull_case?: string | null; ai_bear_case?: string | null; ai_comps?: string | null }[] | null;
     rookie_rank?: number | null;
     rookie_pos_rank?: number | null;
     rookie_tier?: number | null;
@@ -98,6 +99,22 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
 ];
 
 export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock' }: MockDraftClientProps) {
+    const { sleeperUsername, fleaflickerUsername } = useAuth();
+    const userId = platform === 'sleeper' ? sleeperUsername : fleaflickerUsername;
+
+    // Draft history
+    interface DraftHistoryEntry { id: string; mode: string; created_at: string; draft_data: { userTeamName: string; grade: string; picks: { round: number; pick: number; teamName: string; playerName: string; playerPosition: string; playerValue: number }[] } }
+    const [draftHistoryList, setDraftHistoryList] = useState<DraftHistoryEntry[]>([]);
+    const [showHistory, setShowHistory] = useState(false);
+    const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (userId && leagueId) {
+            fetch(`/api/draft-history?leagueId=${leagueId}&userId=${userId}`)
+                .then(r => r.json()).then(data => { if (Array.isArray(data)) setDraftHistoryList(data); }).catch(() => {});
+        }
+    }, [userId, leagueId]);
+
     // Generate draft order from current year picks
     const draftOrder = useMemo(() => {
         const currentYear = new Date().getFullYear();
@@ -338,6 +355,36 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         setCurrentPickIndex(prevIdx);
     };
 
+    // Save draft to DB on completion
+    const draftSavedRef = useRef(false);
+    useEffect(() => {
+        if (isDraftComplete && userId && userTeamId !== null && !draftSavedRef.current) {
+            draftSavedRef.current = true;
+            const myTeam = activeTeams.find(t => t.id === userTeamId);
+            const myPicks = picks.filter(p => p.teamId === userTeamId && p.playerName);
+            const draftedValue = myPicks.reduce((s, p) => s + (p.playerValue || 0), 0);
+            const allValues = activeTeams.map(t => picks.filter(p => p.teamId === t.id && p.playerName).reduce((s, p) => s + (p.playerValue || 0), 0));
+            const maxVal = Math.max(...allValues, 1);
+            const pct = draftedValue / maxVal;
+            const grade = pct >= 0.9 ? 'A+' : pct >= 0.8 ? 'A' : pct >= 0.7 ? 'A-' : pct >= 0.6 ? 'B+' : pct >= 0.5 ? 'B' : pct >= 0.4 ? 'B-' : pct >= 0.3 ? 'C+' : 'C';
+            fetch('/api/draft-history', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    leagueId, userId, platform, mode,
+                    draftData: {
+                        userTeamName: myTeam?.name || '',
+                        grade,
+                        picks: picks.filter(p => p.playerName).map(p => ({ round: p.round, pick: p.pick, teamName: p.teamName, playerName: p.playerName, playerPosition: p.playerPosition, playerValue: p.playerValue || 0 })),
+                    },
+                }),
+            }).then(() => {
+                // Refresh history list
+                fetch(`/api/draft-history?leagueId=${leagueId}&userId=${userId}`).then(r => r.json()).then(data => { if (Array.isArray(data)) setDraftHistoryList(data); }).catch(() => {});
+            }).catch(() => {});
+        }
+        if (!isDraftComplete) draftSavedRef.current = false;
+    }, [isDraftComplete]);
+
     // Auto-simulate non-user picks
     const pickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
@@ -456,6 +503,14 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         if (player.zap_category && !player.zap_stale) {
             const zapMod: Record<string, number> = { 'LEGENDARY PERFORMER': 0.15, 'ELITE PRODUCER': 0.10, 'WEEKLY STARTER': 0.05, 'FLEX PLAY': 0, 'BENCHWARMER': -0.05, 'WAIVER WIRE ADD': -0.10, 'DART THROW': -0.10 };
             value *= 1 + (zapMod[player.zap_category.toUpperCase()] || 0);
+        }
+
+        // AI confidence modifier from writeup analysis
+        if (player.writeups?.length) {
+            const bestConfidence = Math.max(...player.writeups.map(w => w.ai_confidence || 0));
+            if (bestConfidence > 0) {
+                value *= 1 + (bestConfidence - 6) * 0.02; // 10 = +8%, 6 = 0%, 2 = -8%
+            }
         }
 
         const needs = calculatePositionalNeed(teamId);
@@ -774,6 +829,52 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                         </button>
                     </div>
                 </div>
+
+                {/* Draft History */}
+                {!draftStarted && draftHistoryList.length > 0 && (
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 mb-6">
+                        <button onClick={() => setShowHistory(!showHistory)} className="flex items-center justify-between w-full">
+                            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Past Drafts ({draftHistoryList.length})</h2>
+                            {showHistory ? <ChevronUp className="h-5 w-5 text-zinc-400" /> : <ChevronDown className="h-5 w-5 text-zinc-400" />}
+                        </button>
+                        {showHistory && (
+                            <div className="mt-4 space-y-2">
+                                {draftHistoryList.map(entry => (
+                                    <div key={entry.id} className="border border-zinc-200 dark:border-zinc-700 rounded-lg">
+                                        <button onClick={() => setExpandedHistory(expandedHistory === entry.id ? null : entry.id)} className="w-full text-left px-4 py-3 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                <span className={`text-lg font-bold ${entry.draft_data.grade.startsWith('A') ? 'text-green-600' : entry.draft_data.grade.startsWith('B') ? 'text-blue-600' : 'text-amber-600'}`}>{entry.draft_data.grade}</span>
+                                                <div>
+                                                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{entry.draft_data.userTeamName}</div>
+                                                    <div className="text-xs text-zinc-500">{new Date(entry.created_at).toLocaleDateString()} · {entry.mode}</div>
+                                                </div>
+                                            </div>
+                                            {expandedHistory === entry.id ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
+                                        </button>
+                                        {expandedHistory === entry.id && (
+                                            <div className="px-4 pb-3 border-t border-zinc-100 dark:border-zinc-800">
+                                                <table className="w-full text-xs mt-2">
+                                                    <thead><tr className="text-zinc-500 border-b border-zinc-100 dark:border-zinc-800"><th className="pb-1 text-left">Pick</th><th className="pb-1 text-left">Team</th><th className="pb-1 text-left">Player</th><th className="pb-1 text-left">Pos</th><th className="pb-1 text-right">Value</th></tr></thead>
+                                                    <tbody>
+                                                        {entry.draft_data.picks.map((p, i) => (
+                                                            <tr key={i} className="border-b border-zinc-50 dark:border-zinc-800/50">
+                                                                <td className="py-1 text-zinc-400">{p.round}.{String(p.pick).padStart(2, '0')}</td>
+                                                                <td className="py-1 text-zinc-600 dark:text-zinc-400">{p.teamName}</td>
+                                                                <td className="py-1 font-medium text-zinc-900 dark:text-zinc-100">{p.playerName}</td>
+                                                                <td className="py-1 text-zinc-500">{p.playerPosition}</td>
+                                                                <td className="py-1 text-right text-zinc-500">{p.playerValue.toLocaleString()}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Team Selector */}
                 {userTeamId === null && (
@@ -1425,14 +1526,29 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                             if (player.zap_analysis) sources.push({ key: 'late_round', label: 'Late Round', content: (
                                                 <>
                                                     <div className="flex items-center gap-3 mb-2">
-                                                        <span className="text-xs font-medium text-zinc-500">{player.zap_category}</span>
+                                                        <span className="text-xs font-medium text-zinc-500">{player.zap_category}{player.zap_score ? ` · ZAP: ${player.zap_score.toFixed(1)}` : ''}</span>
                                                         {player.zap_comps && <span className="text-xs text-zinc-400">Comps: {player.zap_comps}</span>}
                                                     </div>
                                                     <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{player.zap_analysis}</p>
                                                 </>
                                             )});
                                             player.writeups?.forEach(w => sources.push({ key: w.source, label: w.source.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), content: (
-                                                <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{w.analysis_text}</p>
+                                                <div>
+                                                    {w.ai_summary && (
+                                                        <div className="mb-3 space-y-1.5">
+                                                            <div className="flex items-center gap-2">
+                                                                {w.ai_confidence && <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${w.ai_confidence >= 8 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : w.ai_confidence >= 5 ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'}`}>{w.ai_confidence}/10</span>}
+                                                                <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{w.ai_summary}</span>
+                                                            </div>
+                                                            {w.ai_comps && <div className="text-[11px] text-zinc-500">🔄 Comps: {w.ai_comps}</div>}
+                                                            <div className="flex gap-3 text-[11px]">
+                                                                {w.ai_bull_case && <div className="text-green-700 dark:text-green-400">📈 {w.ai_bull_case}</div>}
+                                                                {w.ai_bear_case && <div className="text-red-700 dark:text-red-400">📉 {w.ai_bear_case}</div>}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{w.analysis_text}</p>
+                                                </div>
                                             )}));
                                             const active = sources.find(s => s.key === activeWriteupTab) || sources[0];
                                             return (
@@ -1481,54 +1597,65 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                     {/* Draft Board */}
                     <div className="lg:col-span-2 bg-white dark:bg-zinc-900 rounded-xl shadow-lg overflow-hidden order-2 lg:order-1">
                         <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
-                                <thead className="bg-zinc-50 dark:bg-zinc-950/50">
-                                    <tr>
-                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase">Round</th>
-                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase">Pick</th>
-                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase hidden sm:table-cell">Team</th>
-                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase">Player</th>
-                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase">Pos</th>
-                                        <th className="px-2 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-zinc-500 uppercase hidden sm:table-cell">Value</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                                    {picks.map((pick, idx) => (
-                                        <tr
-                                            key={idx}
-                                            className={`${
-                                                idx === currentPickIndex
-                                                    ? 'bg-indigo-50 dark:bg-indigo-950/20'
-                                                    : pick.teamId === userTeamId && pick.playerId
-                                                    ? 'bg-green-50 dark:bg-green-950/20'
-                                                    : ''
-                                            }`}
-                                        >
-                                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
-                                                {pick.round}
-                                            </td>
-                                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
-                                                {pick.pick}
-                                            </td>
-                                            <td className="hidden sm:table-cell px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
-                                                {pick.teamName}
-                                            </td>
-                                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
-                                                {pick.playerName || '—'}
-                                                {pick.pickReason && (
-                                                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">{pick.pickReason}</div>
-                                                )}
-                                            </td>
-                                            <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
-                                                {pick.playerPosition || '—'}
-                                            </td>
-                                            <td className="hidden sm:table-cell px-4 py-3 text-sm text-right text-zinc-900 dark:text-zinc-100">
-                                                {pick.playerValue ? pick.playerValue.toFixed(0) : '—'}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                            {(() => {
+                                const numTeams = teams.length;
+                                // Get unique team IDs from round 1 pick order (slot-based)
+                                const round1 = picks.filter(p => p.round === 1).sort((a, b) => a.pick - b.pick);
+                                const posBg = (pos?: string) => pos === 'QB' ? 'bg-red-100 dark:bg-red-900/30' : pos === 'RB' ? 'bg-blue-100 dark:bg-blue-900/30' : pos === 'WR' ? 'bg-green-100 dark:bg-green-900/30' : pos === 'TE' ? 'bg-orange-100 dark:bg-orange-900/30' : '';
+                                const teamNames = new Map(teams.map(t => [t.id, t.name]));
+
+                                return (
+                                    <table className="w-full text-[10px] sm:text-xs border-collapse">
+                                        <thead>
+                                            <tr className="bg-zinc-50 dark:bg-zinc-950/50">
+                                                <th className="px-1 py-2 text-zinc-500 font-medium sticky left-0 bg-zinc-50 dark:bg-zinc-950/50 z-10 w-8"></th>
+                                                {round1.map((p, i) => (
+                                                    <th key={i} className={`px-1 py-2 text-center font-medium truncate max-w-[80px] ${p.teamId === userTeamId ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-500'}`}>
+                                                        {(p.teamName || '').split(' ').pop()?.slice(0, 8)}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {Array.from({ length: ROUNDS }, (_, r) => r + 1).map(round => {
+                                                const roundPicks = picks.filter(p => p.round === round).sort((a, b) => a.pick - b.pick);
+                                                return (
+                                                    <tr key={round} className="border-t border-zinc-100 dark:border-zinc-800">
+                                                        <td className="px-1 py-1 text-zinc-400 font-medium text-center sticky left-0 bg-white dark:bg-zinc-900 z-10">R{round}</td>
+                                                        {roundPicks.map((pick, slotIdx) => {
+                                                            const pickIdx = picks.indexOf(pick);
+                                                            const isCurrent = pickIdx === currentPickIndex;
+                                                            const isUser = pick.teamId === userTeamId;
+                                                            const ownerChanged = round1[slotIdx] && pick.teamId !== round1[slotIdx].teamId;
+                                                            return (
+                                                                <td key={`${round}-${slotIdx}`} className="px-0.5 py-0.5">
+                                                                    <div className={`rounded px-1 py-1 text-center min-h-[36px] flex flex-col justify-center ${
+                                                                        isCurrent ? 'ring-2 ring-indigo-500 bg-indigo-50 dark:bg-indigo-950/30' :
+                                                                        pick.playerId ? posBg(pick.playerPosition) :
+                                                                        isUser ? 'bg-zinc-50 dark:bg-zinc-800/50' : ''
+                                                                    }`}>
+                                                                        {pick.playerName ? (
+                                                                            <>
+                                                                                <div className={`font-medium truncate ${isUser ? 'text-indigo-700 dark:text-indigo-300' : 'text-zinc-900 dark:text-zinc-100'}`}>{pick.playerName.split(' ').pop()}</div>
+                                                                                <div className="text-zinc-400">{pick.playerPosition}</div>
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                {ownerChanged && <div className="text-[9px] text-amber-600 dark:text-amber-400 truncate">{(teamNames.get(pick.teamId) || '').split(' ').pop()?.slice(0, 6)}</div>}
+                                                                                <div className="text-zinc-300 dark:text-zinc-700">{round}.{String(pick.pick).padStart(2, '0')}</div>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            );
+                                                        })}
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                );
+                            })()}
                         </div>
                     </div>
 

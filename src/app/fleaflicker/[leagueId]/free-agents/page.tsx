@@ -1,7 +1,7 @@
 import { db } from "@/db";
-import { players, playerValues, leagues } from "@/db/schema";
+import { players, playerValues, leagues, prospectData, prospectWriteups } from "@/db/schema";
 import { getFleaflickerLeague } from "@/lib/fleaflicker";
-import { desc, eq, and, not, like, inArray } from "drizzle-orm";
+import { desc, eq, and, not, like, inArray, sql } from "drizzle-orm";
 import { FreeAgentTable } from "@/components/FreeAgentTable";
 import Link from "next/link";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
@@ -76,8 +76,21 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
             .filter(p => !allPlayerNames.has(normalizeName(p.full_name || '')))
             .slice(0, 200);
 
+        // Merge prospect writeups and ZAP data
+        const currentYear = new Date().getFullYear();
+        const prospects = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
+        const zapByName = new Map(prospects.map(p => [normalizeName(p.full_name), p]));
+        const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
+        const writeupsByName = new Map<string, { source: string; analysis_text: string }[]>();
+        for (const w of writeups) { const key = normalizeName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text }); }
+        const freeAgentsWithWriteups = freeAgents.map(p => {
+            const zap = zapByName.get(normalizeName(p.full_name || ''));
+            const wu = writeupsByName.get(normalizeName(p.full_name || '')) || null;
+            return { ...p, zap_score: zap?.zap_score ? parseFloat(String(zap.zap_score)) : null, zap_analysis: zap?.analysis_text || null, zap_category: zap?.zap_category || null, zap_comps: zap?.statistical_comparables || null, writeups: wu };
+        });
+
         // Calculate position totals for free agents
-        const positionTotals = freeAgents.reduce((acc, player) => {
+        const positionTotals = freeAgentsWithWriteups.reduce((acc, player) => {
             const pos = player.position || 'UNK';
             if (!acc[pos]) acc[pos] = 0;
             acc[pos] += player.fc_value || 0;
@@ -115,7 +128,7 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                         ))}
                     </div>
 
-                    <FreeAgentTable players={freeAgents} rankingsVintage={rankingsVintage} />
+                    <FreeAgentTable players={freeAgentsWithWriteups} rankingsVintage={rankingsVintage} />
                 </div>
             </div>
         );

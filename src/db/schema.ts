@@ -286,6 +286,12 @@ export const prospectWriteups = pgTable("prospect_writeups", {
     source: text("source").notNull(), // e.g., 'reception_perception', 'pff', etc.
     draft_year: integer("draft_year").notNull(),
     analysis_text: text("analysis_text").notNull(),
+    // AI-generated sentiment analysis
+    ai_confidence: integer("ai_confidence"), // 1-10
+    ai_summary: text("ai_summary"),
+    ai_bull_case: text("ai_bull_case"),
+    ai_bear_case: text("ai_bear_case"),
+    ai_comps: text("ai_comps"), // player comparisons
     created_at: timestamp("created_at").defaultNow(),
 }, (table) => {
     return {
@@ -293,5 +299,20 @@ export const prospectWriteups = pgTable("prospect_writeups", {
         sourceIdx: index("idx_writeup_source").on(table.source),
         sleeperSourceIdx: index("idx_writeup_sleeper_source").on(table.sleeper_id, table.source),
         uniqueNameSource: unique("unique_writeup_name_source").on(table.full_name, table.source, table.draft_year),
+    };
+});
+
+// Draft History Table
+export const draftHistory = pgTable("draft_history", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    league_id: text("league_id").notNull(),
+    user_id: text("user_id").notNull(), // sleeper or fleaflicker username
+    platform: text("platform").notNull(), // 'sleeper' or 'fleaflicker'
+    mode: text("mode").notNull(), // 'mock' or 'live'
+    draft_data: jsonb("draft_data").notNull(), // full picks, grades, teams
+    created_at: timestamp("created_at").defaultNow(),
+}, (table) => {
+    return {
+        userLeagueIdx: index("idx_draft_history_user_league").on(table.user_id, table.league_id),
     };
 });

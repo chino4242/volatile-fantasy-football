@@ -4,8 +4,8 @@ import { getPickFantasyCalcId } from "@/lib/sleeper";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { db } from "@/db";
-import { players, playerValues, leagues } from "@/db/schema";
-import { inArray, eq } from "drizzle-orm";
+import { players, playerValues, leagues, prospectData, prospectWriteups } from "@/db/schema";
+import { inArray, eq, sql } from "drizzle-orm";
 import { TeamRosterTable } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterTable";
 
 export const dynamic = "force-dynamic";
@@ -148,6 +148,19 @@ export default async function FleaflickerTeamPage({
 
     const allAssets = [...playersWithData, ...enrichedPicks].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
 
+    // Merge writeups
+    const currentYear = new Date().getFullYear();
+    const prospectRows = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
+    const zapByName = new Map(prospectRows.map(p => [normalizeName(p.full_name), p]));
+    const writeupRows = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
+    const writeupsByName = new Map<string, { source: string; analysis_text: string }[]>();
+    for (const w of writeupRows) { const key = normalizeName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text }); }
+    const allAssetsWithWriteups = allAssets.map(p => {
+        const zap = zapByName.get(normalizeName(p.full_name));
+        const wu = writeupsByName.get(normalizeName(p.full_name)) || null;
+        return { ...p, zap_score: zap?.zap_score ? parseFloat(String(zap.zap_score)) : null, zap_analysis: zap?.analysis_text || null, zap_category: zap?.zap_category || null, zap_comps: zap?.statistical_comparables || null, writeups: wu };
+    });
+
     const totalValue = allAssets.reduce((sum, p) => sum + (p.fc_value || 0), 0);
     
     // Calculate value dropped for keeper leagues
@@ -260,7 +273,7 @@ export default async function FleaflickerTeamPage({
                 </div>
 
                 <TeamRosterTable
-                    players={allAssets as any[]}
+                    players={allAssetsWithWriteups as any[]}
                     scoringFormat={format}
                     positionValues={positionValues}
                     allLeaguePlayers={allLeagueValues as any[]}

@@ -1,8 +1,9 @@
 import { db } from "@/db";
-import { players, playerValues, leagues } from "@/db/schema";
+import { players, playerValues, leagues, prospectData, prospectWriteups } from "@/db/schema";
 import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from "@/lib/sleeper";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
+import { sql } from "drizzle-orm";
 import { eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -157,6 +158,20 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
 
     const allAssets = [...enrichedPlayers, ...enrichedPicks].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
 
+    // Merge writeups into assets
+    const currentYear = new Date().getFullYear();
+    const normalizeName = (n: string) => n.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+    const prospectRows = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
+    const zapByName = new Map(prospectRows.map(p => [normalizeName(p.full_name), p]));
+    const writeupRows = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
+    const writeupsByName = new Map<string, { source: string; analysis_text: string }[]>();
+    for (const w of writeupRows) { const key = normalizeName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text }); }
+    const allAssetsWithWriteups = allAssets.map(p => {
+        const zap = zapByName.get(normalizeName(p.full_name));
+        const wu = writeupsByName.get(normalizeName(p.full_name)) || null;
+        return { ...p, zap_score: zap?.zap_score ? parseFloat(String(zap.zap_score)) : null, zap_analysis: zap?.analysis_text || null, zap_category: zap?.zap_category || null, zap_comps: zap?.statistical_comparables || null, writeups: wu };
+    });
+
     // 7. Calculate stats including picks
     const pickValue = rosterPicks.reduce((sum, pick) => {
         const pickId = getPickFantasyCalcId(pick.season, pick.round);
@@ -235,7 +250,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                 </div>
 
                 <TeamRosterTable
-                    players={allAssets as any[]}
+                    players={allAssetsWithWriteups as any[]}
                     scoringFormat={format}
                     positionValues={positionValues}
                     allLeaguePlayers={allLeaguePlayers as any[]}

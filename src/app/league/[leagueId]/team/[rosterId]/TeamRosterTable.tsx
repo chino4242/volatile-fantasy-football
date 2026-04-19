@@ -32,6 +32,11 @@ interface PlayerData {
     rank_sf_overall: number | null;
     rank_sf_pos: number | null;
     rank_sf_tier: number | null;
+    writeups?: { source: string; analysis_text: string }[] | null;
+    zap_score?: number | null;
+    zap_analysis?: string | null;
+    zap_category?: string | null;
+    zap_comps?: string | null;
 }
 
 // ── Column definitions ─────────────────────────────────────────────────────────
@@ -210,6 +215,8 @@ export function TeamRosterTable({
         new Set(['QB', 'RB', 'WR', 'TE'])
     );
     const [selectedPick, setSelectedPick] = useState<PlayerData | null>(null);
+    const [expandedWriteup, setExpandedWriteup] = useState<string | null>(null);
+    const [writeupTab, setWriteupTab] = useState<string>('late_round');
     const [tradeTargetOffset, setTradeTargetOffset] = useState(0);
     const [tolerance, setTolerance] = useState(0.05);
     const [viewMode, setViewMode] = useState<'position' | 'team'>('position');
@@ -581,6 +588,33 @@ export function TeamRosterTable({
                             </div>
                         </div>
                         <div className="p-4 sm:p-6 space-y-6">
+                            {/* Writeups / Scouting */}
+                            {(selectedPick.zap_analysis || (selectedPick.writeups && selectedPick.writeups.length > 0)) && (() => {
+                                const sources: { key: string; label: string; content: React.ReactNode }[] = [];
+                                if (selectedPick.zap_analysis) sources.push({ key: 'late_round', label: 'Late Round', content: (
+                                    <>
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <span className="text-xs font-medium text-zinc-500">{selectedPick.zap_category}{selectedPick.zap_score ? ` · ZAP: ${selectedPick.zap_score.toFixed(1)}` : ''}</span>
+                                            {selectedPick.zap_comps && <span className="text-xs text-zinc-400">Comps: {selectedPick.zap_comps}</span>}
+                                        </div>
+                                        <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{selectedPick.zap_analysis}</p>
+                                    </>
+                                )});
+                                selectedPick.writeups?.forEach(w => sources.push({ key: w.source, label: w.source.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), content: (
+                                    <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{w.analysis_text}</p>
+                                )}));
+                                const active = sources.find(s => s.key === writeupTab) || sources[0];
+                                return (
+                                    <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4">
+                                        {sources.length > 1 && (
+                                            <div className="flex gap-1 mb-3">
+                                                {sources.map(s => <button key={s.key} onClick={() => setWriteupTab(s.key)} className={`px-2 py-1 text-[11px] font-medium rounded ${active.key === s.key ? 'bg-indigo-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'}`}>{s.label}</button>)}
+                                            </div>
+                                        )}
+                                        <div className="max-h-48 overflow-y-auto">{active.content}</div>
+                                    </div>
+                                );
+                            })()}
                             <div className="flex items-center justify-between">
                                 <p className="text-sm text-zinc-600 dark:text-zinc-400">Trade targets within {(tolerance * 100).toFixed(0)}% of pick value:</p>
                                 <button onClick={() => setTradeTargetOffset(prev => prev + 3)}
@@ -639,6 +673,11 @@ export function TeamRosterTable({
                     team={selectedPlayer.team}
                     sleeperId={selectedPlayer.sleeper_id}
                     onClose={() => setSelectedPlayer(null)}
+                    writeups={selectedPlayer.writeups}
+                    zapScore={selectedPlayer.zap_score}
+                    zapCategory={selectedPlayer.zap_category}
+                    zapComps={selectedPlayer.zap_comps}
+                    zapAnalysis={selectedPlayer.zap_analysis}
                 />
             )}
         </div>

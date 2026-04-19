@@ -44,9 +44,9 @@ export async function getFleaflickerDraftData(leagueId: string, formatParam?: st
         return { ...p, zap_score: score, zap_category: zap.zap_category || null, zap_stale: stale, zap_comps: zap.statistical_comparables || null, zap_analysis: zap.analysis_text || null, rookie_rank: zap.rookie_rank, rookie_pos_rank: zap.rookie_pos_rank, rookie_tier: zap.rookie_tier, writeups: null as { source: string; analysis_text: string }[] | null };
     });
 
-    const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
-    const writeupsByName = new Map<string, { source: string; analysis_text: string }[]>();
-    for (const w of writeups) { const key = normalizeName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text }); }
+    const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text, ai_confidence: prospectWriteups.ai_confidence, ai_summary: prospectWriteups.ai_summary, ai_bull_case: prospectWriteups.ai_bull_case, ai_bear_case: prospectWriteups.ai_bear_case, ai_comps: prospectWriteups.ai_comps }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
+    const writeupsByName = new Map<string, typeof writeups>();
+    for (const w of writeups) { const key = normalizeName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push(w); }
     for (const p of allPlayersWithZap) { const w = writeupsByName.get(normalizeName(p.full_name)); if (w) (p as any).writeups = w; }
 
     const freeAgents = allPlayersWithZap.filter(p => !rosteredPlayerNames.has(normalizeName(p.full_name)));
@@ -124,9 +124,9 @@ export async function getSleeperDraftData(leagueId: string, formatParam?: string
     const prospects = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, is_year_2: prospectData.is_year_2, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text, rookie_rank: prospectData.rookie_rank, rookie_pos_rank: prospectData.rookie_pos_rank, rookie_tier: prospectData.rookie_tier }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
     const zapByName = new Map<string, typeof prospects[number]>();
     for (const p of prospects) { const key = normalizeName(p.full_name); const existing = zapByName.get(key); if (!existing || (p.is_year_2 && !existing.is_year_2)) zapByName.set(key, p); }
-    const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
-    const writeupsByName = new Map<string, { source: string; analysis_text: string }[]>();
-    for (const w of writeups) { const key = normalizeName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text }); }
+    const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text, ai_confidence: prospectWriteups.ai_confidence, ai_summary: prospectWriteups.ai_summary, ai_bull_case: prospectWriteups.ai_bull_case, ai_bear_case: prospectWriteups.ai_bear_case, ai_comps: prospectWriteups.ai_comps }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
+    const writeupsByName = new Map<string, typeof writeups>();
+    for (const w of writeups) { const key = normalizeName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push(w); }
 
     const addZap = <T extends { full_name: string; years_exp?: number | null }>(p: T) => {
         const zap = zapByName.get(normalizeName(p.full_name)); const w = writeupsByName.get(normalizeName(p.full_name)) || null;
