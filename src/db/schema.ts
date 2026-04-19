@@ -268,6 +268,13 @@ export const prospectData = pgTable("prospect_data", {
     rookie_pos_rank: integer("rookie_pos_rank"),
     rookie_tier: integer("rookie_tier"),
     
+    // AI-generated sentiment analysis
+    ai_confidence: integer("ai_confidence"),
+    ai_summary: text("ai_summary"),
+    ai_bull_case: text("ai_bull_case"),
+    ai_bear_case: text("ai_bear_case"),
+    ai_comps: text("ai_comps"),
+    
     created_at: timestamp("created_at").defaultNow(),
     updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => {

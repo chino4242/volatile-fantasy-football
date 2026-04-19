@@ -33,15 +33,16 @@ export async function getFleaflickerDraftData(leagueId: string, formatParam?: st
         .orderBy(sf ? playerValues.fc_value_sf : playerValues.fc_value_1qb);
 
     const currentYear = new Date().getFullYear();
-    const prospects = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, is_year_2: prospectData.is_year_2, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text, rookie_rank: prospectData.rookie_rank, rookie_pos_rank: prospectData.rookie_pos_rank, rookie_tier: prospectData.rookie_tier }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
+    const prospects = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, is_year_2: prospectData.is_year_2, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text, rookie_rank: prospectData.rookie_rank, rookie_pos_rank: prospectData.rookie_pos_rank, rookie_tier: prospectData.rookie_tier, ai_confidence: prospectData.ai_confidence, ai_summary: prospectData.ai_summary, ai_bull_case: prospectData.ai_bull_case, ai_bear_case: prospectData.ai_bear_case, ai_comps: prospectData.ai_comps }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
     const zapByName = new Map<string, typeof prospects[number]>();
     for (const p of prospects) { const key = normalizeName(p.full_name); const existing = zapByName.get(key); if (!existing || (p.is_year_2 && !existing.is_year_2)) zapByName.set(key, p); }
 
     const allPlayersWithZap = allPlayersData.map(p => {
         const zap = zapByName.get(normalizeName(p.full_name));
-        if (!zap) return { ...p, zap_score: null, zap_category: null, zap_stale: false, zap_comps: null, zap_analysis: null, rookie_rank: null, rookie_pos_rank: null, rookie_tier: null, writeups: null };
+        if (!zap) return { ...p, zap_score: null, zap_category: null, zap_stale: false, zap_comps: null, zap_analysis: null, zap_ai: null, rookie_rank: null, rookie_pos_rank: null, rookie_tier: null, writeups: null };
         const score = parseFloat(zap.zap_score || '0'); const isRookie = p.years_exp === 0; const stale = !isRookie && !zap.is_year_2;
-        return { ...p, zap_score: score, zap_category: zap.zap_category || null, zap_stale: stale, zap_comps: zap.statistical_comparables || null, zap_analysis: zap.analysis_text || null, rookie_rank: zap.rookie_rank, rookie_pos_rank: zap.rookie_pos_rank, rookie_tier: zap.rookie_tier, writeups: null as { source: string; analysis_text: string }[] | null };
+        const zap_ai = zap.ai_summary ? { confidence: zap.ai_confidence, summary: zap.ai_summary, bull_case: zap.ai_bull_case, bear_case: zap.ai_bear_case, comps: zap.ai_comps } : null;
+        return { ...p, zap_score: score, zap_category: zap.zap_category || null, zap_stale: stale, zap_comps: zap.statistical_comparables || null, zap_analysis: zap.analysis_text || null, zap_ai, rookie_rank: zap.rookie_rank, rookie_pos_rank: zap.rookie_pos_rank, rookie_tier: zap.rookie_tier, writeups: null as any };
     });
 
     const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text, ai_confidence: prospectWriteups.ai_confidence, ai_summary: prospectWriteups.ai_summary, ai_bull_case: prospectWriteups.ai_bull_case, ai_bear_case: prospectWriteups.ai_bear_case, ai_comps: prospectWriteups.ai_comps }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
@@ -121,7 +122,7 @@ export async function getSleeperDraftData(leagueId: string, formatParam?: string
     const rosteredPlayers = allRosteredIds.length > 0 ? await db.select(playerSelect).from(players).leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id)).where(inArray(players.sleeper_id, allRosteredIds)) : [];
 
     const currentYear = new Date().getFullYear();
-    const prospects = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, is_year_2: prospectData.is_year_2, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text, rookie_rank: prospectData.rookie_rank, rookie_pos_rank: prospectData.rookie_pos_rank, rookie_tier: prospectData.rookie_tier }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
+    const prospects = await db.select({ full_name: prospectData.full_name, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, is_year_2: prospectData.is_year_2, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text, rookie_rank: prospectData.rookie_rank, rookie_pos_rank: prospectData.rookie_pos_rank, rookie_tier: prospectData.rookie_tier, ai_confidence: prospectData.ai_confidence, ai_summary: prospectData.ai_summary, ai_bull_case: prospectData.ai_bull_case, ai_bear_case: prospectData.ai_bear_case, ai_comps: prospectData.ai_comps }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
     const zapByName = new Map<string, typeof prospects[number]>();
     for (const p of prospects) { const key = normalizeName(p.full_name); const existing = zapByName.get(key); if (!existing || (p.is_year_2 && !existing.is_year_2)) zapByName.set(key, p); }
     const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text, ai_confidence: prospectWriteups.ai_confidence, ai_summary: prospectWriteups.ai_summary, ai_bull_case: prospectWriteups.ai_bull_case, ai_bear_case: prospectWriteups.ai_bear_case, ai_comps: prospectWriteups.ai_comps }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
@@ -130,9 +131,10 @@ export async function getSleeperDraftData(leagueId: string, formatParam?: string
 
     const addZap = <T extends { full_name: string; years_exp?: number | null }>(p: T) => {
         const zap = zapByName.get(normalizeName(p.full_name)); const w = writeupsByName.get(normalizeName(p.full_name)) || null;
-        if (!zap) return { ...p, zap_score: null, zap_category: null, zap_stale: false, zap_comps: null, zap_analysis: null, rookie_rank: null, rookie_pos_rank: null, rookie_tier: null, writeups: w };
+        const zap_ai = zap?.ai_summary ? { confidence: zap.ai_confidence, summary: zap.ai_summary, bull_case: zap.ai_bull_case, bear_case: zap.ai_bear_case, comps: zap.ai_comps } : null;
+        if (!zap) return { ...p, zap_score: null, zap_category: null, zap_stale: false, zap_comps: null, zap_analysis: null, zap_ai: null, rookie_rank: null, rookie_pos_rank: null, rookie_tier: null, writeups: w };
         const score = parseFloat(zap.zap_score || '0'); const isRookie = p.years_exp === 0; const stale = !isRookie && !zap.is_year_2;
-        return { ...p, zap_score: score, zap_category: zap.zap_category || null, zap_stale: stale, zap_comps: zap.statistical_comparables || null, zap_analysis: zap.analysis_text || null, rookie_rank: zap.rookie_rank, rookie_pos_rank: zap.rookie_pos_rank, rookie_tier: zap.rookie_tier, writeups: w };
+        return { ...p, zap_score: score, zap_category: zap.zap_category || null, zap_stale: stale, zap_comps: zap.statistical_comparables || null, zap_analysis: zap.analysis_text || null, zap_ai, rookie_rank: zap.rookie_rank, rookie_pos_rank: zap.rookie_pos_rank, rookie_tier: zap.rookie_tier, writeups: w };
     };
 
     const rosteredPlayersWithZap = rosteredPlayers.map(addZap);

@@ -32,6 +32,7 @@ interface Player {
     zap_stale?: boolean;
     zap_comps?: string | null;
     zap_analysis?: string | null;
+    zap_ai?: { confidence: number | null; summary: string | null; bull_case: string | null; bear_case: string | null; comps: string | null } | null;
     writeups?: { source: string; analysis_text: string; ai_confidence?: number | null; ai_summary?: string | null; ai_bull_case?: string | null; ai_bear_case?: string | null; ai_comps?: string | null }[] | null;
     rookie_rank?: number | null;
     rookie_pos_rank?: number | null;
@@ -296,6 +297,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     const [tradeForPick, setTradeForPick] = useState(false); // true when trading TO ACQUIRE the current pick
     const [expandedProspect, setExpandedProspect] = useState<string | null>(null);
     const [activeWriteupTab, setActiveWriteupTab] = useState<string>('late_round');
+    const [selectedDraftPlayer, setSelectedDraftPlayer] = useState<Player | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [watchList, setWatchList] = useState<Set<string>>(() => {
         if (typeof window !== 'undefined') {
@@ -951,9 +953,20 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                                     {player.fc_value?.toFixed(0) || '0'}
                                                 </div>
                                             </div>
-                                            <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                                                {player.position} {player.team ? `• ${player.team}` : ''}
+                                            <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">
+                                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium mr-1 ${player.position === 'QB' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' : player.position === 'RB' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' : player.position === 'WR' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300'}`}>{player.position}</span>
+                                                {player.team || 'FA'} {player.years_exp != null ? `· Yr ${player.years_exp}` : ''}
                                             </div>
+                                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-zinc-500">
+                                                {(sf ? player.fc_rank_sf : player.fc_rank_1qb) && <span>FC #{sf ? player.fc_rank_sf : player.fc_rank_1qb}</span>}
+                                                {(sf ? player.fc_position_rank_sf : player.fc_position_rank_1qb) && <span>{player.position}{sf ? player.fc_position_rank_sf : player.fc_position_rank_1qb}</span>}
+                                                {player.fc_trend_30_day && <span className={player.fc_trend_30_day > 0 ? 'text-green-600' : 'text-red-600'}>{player.fc_trend_30_day > 0 ? '↑' : '↓'}{Math.abs(player.fc_trend_30_day)}</span>}
+                                                {(sf ? player.rank_sf_overall : player.rank_1qb_overall) && <span>VFF #{sf ? player.rank_sf_overall : player.rank_1qb_overall}</span>}
+                                            </div>
+                                            {player.zap_category && !player.zap_stale && <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1">{player.zap_category}{player.zap_score ? ` · ZAP ${player.zap_score.toFixed(1)}` : ''}</div>}
+                                            {player.writeups && player.writeups.length > 0 && player.writeups[0].ai_summary && (
+                                                <div className="text-[10px] text-zinc-600 dark:text-zinc-400 mt-1 italic">{player.writeups[0].ai_summary}</div>
+                                            )}
                                         </button>
                                     );
                                 });
@@ -1197,7 +1210,7 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                                 {top3.map((c, i) => (
                                                     <button
                                                         key={c.player.id}
-                                                        onClick={() => makePick(c.player.id)}
+                                                        onClick={() => setSelectedDraftPlayer(c.player)}
                                                         className={`text-left px-3 py-2 rounded-lg border-2 transition-colors ${
                                                             i === 0
                                                                 ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30'
@@ -1514,10 +1527,10 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                             {orderedVisible.map(key => renderCell(key, player))}
                                             <td className="px-3 sm:px-4 py-2 sm:py-3 text-right">
                                                 <button
-                                                    onClick={() => makePick(player.id)}
+                                                    onClick={() => setSelectedDraftPlayer(player)}
                                                     className="px-2 sm:px-3 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700"
                                                 >
-                                                    {isLive && !isUserPick ? 'Select' : 'Draft'}
+                                                    View
                                                 </button>
                                             </td>
                                         </tr>
@@ -1525,6 +1538,19 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                                             const sources: { key: string; label: string; content: React.ReactNode }[] = [];
                                             if (player.zap_analysis) sources.push({ key: 'late_round', label: 'Late Round', content: (
                                                 <>
+                                                    {player.zap_ai?.summary && (
+                                                        <div className="mb-3 space-y-1.5">
+                                                            <div className="flex items-center gap-2">
+                                                                {player.zap_ai.confidence && <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${player.zap_ai.confidence >= 8 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : player.zap_ai.confidence >= 5 ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'}`}>{player.zap_ai.confidence}/10</span>}
+                                                                <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{player.zap_ai.summary}</span>
+                                                            </div>
+                                                            {player.zap_ai.comps && <div className="text-[11px] text-zinc-500">🔄 Comps: {player.zap_ai.comps}</div>}
+                                                            <div className="flex gap-3 text-[11px]">
+                                                                {player.zap_ai.bull_case && <div className="text-green-700 dark:text-green-400">📈 {player.zap_ai.bull_case}</div>}
+                                                                {player.zap_ai.bear_case && <div className="text-red-700 dark:text-red-400">📉 {player.zap_ai.bear_case}</div>}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                     <div className="flex items-center gap-3 mb-2">
                                                         <span className="text-xs font-medium text-zinc-500">{player.zap_category}{player.zap_score ? ` · ZAP: ${player.zap_score.toFixed(1)}` : ''}</span>
                                                         {player.zap_comps && <span className="text-xs text-zinc-400">Comps: {player.zap_comps}</span>}
@@ -1715,6 +1741,90 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                         </div>
                     )}
                 </div>
+
+                {/* Player Detail Modal */}
+                {selectedDraftPlayer && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedDraftPlayer(null)}>
+                        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                            <div className="sticky top-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 z-10">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{selectedDraftPlayer.full_name}</h2>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${selectedDraftPlayer.position === 'QB' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' : selectedDraftPlayer.position === 'RB' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' : selectedDraftPlayer.position === 'WR' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300'}`}>{selectedDraftPlayer.position}</span>
+                                            <span className="text-sm text-zinc-500">{selectedDraftPlayer.team || 'FA'}</span>
+                                            <span className="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">{selectedDraftPlayer.fc_value?.toLocaleString() || '0'}</span>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setSelectedDraftPlayer(null)} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                </div>
+                                {/* Quick stats row */}
+                                <div className="flex flex-wrap gap-3 mt-3 text-xs text-zinc-500">
+                                    {(sf ? selectedDraftPlayer.fc_rank_sf : selectedDraftPlayer.fc_rank_1qb) && <span>FC #{sf ? selectedDraftPlayer.fc_rank_sf : selectedDraftPlayer.fc_rank_1qb}</span>}
+                                    {(sf ? selectedDraftPlayer.fc_position_rank_sf : selectedDraftPlayer.fc_position_rank_1qb) && <span>{selectedDraftPlayer.position}{sf ? selectedDraftPlayer.fc_position_rank_sf : selectedDraftPlayer.fc_position_rank_1qb}</span>}
+                                    {selectedDraftPlayer.fc_trend_30_day && <span className={selectedDraftPlayer.fc_trend_30_day > 0 ? 'text-green-600' : 'text-red-600'}>30d: {selectedDraftPlayer.fc_trend_30_day > 0 ? '+' : ''}{selectedDraftPlayer.fc_trend_30_day}</span>}
+                                    {(sf ? selectedDraftPlayer.rank_sf_overall : selectedDraftPlayer.rank_1qb_overall) && <span>VFF #{sf ? selectedDraftPlayer.rank_sf_overall : selectedDraftPlayer.rank_1qb_overall}</span>}
+                                    {selectedDraftPlayer.years_exp != null && <span>Yr {selectedDraftPlayer.years_exp}</span>}
+                                </div>
+                            </div>
+                            <div className="p-4 sm:p-6 space-y-4">
+                                {/* ZAP / Late Round */}
+                                {selectedDraftPlayer.zap_analysis && (
+                                    <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4">
+                                        <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">Late Round</div>
+                                        {selectedDraftPlayer.zap_ai?.summary && (
+                                            <div className="mb-3 space-y-1.5">
+                                                <div className="flex items-center gap-2">
+                                                    {selectedDraftPlayer.zap_ai.confidence && <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${selectedDraftPlayer.zap_ai.confidence >= 8 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : selectedDraftPlayer.zap_ai.confidence >= 5 ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'}`}>{selectedDraftPlayer.zap_ai.confidence}/10</span>}
+                                                    <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{selectedDraftPlayer.zap_ai.summary}</span>
+                                                </div>
+                                                {selectedDraftPlayer.zap_ai.comps && <div className="text-[11px] text-zinc-500">🔄 {selectedDraftPlayer.zap_ai.comps}</div>}
+                                                <div className="flex gap-3 text-[11px]">
+                                                    {selectedDraftPlayer.zap_ai.bull_case && <div className="text-green-700 dark:text-green-400">📈 {selectedDraftPlayer.zap_ai.bull_case}</div>}
+                                                    {selectedDraftPlayer.zap_ai.bear_case && <div className="text-red-700 dark:text-red-400">📉 {selectedDraftPlayer.zap_ai.bear_case}</div>}
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <span className="text-xs font-medium text-zinc-500">{selectedDraftPlayer.zap_category}{selectedDraftPlayer.zap_score ? ` · ZAP: ${selectedDraftPlayer.zap_score.toFixed(1)}` : ''}</span>
+                                            {selectedDraftPlayer.zap_comps && <span className="text-xs text-zinc-400">Comps: {selectedDraftPlayer.zap_comps}</span>}
+                                        </div>
+                                        <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed max-h-48 overflow-y-auto">{selectedDraftPlayer.zap_analysis}</p>
+                                    </div>
+                                )}
+                                {/* Writeups */}
+                                {selectedDraftPlayer.writeups?.map(w => (
+                                    <div key={w.source} className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4">
+                                        <div className="text-xs font-semibold text-zinc-500 uppercase mb-2">{w.source.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</div>
+                                        {w.ai_summary && (
+                                            <div className="mb-3 space-y-1.5">
+                                                <div className="flex items-center gap-2">
+                                                    {w.ai_confidence && <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${w.ai_confidence >= 8 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : w.ai_confidence >= 5 ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'}`}>{w.ai_confidence}/10</span>}
+                                                    <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{w.ai_summary}</span>
+                                                </div>
+                                                {w.ai_comps && <div className="text-[11px] text-zinc-500">🔄 {w.ai_comps}</div>}
+                                                <div className="flex gap-3 text-[11px]">
+                                                    {w.ai_bull_case && <div className="text-green-700 dark:text-green-400">📈 {w.ai_bull_case}</div>}
+                                                    {w.ai_bear_case && <div className="text-red-700 dark:text-red-400">📉 {w.ai_bear_case}</div>}
+                                                </div>
+                                            </div>
+                                        )}
+                                        <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed max-h-48 overflow-y-auto">{w.analysis_text}</p>
+                                    </div>
+                                ))}
+                                {/* Draft action */}
+                                <div className="flex justify-end gap-3 pt-2">
+                                    <button onClick={() => setSelectedDraftPlayer(null)} className="px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">Cancel</button>
+                                    <button onClick={() => { makePick(selectedDraftPlayer.id); setSelectedDraftPlayer(null); }} className="px-6 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
+                                        {isLive && !isUserPick ? 'Select Pick' : 'Draft Player'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Trade Modal */}
                 {showTradeModal && userTeamId !== null && currentPick && (
