@@ -72,7 +72,7 @@ interface DraftPick {
     pickReason?: string;
 }
 
-interface MockDraftClientProps {
+interface DraftClientProps {
     leagueId: string;
     teams: Team[];
     freeAgents: Player[];
@@ -107,7 +107,7 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'redraft_tier', label: 'Redraft Tier', defaultOn: false, group: 'redraft' },
 ];
 
-export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock' }: MockDraftClientProps) {
+export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock' }: DraftClientProps) {
     const { sleeperUsername, fleaflickerUsername } = useAuth();
     const userId = platform === 'sleeper' ? sleeperUsername : fleaflickerUsername;
 

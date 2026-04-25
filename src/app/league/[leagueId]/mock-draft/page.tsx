@@ -1,5 +1,5 @@
 import { getSleeperDraftData } from '@/lib/draft-data';
-import MockDraftClient from '@/app/fleaflicker/[leagueId]/mock-draft/MockDraftClient';
+import DraftClient from '@/app/fleaflicker/[leagueId]/mock-draft/DraftClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,5 +8,5 @@ export default async function SleeperMockDraftPage({ params, searchParams }: { p
     const { format, keepers } = await searchParams;
     const data = await getSleeperDraftData(leagueId, format, keepers);
 
-    return <MockDraftClient leagueId={leagueId} {...data} platform="sleeper" />;
+    return <DraftClient leagueId={leagueId} {...data} platform="sleeper" />;
 }
