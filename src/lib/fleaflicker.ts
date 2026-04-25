@@ -40,8 +40,8 @@ export async function getFleaflickerLeague(leagueId: string): Promise<Fleaflicke
     if (cached) return cached;
 
     const [rostersResponse, standingsResponse] = await Promise.all([
-        fetch(`${BASE_URL}/FetchLeagueRosters?sport=NFL&league_id=${leagueId}`),
-        fetch(`${BASE_URL}/FetchLeagueStandings?sport=NFL&league_id=${leagueId}`)
+        fetch(`${BASE_URL}/FetchLeagueRosters?sport=NFL&league_id=${leagueId}`, { cache: 'no-store' }),
+        fetch(`${BASE_URL}/FetchLeagueStandings?sport=NFL&league_id=${leagueId}`, { cache: 'no-store' })
     ]);
 
     if (!rostersResponse.ok || !standingsResponse.ok) {
@@ -118,7 +118,7 @@ export async function getFleaflickerTeamPicks(leagueId: string, teamId: number):
     if (cached) return cached;
 
     try {
-        const response = await fetch(`${BASE_URL}/FetchTeamPicks?sport=NFL&league_id=${leagueId}&team_id=${teamId}`);
+        const response = await fetch(`${BASE_URL}/FetchTeamPicks?sport=NFL&league_id=${leagueId}&team_id=${teamId}`, { cache: 'no-store' });
 
         if (!response.ok) {
             console.warn(`Failed to fetch picks for team ${teamId}`);
@@ -153,7 +153,7 @@ export async function getFleaflickerRosterSlots(leagueId: string): Promise<Roste
     const cached = cache.get<RosterSlots>(cacheKey, TTL.FLEAFLICKER_LEAGUE);
     if (cached) return cached;
 
-    const res = await fetch(`${BASE_URL}/FetchLeagueStandings?sport=NFL&league_id=${leagueId}`);
+    const res = await fetch(`${BASE_URL}/FetchLeagueStandings?sport=NFL&league_id=${leagueId}`, { cache: 'no-store' });
     if (!res.ok) return { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
     const data = await res.json();
     const positions = data?.league?.rosterRequirements?.positions || [];

@@ -327,6 +327,19 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         setWatchList(prev => { const next = new Set(prev); if (next.has(playerId)) next.delete(playerId); else next.add(playerId); return next; });
     };
 
+    // My roster: pre-draft keepers + drafted picks
+    const draftedPlayerMap = useRef(new Map<string, any>());
+
+    const myRosterPlayers = useMemo(() => {
+        if (userTeamId === null) return [];
+        const myTeam = activeTeams.find(t => t.id === userTeamId);
+        const drafted = picks
+            .filter(p => p.teamId === userTeamId && p.playerId)
+            .map(p => draftedPlayerMap.current.get(p.playerId!))
+            .filter(Boolean);
+        return [...(myTeam?.players || []), ...drafted];
+    }, [userTeamId, activeTeams, picks]);
+
     // Auto-simulate CPU picks
     const isLive = mode === 'live';
     const currentPick = picks[currentPickIndex];
@@ -336,6 +349,8 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     const makePick = (playerId: string, reason?: string) => {
         const player = availablePlayers.find(p => p.id === playerId);
         if (!player) return;
+
+        draftedPlayerMap.current.set(player.id, player);
 
         const updatedPicks = [...picks];
         updatedPicks[currentPickIndex] = {
@@ -1456,21 +1471,16 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                             format={format}
                             onPlayerClick={setSelectedDraftPlayer}
                         />
-                        {userTeamId !== null && (() => {
-                            const myTeam = activeTeams.find(t => t.id === userTeamId);
-                            const myDraftedPicks = picks.filter(p => p.teamId === userTeamId && p.playerId);
-                            const draftedPlayers = myDraftedPicks.map(p => freeAgents.find(fa => fa.id === p.playerId)).filter(Boolean);
-                            const rosterPlayers = [...(myTeam?.players || []), ...draftedPlayers];
-                            return rosterPlayers.length > 0 ? (
-                                <PositionScarcityChart
-                                    players={rosterPlayers}
-                                    format={format}
-                                    onPlayerClick={setSelectedDraftPlayer}
-                                    title="My Roster"
-                                    topN={30}
-                                />
-                            ) : null;
-                        })()}
+                        {userTeamId !== null && (
+                            <PositionScarcityChart
+                                players={myRosterPlayers}
+                                format={format}
+                                onPlayerClick={setSelectedDraftPlayer}
+                                title="My Roster"
+                                topN={30}
+                                emptyMessage="Draft players to build your roster"
+                            />
+                        )}
                     </div>
                 )}
 

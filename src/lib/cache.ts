@@ -41,8 +41,8 @@ export const cache = new SimpleCache();
 
 // TTL constants (in milliseconds)
 export const TTL = {
-  LEAGUE_DATA: 10 * 60 * 1000,      // 10 minutes
-  USER_LEAGUES: 15 * 60 * 1000,     // 15 minutes
-  FLEAFLICKER_LEAGUE: 10 * 60 * 1000, // 10 minutes
-  FLEAFLICKER_ROSTERS: 10 * 60 * 1000, // 10 minutes
+  LEAGUE_DATA: 2 * 60 * 1000,       // 2 minutes
+  USER_LEAGUES: 5 * 60 * 1000,      // 5 minutes
+  FLEAFLICKER_LEAGUE: 2 * 60 * 1000,  // 2 minutes
+  FLEAFLICKER_ROSTERS: 2 * 60 * 1000, // 2 minutes
 } as const;
