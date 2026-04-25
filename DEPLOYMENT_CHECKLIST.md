@@ -51,7 +51,7 @@ Wait until 6:00 AM UTC (or trigger manually):
 
 ```bash
 # Manual trigger to test immediately
-curl -X POST https://theprovingground.co/api/ingest
+curl -X POST https://volatile-fantasy-football.vercel.app/api/ingest
 ```
 
 Check the response:

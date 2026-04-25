@@ -41,7 +41,7 @@ Check cron job execution in Vercel Dashboard:
 Trigger ingestion manually via POST request:
 
 ```bash
-curl -X POST https://theprovingground.co/api/ingest
+curl -X POST https://volatile-fantasy-football.vercel.app/api/ingest
 ```
 
 This is useful when:

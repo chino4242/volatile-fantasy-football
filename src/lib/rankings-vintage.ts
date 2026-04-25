@@ -6,8 +6,10 @@ import { isNotNull } from "drizzle-orm";
  * Returns the VFF rankings vintage date for a given format.
  * Grabs the first non-null rank_*_updated_at from player_values.
  */
-export async function getRankingsVintage(format: '1qb' | 'sf'): Promise<Date | null> {
-    const col = format === '1qb' ? playerValues.rank_1qb_updated_at : playerValues.rank_sf_updated_at;
+export async function getRankingsVintage(format: '1qb' | 'sf' | 'redraft'): Promise<Date | null> {
+    const col = format === '1qb' ? playerValues.rank_1qb_updated_at
+        : format === 'sf' ? playerValues.rank_sf_updated_at
+        : playerValues.redraft_rank_updated_at;
     const row = await db.select({ updated_at: col })
         .from(playerValues)
         .where(isNotNull(col))

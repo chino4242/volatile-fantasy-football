@@ -101,9 +101,15 @@ export const playerValues = pgTable("player_values", {
     rank_sf_tier: integer("rank_sf_tier"),
     rank_sf_pos: integer("rank_sf_pos"),
 
+    // Redraft Ranks (half-PPR, single format)
+    redraft_rank_overall: integer("redraft_rank_overall"),
+    redraft_rank_pos: integer("redraft_rank_pos"),
+    redraft_rank_tier: integer("redraft_rank_tier"),
+
     // When VFF rankings were last uploaded (per format)
     rank_1qb_updated_at: timestamp("rank_1qb_updated_at"),
     rank_sf_updated_at: timestamp("rank_sf_updated_at"),
+    redraft_rank_updated_at: timestamp("redraft_rank_updated_at"),
 
     updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => {

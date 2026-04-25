@@ -1,6 +1,6 @@
 # Volatile Fantasy Football
 
-A high-performance dynasty fantasy football analytics platform built with **Next.js 16**, **Drizzle ORM**, and **PostgreSQL**. Live at [theprovingground.co](https://theprovingground.co).
+A high-performance dynasty fantasy football analytics platform built with **Next.js 16**, **Drizzle ORM**, and **PostgreSQL**.
 
 ## Features
 
@@ -212,7 +212,7 @@ Player valuations are automatically refreshed **daily at 6 AM UTC** via Vercel C
 - **Endpoint:** `https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=2&numTeams=12&ppr=0.5`
 - **Script:** [`scripts/ingest-players.ts`](scripts/ingest-players.ts)
 - **Automation:** See [AUTOMATED_INGESTION.md](AUTOMATED_INGESTION.md) for details
-- **Manual Trigger:** `curl -X POST https://theprovingground.co/api/ingest`
+- **Manual Trigger:** `curl -X POST https://volatile-fantasy-football.vercel.app/api/ingest`
 - **Local Run:** `npx tsx scripts/ingest-players.ts`
 
 **Draft Pick Values:** FantasyCalc provides values for draft picks (e.g., `FP_2026_1` for 2026 1st round) which are stored alongside player values and used for trade analysis.
@@ -270,7 +270,7 @@ Our testing layers prioritize different areas:
 
 The app is deployed on **Vercel** and automatically deploys on pushes to `main`.
 
-- **Production URL:** [theprovingground.co](https://theprovingground.co)
+- **Production URL:** Deployed on Vercel
 - **Vercel Root Directory:** `volatile-fantasy-football`
 
 ### Environment Variables on Vercel

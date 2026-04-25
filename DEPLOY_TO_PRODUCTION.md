@@ -41,7 +41,7 @@ CREATE TABLE nfl_stats (...);
 
 ## Step 4: Upload Rankings via Production Admin
 
-1. Go to `https://theprovingground.co/admin`
+1. Go to your Vercel deployment's `/admin` page
 2. Scroll to "Upload Additional Rankings"
 3. Fill in:
    - Source Name: `rp_2026`

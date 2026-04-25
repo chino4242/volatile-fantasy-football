@@ -84,7 +84,6 @@ src/
 
 ## Helpful Resources
 
-- **Live Site:** [theprovingground.co](https://theprovingground.co)
 - **Full Documentation:** See [README.md](README.md)
 - **Sleeper API Docs:** [docs.sleeper.com](https://docs.sleeper.com/)
 - **FantasyCalc API:** [fantasycalc.com](https://fantasycalc.com/)

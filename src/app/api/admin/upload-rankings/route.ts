@@ -29,6 +29,14 @@ export async function POST(request: Request) {
         // Skip hidden headers, get raw JSON
         const rawData = utils.sheet_to_json(worksheet, { defval: null });
 
+        if (!rawData || rawData.length === 0) {
+            return NextResponse.json({ error: 'No data found in sheet. Check that the sheet has data rows.' }, { status: 400 });
+        }
+
+        // Log first row keys for debugging
+        const firstRowKeys = Object.keys(rawData[0] as object);
+        console.log('Spreadsheet columns detected:', firstRowKeys);
+
         // Load all players to build lookup map
         const allPlayers = await db.select({ sleeper_id: players.sleeper_id, full_name: players.full_name }).from(players);
 
@@ -40,13 +48,23 @@ export async function POST(request: Request) {
         }
 
         // ── Snapshot current rankings into history before overwriting ──
-        const rankCol = category === '1qb' ? playerValues.rank_1qb_overall : playerValues.rank_sf_overall;
+        const rankCol = category === '1qb' ? playerValues.rank_1qb_overall
+            : category === 'sf' ? playerValues.rank_sf_overall
+            : playerValues.redraft_rank_overall;
         const existingRanks = await db.select({
             sleeper_id: playerValues.sleeper_id,
-            overall: category === '1qb' ? playerValues.rank_1qb_overall : playerValues.rank_sf_overall,
-            pos_rank: category === '1qb' ? playerValues.rank_1qb_pos : playerValues.rank_sf_pos,
-            tier: category === '1qb' ? playerValues.rank_1qb_tier : playerValues.rank_sf_tier,
-            updated_at: category === '1qb' ? playerValues.rank_1qb_updated_at : playerValues.rank_sf_updated_at,
+            overall: category === '1qb' ? playerValues.rank_1qb_overall
+                : category === 'sf' ? playerValues.rank_sf_overall
+                : playerValues.redraft_rank_overall,
+            pos_rank: category === '1qb' ? playerValues.rank_1qb_pos
+                : category === 'sf' ? playerValues.rank_sf_pos
+                : playerValues.redraft_rank_pos,
+            tier: category === '1qb' ? playerValues.rank_1qb_tier
+                : category === 'sf' ? playerValues.rank_sf_tier
+                : playerValues.redraft_rank_tier,
+            updated_at: category === '1qb' ? playerValues.rank_1qb_updated_at
+                : category === 'sf' ? playerValues.rank_sf_updated_at
+                : playerValues.redraft_rank_updated_at,
         }).from(playerValues).where(isNotNull(rankCol));
 
         if (existingRanks.length > 0) {
@@ -71,11 +89,12 @@ export async function POST(request: Request) {
         const now = new Date();
         let matchCount = 0;
         const updatePromises = [];
+        const unmatchedNames: string[] = [];
 
         for (const row of rawData as any[]) {
             const playerName = row['Player'] || row['Name'];
             const overallStr = row['Overall'];
-            const positionalRankStr = row['Positional Rank'];
+            const positionalRankStr = row['Positional Rank'] || row['Pos Rank'];
             const tierStr = row['Tier'];
 
             if (!playerName || overallStr === undefined || overallStr === null) continue;
@@ -83,7 +102,10 @@ export async function POST(request: Request) {
             const cleansedRowName = cleanseName(playerName);
             const sleeperId = playerMap.get(cleansedRowName);
 
-            if (!sleeperId) continue;
+            if (!sleeperId) {
+                unmatchedNames.push(playerName);
+                continue;
+            }
             matchCount++;
 
             let posRank = null;
@@ -107,6 +129,11 @@ export async function POST(request: Request) {
                 updateData.rank_sf_tier = tier;
                 updateData.rank_sf_updated_at = now;
                 if (posRank !== null) updateData.rank_sf_pos = posRank;
+            } else if (category === 'redraft') {
+                updateData.redraft_rank_overall = overall;
+                updateData.redraft_rank_tier = tier;
+                updateData.redraft_rank_updated_at = now;
+                if (posRank !== null) updateData.redraft_rank_pos = posRank;
             }
 
             // Queue up the drizzle update query
@@ -128,10 +155,11 @@ export async function POST(request: Request) {
             updatedCount: updatePromises.length,
             matchRate: rawData.length > 0 ? Math.round((matchCount / rawData.length) * 100) : 0,
             archivedCount: existingRanks.length,
+            unmatchedNames,
         });
 
     } catch (error: any) {
-        console.error('Error processing upload:', error);
+        console.error('Error processing upload:', error?.stack || error);
         return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
     }
 }

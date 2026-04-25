@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, RotateCcw, Download, Play, ArrowUpDown, ArrowUp, ArrowDown, Star, Undo2, ChevronDown, ChevronUp } from 'lucide-react';
 import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
+import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 import { useAuth } from '@/hooks/useUser';
 
 interface Player {
@@ -37,6 +38,9 @@ interface Player {
     rookie_rank?: number | null;
     rookie_pos_rank?: number | null;
     rookie_tier?: number | null;
+    redraft_rank_overall?: number | null;
+    redraft_rank_pos?: number | null;
+    redraft_rank_tier?: number | null;
     droppedByTeam?: string;
 }
 
@@ -74,6 +78,7 @@ interface MockDraftClientProps {
     freeAgents: Player[];
     format: string;
     rankingsVintage?: string | null;
+    redraftVintage?: string | null;
     platform?: 'sleeper' | 'fleaflicker';
     rosterSlots?: { QB: number; RB: number; WR: number; TE: number; FLEX: number };
     keeperCount?: number;
@@ -97,9 +102,12 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'zap', label: 'ZAP / Yr 2', defaultOn: true, group: 'prospect' },
     { key: 'rookie_pos_rank', label: 'Pos Rank', defaultOn: true, group: 'prospect' },
     { key: 'rookie_tier', label: 'Tier', defaultOn: true, group: 'prospect' },
+    { key: 'redraft_rank', label: 'Redraft Rank', defaultOn: false, group: 'redraft' },
+    { key: 'redraft_pos', label: 'Redraft Pos', defaultOn: false, group: 'redraft' },
+    { key: 'redraft_tier', label: 'Redraft Tier', defaultOn: false, group: 'redraft' },
 ];
 
-export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock' }: MockDraftClientProps) {
+export default function MockDraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock' }: MockDraftClientProps) {
     const { sleeperUsername, fleaflickerUsername } = useAuth();
     const userId = platform === 'sleeper' ? sleeperUsername : fleaflickerUsername;
 
@@ -281,10 +289,12 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     const [sortColumn, setSortColumn] = useState<string>('fc_value');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
     const vffLabel = rankingsVintage ? `VFF Rankings (${rankingsVintage})` : 'VFF Rankings';
+    const redraftLabel = redraftVintage ? `Redraft (${redraftVintage})` : 'Redraft';
     const MD_GROUPS = [
         { id: 'core', label: 'Core' },
         { id: 'fc', label: 'FantasyCalc' },
         { id: 'internal', label: vffLabel },
+        { id: 'redraft', label: redraftLabel },
         { id: 'prospect', label: 'Prospect' },
     ];
     const { visibleCols: visibleColumns, columnOrder, toggle: toggleCol, reorder, orderedVisible } = useColumnState(MOCK_DRAFT_COLUMNS, 'vff_mock_draft_columns');
@@ -634,6 +644,9 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
     const vffTh = "hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors";
     const vffTitle = rankingsVintage ? `VFF Rankings from ${rankingsVintage}` : undefined;
 
+    const redraftTh = "hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-amber-50/50 dark:bg-amber-950/20 cursor-pointer group hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors";
+    const redraftTitle = redraftVintage ? `Redraft Rankings from ${redraftVintage}` : undefined;
+
     const headerMap: Record<string, { className: string; sortKey: string; label: string; title?: string }> = {
         position: { className: `${coreTh} text-left`, sortKey: 'position', label: 'Pos' },
         team: { className: `${coreTh} hidden sm:table-cell text-left`, sortKey: 'team', label: 'Team' },
@@ -649,6 +662,9 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
         zap: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'zap_score', label: 'ZAP / Yr 2' },
         rookie_pos_rank: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'rookie_pos_rank', label: 'Pos Rank' },
         rookie_tier: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'rookie_tier', label: 'Tier' },
+        redraft_rank: { className: redraftTh, sortKey: 'redraft_rank_overall', label: 'Rank', title: redraftTitle },
+        redraft_pos: { className: redraftTh, sortKey: 'redraft_rank_pos', label: 'Pos', title: redraftTitle },
+        redraft_tier: { className: redraftTh, sortKey: 'redraft_rank_tier', label: 'Tier', title: redraftTitle },
     };
 
     const renderHeader = (key: string) => {
@@ -659,6 +675,8 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
 
     const fcTd = "hidden md:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20";
     const vffTd = "hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20";
+
+    const redraftTd = "hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-amber-50/50 dark:bg-amber-950/20";
 
     const renderCell = (key: string, player: Player) => {
         switch (key) {
@@ -676,6 +694,9 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
             case 'zap': return <td key={key} className="hidden sm:table-cell px-4 py-3 text-sm text-right bg-emerald-50/50 dark:bg-emerald-950/20">{player.zap_score ? <span className={player.zap_stale ? 'text-zinc-400 dark:text-zinc-600 italic' : 'text-zinc-700 dark:text-zinc-300'} title={`${player.zap_category || ''}${player.zap_stale ? ' (stale)' : ''}`}>{player.zap_score.toFixed(1)}</span> : '—'}</td>;
             case 'rookie_pos_rank': { const zapTd = "hidden sm:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-emerald-50/50 dark:bg-emerald-950/20"; return <td key={key} className={zapTd}>{player.rookie_pos_rank ? `${player.position}${player.rookie_pos_rank}` : '—'}</td>; }
             case 'rookie_tier': { const zapTd = "hidden sm:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-emerald-50/50 dark:bg-emerald-950/20"; return <td key={key} className={zapTd}>{player.rookie_tier || '—'}</td>; }
+            case 'redraft_rank': return <td key={key} className={redraftTd}>{player.redraft_rank_overall || '—'}</td>;
+            case 'redraft_pos': return <td key={key} className={redraftTd}>{player.redraft_rank_pos ? `${player.position}${player.redraft_rank_pos}` : '—'}</td>;
+            case 'redraft_tier': return <td key={key} className={redraftTd}>{player.redraft_rank_tier || '—'}</td>;
             default: return null;
         }
     };
@@ -1426,6 +1447,32 @@ export default function MockDraftClient({ leagueId, teams, freeAgents, format, r
                         </div>
                     );
                 })()}
+
+                {/* Position Scarcity (always visible during draft) */}
+                {draftStarted && !isDraftComplete && (
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 mb-6">
+                        <PositionScarcityChart
+                            players={availablePlayers}
+                            format={format}
+                            onPlayerClick={setSelectedDraftPlayer}
+                        />
+                        {userTeamId !== null && (() => {
+                            const myTeam = activeTeams.find(t => t.id === userTeamId);
+                            const myDraftedPicks = picks.filter(p => p.teamId === userTeamId && p.playerId);
+                            const draftedPlayers = myDraftedPicks.map(p => freeAgents.find(fa => fa.id === p.playerId)).filter(Boolean);
+                            const rosterPlayers = [...(myTeam?.players || []), ...draftedPlayers];
+                            return rosterPlayers.length > 0 ? (
+                                <PositionScarcityChart
+                                    players={rosterPlayers}
+                                    format={format}
+                                    onPlayerClick={setSelectedDraftPlayer}
+                                    title="My Roster"
+                                    topN={30}
+                                />
+                            ) : null;
+                        })()}
+                    </div>
+                )}
 
                 {/* Available Players (when user's pick, or always in live mode) */}
                 {draftStarted && !isDraftComplete && (isUserPick || isLive) && (

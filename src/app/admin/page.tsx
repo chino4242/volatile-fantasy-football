@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 export default function AdminPage() {
     const [file, setFile] = useState<File | null>(null);
-    const [category, setCategory] = useState<'1qb' | 'sf'>('1qb');
+    const [category, setCategory] = useState<'1qb' | 'sf' | 'redraft'>('1qb');
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
@@ -51,7 +51,7 @@ export default function AdminPage() {
                 throw new Error(data.error || 'Failed to upload rankings');
             }
 
-            setMessage(`Success! Match rate: ${data.matches}/${data.totalRows} (${data.matchRate}%). Updated ${data.updatedCount} records.${data.archivedCount ? ` Archived ${data.archivedCount} previous rankings.` : ''}`);
+            setMessage(`Success! Match rate: ${data.matches}/${data.totalRows} (${data.matchRate}%). Updated ${data.updatedCount} records.${data.archivedCount ? ` Archived ${data.archivedCount} previous rankings.` : ''}${data.unmatchedNames?.length ? `\nUnmatched: ${data.unmatchedNames.join(', ')}` : ''}`);
             setFile(null);
             // Reset file input element if needed
             const fileInput = document.getElementById('file-upload') as HTMLInputElement;
@@ -142,6 +142,15 @@ export default function AdminPage() {
                                     className="text-blue-500 bg-zinc-900 border-zinc-700 focus:ring-blue-500"
                                 />
                                 <span className="text-white">Superflex</span>
+                            </label>
+                            <label className="flex items-center space-x-2 bg-zinc-800/50 px-4 py-3 min-h-[44px] min-w-[44px] rounded-lg cursor-pointer border border-zinc-700 hover:border-zinc-500 transition-colors">
+                                <input
+                                    type="radio"
+                                    checked={category === 'redraft'}
+                                    onChange={() => setCategory('redraft')}
+                                    className="text-blue-500 bg-zinc-900 border-zinc-700 focus:ring-blue-500"
+                                />
+                                <span className="text-white">Redraft (Half-PPR)</span>
                             </label>
                         </div>
                     </div>
