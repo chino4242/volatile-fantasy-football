@@ -32,6 +32,9 @@ interface PlayerData {
     rank_sf_overall: number | null;
     rank_sf_pos: number | null;
     rank_sf_tier: number | null;
+    redraft_rank_overall?: number | null;
+    redraft_rank_pos?: number | null;
+    redraft_rank_tier?: number | null;
     writeups?: { source: string; analysis_text: string }[] | null;
     zap_score?: number | null;
     zap_analysis?: string | null;
@@ -59,7 +62,7 @@ interface ColDef {
     label: string;
     description: string;
     defaultOn: boolean;
-    group: 'core' | 'fc' | 'internal' | 'custom';
+    group: 'core' | 'fc' | 'internal' | 'custom' | 'redraft';
 }
 
 const BASE_COLUMNS: ColDef[] = [
@@ -73,6 +76,9 @@ const BASE_COLUMNS: ColDef[] = [
     { key: 'internal_pos', label: 'VFF Pos', description: 'Volatile FF proprietary position rank', defaultOn: false, group: 'internal' },
     { key: 'tier', label: 'Tier', description: 'Tier grouping (1 = elite)', defaultOn: false, group: 'internal' },
     { key: 'value_gap', label: 'Value Gap', description: 'Difference between FC rank and VFF rank', defaultOn: true, group: 'internal' },
+    { key: 'redraft_rank', label: 'Redraft Rank', description: 'Redraft overall rank (half-PPR)', defaultOn: true, group: 'redraft' },
+    { key: 'redraft_pos', label: 'Redraft Pos', description: 'Redraft position rank', defaultOn: true, group: 'redraft' },
+    { key: 'redraft_tier', label: 'Redraft Tier', description: 'Redraft tier grouping', defaultOn: false, group: 'redraft' },
 ];
 
 // ── Props ──────────────────────────────────────────────────────────────────────
@@ -230,6 +236,7 @@ export function TeamRosterTable({
         { id: 'core', label: 'Core' },
         { id: 'fc', label: 'FantasyCalc' },
         { id: 'internal', label: vffLabel },
+        { id: 'redraft', label: 'Redraft' },
         { id: 'custom', label: 'Custom Rankings' },
     ];
     const { visibleCols, columnOrder, toggle: toggleCol, reorder, show, orderedVisible } = useColumnState(COLUMNS, 'vff_column_visibility');
@@ -307,6 +314,8 @@ export function TeamRosterTable({
     const fcBgCell = 'bg-blue-50/20 dark:bg-blue-950/10';
     const vffBg = 'bg-purple-50/50 dark:bg-purple-950/20';
     const vffBgCell = 'bg-purple-50/20 dark:bg-purple-950/10';
+    const redraftBg = 'bg-amber-50/50 dark:bg-amber-950/20';
+    const redraftBgCell = 'bg-amber-50/20 dark:bg-amber-950/10';
     const vintageTitle = rankingsVintage ? `VFF Rankings from ${rankingsVintage}` : undefined;
     const signalTitle = rankingsVintage ? `Signal based on ${rankingsVintage} VFF rankings vs. current FantasyCalc market ranks` : undefined;
 
@@ -323,6 +332,9 @@ export function TeamRosterTable({
             internal_pos: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg}`} title={vintageTitle}>VFF Pos</th>,
             tier: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg}`} title={vintageTitle}>Tier</th>,
             value_gap: <th key={key} className={`px-3 sm:px-6 py-3 text-center text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg}`} title={signalTitle}>Signal{rankingsVintage ? <span className="ml-1 text-[9px] font-normal normal-case text-purple-400">({rankingsVintage})</span> : null}</th>,
+            redraft_rank: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${redraftBg} cursor-pointer group hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors`} onClick={() => handleSort('redraft_rank_overall')}>Redraft <SortIcon column="redraft_rank_overall" /></th>,
+            redraft_pos: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${redraftBg} cursor-pointer group hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors`} onClick={() => handleSort('redraft_rank_pos')}>RD Pos <SortIcon column="redraft_rank_pos" /></th>,
+            redraft_tier: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${redraftBg} cursor-pointer group hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors`} onClick={() => handleSort('redraft_rank_tier')}>RD Tier <SortIcon column="redraft_rank_tier" /></th>,
         };
         if (headers[key]) return headers[key];
         if (customSource) return <th key={key} className={`px-3 sm:px-6 py-3 text-center text-xs font-medium text-zinc-400 uppercase tracking-wider ${fcBg}`}>{customSource.display_name}</th>;
@@ -350,6 +362,9 @@ export function TeamRosterTable({
             internal_pos: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${vffBgCell}`}><span className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{fcPosInternal ? `${player.position}${fcPosInternal}` : '–'}</span></td>,
             tier: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${vffBgCell} font-mono text-sm ${getTierColorClass(fcTier)}`}>{fcTier ? `T${fcTier}` : '–'}</td>,
             value_gap: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-center ${vffBgCell}`}>{gapLabel ? <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ${gapLabel.color}`} title={rankingsVintage ? `Based on ${rankingsVintage} VFF ranks vs. current FC market ranks` : undefined}>{gapLabel.label}</span> : '–'}</td>,
+            redraft_rank: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${redraftBgCell}`}><span className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{player.redraft_rank_overall || '–'}</span></td>,
+            redraft_pos: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${redraftBgCell}`}><span className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{player.redraft_rank_pos ? `${player.position}${player.redraft_rank_pos}` : '–'}</span></td>,
+            redraft_tier: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${redraftBgCell} font-mono text-sm ${getTierColorClass(player.redraft_rank_tier ?? null)}`}>{player.redraft_rank_tier ? `T${player.redraft_rank_tier}` : '–'}</td>,
         };
         if (cells[key]) return cells[key];
         if (customSource) {

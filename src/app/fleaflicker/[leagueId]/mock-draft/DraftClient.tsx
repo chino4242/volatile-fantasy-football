@@ -102,9 +102,9 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'zap', label: 'ZAP / Yr 2', defaultOn: true, group: 'prospect' },
     { key: 'rookie_pos_rank', label: 'Pos Rank', defaultOn: true, group: 'prospect' },
     { key: 'rookie_tier', label: 'Tier', defaultOn: true, group: 'prospect' },
-    { key: 'redraft_rank', label: 'Redraft Rank', defaultOn: false, group: 'redraft' },
-    { key: 'redraft_pos', label: 'Redraft Pos', defaultOn: false, group: 'redraft' },
-    { key: 'redraft_tier', label: 'Redraft Tier', defaultOn: false, group: 'redraft' },
+    { key: 'redraft_rank', label: 'Redraft Rank', defaultOn: true, group: 'redraft' },
+    { key: 'redraft_pos', label: 'Redraft Pos', defaultOn: true, group: 'redraft' },
+    { key: 'redraft_tier', label: 'Redraft Tier', defaultOn: true, group: 'redraft' },
 ];
 
 export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock' }: DraftClientProps) {

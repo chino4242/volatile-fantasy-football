@@ -104,6 +104,9 @@ export default async function FleaflickerTeamPage({
                 rank_sf_overall: valueData?.rank_sf_overall || null,
                 rank_sf_pos: valueData?.rank_sf_pos || null,
                 rank_sf_tier: valueData?.rank_sf_tier || null,
+                redraft_rank_overall: valueData?.redraft_rank_overall || null,
+                redraft_rank_pos: valueData?.redraft_rank_pos || null,
+                redraft_rank_tier: valueData?.redraft_rank_tier || null,
             };
         })
         .filter((p): p is NonNullable<typeof p> => p !== null);
@@ -143,6 +146,9 @@ export default async function FleaflickerTeamPage({
             rank_sf_overall: null,
             rank_sf_pos: null,
             rank_sf_tier: null,
+            redraft_rank_overall: null,
+            redraft_rank_pos: null,
+            redraft_rank_tier: null,
         };
     });
 
@@ -216,6 +222,9 @@ export default async function FleaflickerTeamPage({
             rank_sf_overall: playerValues.rank_sf_overall,
             rank_sf_pos: playerValues.rank_sf_pos,
             rank_sf_tier: playerValues.rank_sf_tier,
+            redraft_rank_overall: playerValues.redraft_rank_overall,
+            redraft_rank_pos: playerValues.redraft_rank_pos,
+            redraft_rank_tier: playerValues.redraft_rank_tier,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))

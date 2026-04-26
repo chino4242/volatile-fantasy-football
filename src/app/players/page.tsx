@@ -31,6 +31,9 @@ export default async function PlayersPage({ searchParams }: PageProps) {
             rank_overall: format === 'sf' ? playerValues.rank_sf_overall : playerValues.rank_1qb_overall,
             rank_pos: format === 'sf' ? playerValues.rank_sf_pos : playerValues.rank_1qb_pos,
             rank_tier: format === 'sf' ? playerValues.rank_sf_tier : playerValues.rank_1qb_tier,
+            redraft_rank_overall: playerValues.redraft_rank_overall,
+            redraft_rank_pos: playerValues.redraft_rank_pos,
+            redraft_rank_tier: playerValues.redraft_rank_tier,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))

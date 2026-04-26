@@ -20,6 +20,9 @@ interface PlayerData {
     rank_overall: number | null;
     rank_pos: number | null;
     rank_tier: number | null;
+    redraft_rank_overall?: number | null;
+    redraft_rank_pos?: number | null;
+    redraft_rank_tier?: number | null;
 }
 
 interface PlayersTableProps {
@@ -50,6 +53,9 @@ const COLUMNS: ColumnDef[] = [
     { key: 'internal_pos', label: 'VFF Pos', defaultOn: false, group: 'internal' },
     { key: 'tier', label: 'Tier', defaultOn: false, group: 'internal' },
     { key: 'value_gap', label: 'Signal', defaultOn: true, group: 'internal' },
+    { key: 'redraft_rank', label: 'Redraft Rank', defaultOn: true, group: 'redraft' },
+    { key: 'redraft_pos', label: 'Redraft Pos', defaultOn: true, group: 'redraft' },
+    { key: 'redraft_tier', label: 'Redraft Tier', defaultOn: false, group: 'redraft' },
 ];
 
 const getValueGap = (player: PlayerData) => {
@@ -77,6 +83,7 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
         { id: 'core', label: 'Core' },
         { id: 'fc', label: 'FantasyCalc' },
         { id: 'internal', label: vffLabel },
+        { id: 'redraft', label: 'Redraft' },
     ];
     const { visibleCols, columnOrder, toggle: toggleCol, reorder, show, orderedVisible } = useColumnState(COLUMNS, 'vff_players_columns');
 
@@ -114,6 +121,9 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
             internal_pos: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase" title={vintageTitle}>VFF Pos</th>,
             tier: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase" title={vintageTitle}>Tier</th>,
             value_gap: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase" title={signalTitle}>Signal{rankingsVintage ? <span className="ml-1 text-[9px] font-normal normal-case text-purple-400">({rankingsVintage})</span> : null}</th>,
+            redraft_rank: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase bg-amber-50/20 dark:bg-amber-950/10">Redraft</th>,
+            redraft_pos: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase bg-amber-50/20 dark:bg-amber-950/10">RD Pos</th>,
+            redraft_tier: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase bg-amber-50/20 dark:bg-amber-950/10">RD Tier</th>,
         };
         return h[key] || null;
     };
@@ -134,6 +144,9 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
             internal_pos: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.rank_pos ? `${player.position}${player.rank_pos}` : '–'}</td>,
             tier: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.rank_tier || '–'}</td>,
             value_gap: <td key={key} className="px-6 py-4 whitespace-nowrap text-right">{gapLabel ? <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${gapLabel.color}`} title={rankingsVintage ? `Based on ${rankingsVintage} VFF ranks vs. current FC market ranks` : undefined}>{gapLabel.label}</span> : <span className="text-sm text-zinc-400">–</span>}</td>,
+            redraft_rank: <td key={key} className="px-6 py-4 whitespace-nowrap text-right bg-amber-50/20 dark:bg-amber-950/10 font-mono text-sm text-zinc-700 dark:text-zinc-300">{player.redraft_rank_overall || '–'}</td>,
+            redraft_pos: <td key={key} className="px-6 py-4 whitespace-nowrap text-right bg-amber-50/20 dark:bg-amber-950/10 font-mono text-sm text-zinc-700 dark:text-zinc-300">{player.redraft_rank_pos ? `${player.position}${player.redraft_rank_pos}` : '–'}</td>,
+            redraft_tier: <td key={key} className="px-6 py-4 whitespace-nowrap text-right bg-amber-50/20 dark:bg-amber-950/10 font-mono text-sm">{player.redraft_rank_tier ? `T${player.redraft_rank_tier}` : '–'}</td>,
         };
         return c[key] || null;
     };
