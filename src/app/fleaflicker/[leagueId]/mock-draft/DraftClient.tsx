@@ -153,6 +153,24 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [activeTeams, setActiveTeams] = useState<Team[]>(teams);
     const [userTeamId, setUserTeamId] = useState<number | null>(null);
     const [draftStarted, setDraftStarted] = useState(false);
+
+    // CPU drafting personalities
+    type DraftStyle = 'balanced' | 'bpa' | 'need' | 'prospect' | 'winNow';
+    const DRAFT_STYLES: { style: DraftStyle; label: string; weights: { value: number; need: number; dynasty: number; redraft: number; prospect: number } }[] = [
+        { style: 'balanced', label: 'Balanced', weights: { value: 0.90, need: 0.10, dynasty: 1, redraft: 1, prospect: 1 } },
+        { style: 'bpa', label: 'BPA Purist', weights: { value: 0.98, need: 0.02, dynasty: 0.3, redraft: 0.3, prospect: 0.3 } },
+        { style: 'need', label: 'Need-Based', weights: { value: 0.70, need: 0.30, dynasty: 1, redraft: 1, prospect: 1 } },
+        { style: 'prospect', label: 'Prospect Chaser', weights: { value: 0.85, need: 0.08, dynasty: 1.5, redraft: 0.5, prospect: 2.5 } },
+        { style: 'winNow', label: 'Win Now', weights: { value: 0.85, need: 0.10, dynasty: 0.5, redraft: 2.5, prospect: 0.5 } },
+    ];
+    const teamStyles = useRef<Map<number, typeof DRAFT_STYLES[number]>>(new Map());
+    const getTeamStyle = (teamId: number) => {
+        if (teamId === userTeamId) return DRAFT_STYLES[0]; // user always balanced
+        if (!teamStyles.current.has(teamId)) {
+            teamStyles.current.set(teamId, DRAFT_STYLES[Math.floor(Math.random() * DRAFT_STYLES.length)]);
+        }
+        return teamStyles.current.get(teamId)!;
+    };
     const [preDraftValues, setPreDraftValues] = useState<Record<number, { total: number; QB: number; RB: number; WR: number; TE: number }>>({});
     const isSleeper = platform === 'sleeper';
     const hasDraftOrder = draftOrder.length > 0;
@@ -512,6 +530,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     };
 
     const scorePlayer = (player: Player, teamId: number): { score: number; tags: string[] } => {
+        const style = getTeamStyle(teamId);
+        const w = style.weights;
         let value = player.fc_value || 0;
         const tags: string[] = [];
 
@@ -523,38 +543,37 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         }
 
         // Dynasty conviction: your tier vs market rank
-        const dynTier = sf ? player.rank_sf_tier : player.rank_1qb_tier;
         const dynRank = sf ? player.rank_sf_overall : player.rank_1qb_overall;
         const fcRank = sf ? player.fc_rank_sf : player.fc_rank_1qb;
         let dynastyBoost = 0;
         if (dynRank && fcRank) {
-            const gap = fcRank - dynRank; // positive = you rank them higher than market
-            if (gap >= 15) { dynastyBoost = 0.12; tags.push('Dynasty Buy'); }
-            else if (gap >= 8) { dynastyBoost = 0.06; }
-            else if (gap <= -15) { dynastyBoost = -0.08; }
+            const gap = fcRank - dynRank;
+            if (gap >= 15) { dynastyBoost = 0.12 * w.dynasty; tags.push('Dynasty Buy'); }
+            else if (gap >= 8) { dynastyBoost = 0.06 * w.dynasty; }
+            else if (gap <= -15) { dynastyBoost = -0.08 * w.dynasty; }
         }
 
-        // Redraft production value: strong redraft rank relative to market
+        // Redraft production value
         let redraftBoost = 0;
         if (player.redraft_rank_overall && fcRank) {
             const rdGap = fcRank - player.redraft_rank_overall;
-            if (rdGap >= 20) { redraftBoost = 0.10; tags.push('Redraft ↑'); }
-            else if (rdGap >= 10) { redraftBoost = 0.05; }
-            else if (rdGap <= -20) { redraftBoost = -0.05; }
+            if (rdGap >= 20) { redraftBoost = 0.10 * w.redraft; tags.push('Redraft ↑'); }
+            else if (rdGap >= 10) { redraftBoost = 0.05 * w.redraft; }
+            else if (rdGap <= -20) { redraftBoost = -0.05 * w.redraft; }
         }
 
-        // ZAP prospect quality (rookies/Year 2 only)
+        // ZAP prospect quality
         let zapBoost = 0;
         if (player.zap_score && !player.zap_stale) {
-            if (player.zap_score >= 80) { zapBoost = 0.15; tags.push('Elite Prospect'); }
-            else if (player.zap_score >= 60) { zapBoost = 0.08; tags.push('ZAP ↑'); }
-            else if (player.zap_score >= 40) { zapBoost = 0.03; }
-            else if (player.zap_score < 15) { zapBoost = -0.08; }
+            if (player.zap_score >= 80) { zapBoost = 0.15 * w.prospect; tags.push('Elite Prospect'); }
+            else if (player.zap_score >= 60) { zapBoost = 0.08 * w.prospect; tags.push('ZAP ↑'); }
+            else if (player.zap_score >= 40) { zapBoost = 0.03 * w.prospect; }
+            else if (player.zap_score < 15) { zapBoost = -0.08 * w.prospect; }
         }
 
-        // AI confidence modifier from writeup analysis
+        // AI confidence modifier
         if (player.writeups?.length) {
-            const bestConfidence = Math.max(...player.writeups.map(w => w.ai_confidence || 0));
+            const bestConfidence = Math.max(...player.writeups.map(wr => wr.ai_confidence || 0));
             if (bestConfidence >= 8) { value *= 1.04; }
             else if (bestConfidence <= 3) { value *= 0.96; }
         }
@@ -565,7 +584,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         const posNeed = needs[player.position || ''] || 0;
         if (posNeed >= 0.5) tags.push('Need');
 
-        const score = (adjustedValue * 0.90) + (posNeed * adjustedValue * 0.10);
+        const score = (adjustedValue * w.value) + (posNeed * adjustedValue * w.need);
         return { score, tags };
     };
 
@@ -591,13 +610,13 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             random -= squared[i].w;
             if (random <= 0) {
                 const c = squared[i];
-                const reason = `#${i + 1} of 3 | Value: ${c.value} | ${c.player.position} need: ${(c.posNeed * 100).toFixed(0)}% | Score: ${c.score.toFixed(0)}`;
+                const reason = `#${i + 1} of 3 | ${getTeamStyle(teamId).label} | Value: ${c.value} | ${c.player.position} need: ${(c.posNeed * 100).toFixed(0)}% | Score: ${c.score.toFixed(0)}`;
                 return { player: c.player, reason };
             }
         }
 
         const c = topCandidates[0];
-        return { player: c.player, reason: `BPA | Value: ${c.value} | Score: ${c.score.toFixed(0)}` };
+        return { player: c.player, reason: `BPA | ${getTeamStyle(teamId).label} | Value: ${c.value} | Score: ${c.score.toFixed(0)}` };
     };
 
     const executeTrade = (targetPlayer: Player & { teamName: string }) => {
