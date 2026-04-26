@@ -1912,6 +1912,9 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                     {(sf ? selectedDraftPlayer.rank_sf_overall : selectedDraftPlayer.rank_1qb_overall) && <span>VFF #{sf ? selectedDraftPlayer.rank_sf_overall : selectedDraftPlayer.rank_1qb_overall}</span>}
                                     {selectedDraftPlayer.years_exp != null && <span>Yr {selectedDraftPlayer.years_exp}</span>}
                                 </div>
+                                <button onClick={() => { makePick(selectedDraftPlayer.id); setSelectedDraftPlayer(null); }} className="w-full mt-3 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:scale-[0.98] transition-all">
+                                    {isLive && !isUserPick ? '✓ Select Pick' : '✓ Draft Player'}
+                                </button>
                             </div>
                             <div className="p-4 sm:p-6 space-y-4">
                                 {/* ZAP / Late Round */}
@@ -1960,10 +1963,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 ))}
                                 {/* Draft action */}
                                 <div className="flex justify-end gap-3 pt-2">
-                                    <button onClick={() => setSelectedDraftPlayer(null)} className="px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">Cancel</button>
-                                    <button onClick={() => { makePick(selectedDraftPlayer.id); setSelectedDraftPlayer(null); }} className="px-6 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
-                                        {isLive && !isUserPick ? 'Select Pick' : 'Draft Player'}
-                                    </button>
+                                    <button onClick={() => setSelectedDraftPlayer(null)} className="px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">Close</button>
                                 </div>
                             </div>
                         </div>
