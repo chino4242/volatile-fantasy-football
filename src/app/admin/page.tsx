@@ -282,6 +282,89 @@ export default function AdminPage() {
                     </div>
                 )}
             </div>
+
+            {/* Quick Writeup Paste */}
+            <WriteupForm />
+        </div>
+    );
+}
+
+function WriteupForm() {
+    const [playerName, setPlayerName] = useState('');
+    const [position, setPosition] = useState('WR');
+    const [source, setSource] = useState('rp');
+    const [draftYear, setDraftYear] = useState('2026');
+    const [analysisText, setAnalysisText] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [message, setMessage] = useState('');
+    const [error, setError] = useState('');
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!playerName || !analysisText) return;
+        setLoading(true);
+        setMessage('');
+        setError('');
+        try {
+            const res = await fetch('/api/writeups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ playerName, position, source, draftYear, analysisText }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            setMessage(`✅ Saved${data.matched ? '' : ' (player not matched to DB)'}. ${playerName} — ${source}`);
+            setPlayerName('');
+            setAnalysisText('');
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+            <h2 className="text-xl font-semibold mb-4 text-white hover:text-blue-400 transition-colors">Quick Writeup Paste</h2>
+            <p className="text-sm text-zinc-400 mb-6">Paste a prospect writeup directly — no file creation needed.</p>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                        <label className="block text-xs font-medium text-zinc-300 mb-1">Player Name *</label>
+                        <input type="text" value={playerName} onChange={e => setPlayerName(e.target.value)} placeholder="De'Zhaun Stribling" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500" required />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-zinc-300 mb-1">Position</label>
+                        <select value={position} onChange={e => setPosition(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+                            <option value="WR">WR</option>
+                            <option value="RB">RB</option>
+                            <option value="TE">TE</option>
+                            <option value="QB">QB</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-zinc-300 mb-1">Source</label>
+                        <input type="text" value={source} onChange={e => setSource(e.target.value)} placeholder="rp" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-zinc-300 mb-1">Draft Year</label>
+                        <input type="text" value={draftYear} onChange={e => setDraftYear(e.target.value)} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1">Writeup Text *</label>
+                    <textarea value={analysisText} onChange={e => setAnalysisText(e.target.value)} placeholder="Paste the full writeup here..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 h-40 resize-y" required />
+                </div>
+
+                <button type="submit" disabled={loading || !playerName || !analysisText} className={`w-full py-3 px-4 rounded-lg text-white font-medium transition-all ${loading || !playerName || !analysisText ? 'bg-zinc-700 cursor-not-allowed opacity-50' : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20 active:scale-[0.98]'}`}>
+                    {loading ? 'Saving...' : 'Save Writeup'}
+                </button>
+            </form>
+
+            {message && <div className="mt-4 p-3 bg-green-900/40 border border-green-800 text-green-400 rounded-lg text-sm">{message}</div>}
+            {error && <div className="mt-4 p-3 bg-red-900/40 border border-red-800 text-red-400 rounded-lg text-sm">❌ {error}</div>}
         </div>
     );
 }
