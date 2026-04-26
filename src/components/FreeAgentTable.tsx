@@ -64,7 +64,7 @@ interface FreeAgentTableProps {
     rankingsVintage?: string | null;
 }
 
-type SortColumn = 'fc_value' | 'fc_rank' | 'full_name' | 'position';
+type SortColumn = 'fc_value' | 'fc_rank' | 'full_name' | 'position' | 'rank_overall' | 'rank_pos' | 'rank_tier' | 'redraft_rank_overall' | 'redraft_rank_pos' | 'redraft_rank_tier';
 type SortDirection = 'asc' | 'desc';
 
 export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps) {
@@ -149,9 +149,9 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
             combined_value: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Combined</th>,
             trend_30d: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">30d Trend</th>,
             trade_freq: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Trade Freq</th>,
-            internal_rank: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg}`} title={vintageTitle}>VFF Rank</th>,
-            internal_pos: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg}`} title={vintageTitle}>VFF Pos</th>,
-            tier: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg}`} title={vintageTitle}>Tier</th>,
+            internal_rank: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort('rank_overall')}>VFF Rank <SortIcon column={'rank_overall' as SortColumn} /></th>,
+            internal_pos: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort('rank_pos')}>VFF Pos <SortIcon column={'rank_pos' as SortColumn} /></th>,
+            tier: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort('rank_tier')}>Tier <SortIcon column={'rank_tier' as SortColumn} /></th>,
             value_gap: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg}`} title={rankingsVintage ? `Signal based on ${rankingsVintage} VFF ranks vs. current FC market ranks` : undefined}>Signal{rankingsVintage ? <span className="ml-1 text-[9px] font-normal normal-case text-purple-400">({rankingsVintage})</span> : null}</th>,
             redraft_rank: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-amber-50/20 dark:bg-amber-950/10">Redraft</th>,
             redraft_pos: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-amber-50/20 dark:bg-amber-950/10">RD Pos</th>,
