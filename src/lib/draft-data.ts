@@ -3,9 +3,9 @@ import { players, playerValues, prospectData, prospectWriteups, leagues } from '
 import { eq, sql } from 'drizzle-orm';
 import { getFleaflickerLeague, getFleaflickerRosterSlots } from '@/lib/fleaflicker';
 import { getRankingsVintage, formatVintage } from '@/lib/rankings-vintage';
+import { cleanseName } from '@/lib/nameUtils';
 
-const normalizeName = (name: string) =>
-    name.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\b(jr|sr|ii|iii|iv|v)\b/g, '').replace(/\s+/g, ' ').trim();
+const normalizeName = (name: string) => cleanseName(name);
 
 export async function getFleaflickerDraftData(leagueId: string, formatParam?: string, keepersParam?: string) {
     let format = (formatParam === 'sf' || formatParam === '1qb') ? formatParam as '1qb' | 'sf' : undefined;
