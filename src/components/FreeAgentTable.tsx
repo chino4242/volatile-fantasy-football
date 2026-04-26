@@ -11,13 +11,10 @@ const COLUMNS: ColumnDef[] = [
     { key: 'combined_value', label: 'Combined', defaultOn: false, group: 'fc' },
     { key: 'trend_30d', label: '30d Trend', defaultOn: false, group: 'fc' },
     { key: 'trade_freq', label: 'Trade Freq', defaultOn: false, group: 'fc' },
-    { key: 'internal_rank', label: 'VFF Rank', defaultOn: false, group: 'internal' },
-    { key: 'internal_pos', label: 'VFF Pos', defaultOn: false, group: 'internal' },
-    { key: 'tier', label: 'Tier', defaultOn: false, group: 'internal' },
+    { key: 'internal_rank', label: 'Rank (Dyn / RD)', defaultOn: true, group: 'internal' },
+    { key: 'internal_pos', label: 'Pos (Dyn / RD)', defaultOn: false, group: 'internal' },
+    { key: 'tier', label: 'Tier (Dyn / RD)', defaultOn: false, group: 'internal' },
     { key: 'value_gap', label: 'Signal', defaultOn: false, group: 'internal' },
-    { key: 'redraft_rank', label: 'Redraft Rank', defaultOn: true, group: 'redraft' },
-    { key: 'redraft_pos', label: 'Redraft Pos', defaultOn: true, group: 'redraft' },
-    { key: 'redraft_tier', label: 'Redraft Tier', defaultOn: false, group: 'redraft' },
 ];
 
 function PlayerAvatar({ sleeperId, name }: { sleeperId: string; name: string }) {
@@ -76,7 +73,6 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
     const COLUMN_GROUPS = [
         { id: 'fc', label: 'FantasyCalc' },
         { id: 'internal', label: vffLabel },
-        { id: 'redraft', label: 'Redraft' },
     ];
     const { visibleCols, columnOrder, toggle: toggleCol, reorder, show, orderedVisible } = useColumnState(COLUMNS, 'vff_free_agent_columns');
     const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
@@ -149,13 +145,10 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
             combined_value: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Combined</th>,
             trend_30d: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">30d Trend</th>,
             trade_freq: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Trade Freq</th>,
-            internal_rank: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort('rank_overall')}>VFF Rank <SortIcon column={'rank_overall' as SortColumn} /></th>,
-            internal_pos: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort('rank_pos')}>VFF Pos <SortIcon column={'rank_pos' as SortColumn} /></th>,
+            internal_rank: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort('rank_overall')}>Rank <SortIcon column={'rank_overall' as SortColumn} /></th>,
+            internal_pos: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort('rank_pos')}>Pos Rank <SortIcon column={'rank_pos' as SortColumn} /></th>,
             tier: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort('rank_tier')}>Tier <SortIcon column={'rank_tier' as SortColumn} /></th>,
             value_gap: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${vffBg}`} title={rankingsVintage ? `Signal based on ${rankingsVintage} VFF ranks vs. current FC market ranks` : undefined}>Signal{rankingsVintage ? <span className="ml-1 text-[9px] font-normal normal-case text-purple-400">({rankingsVintage})</span> : null}</th>,
-            redraft_rank: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-amber-50/20 dark:bg-amber-950/10">Redraft</th>,
-            redraft_pos: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-amber-50/20 dark:bg-amber-950/10">RD Pos</th>,
-            redraft_tier: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider bg-amber-50/20 dark:bg-amber-950/10">RD Tier</th>,
         };
         return h[key] || null;
     };
@@ -168,13 +161,10 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
             combined_value: <td key={key} className="px-3 py-3 sm:py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.fc_combined_value?.toLocaleString() || '-'}</td>,
             trend_30d: <td key={key} className="px-3 py-3 sm:py-4 whitespace-nowrap text-right text-sm font-mono">{player.fc_trend_30_day ? <span className={player.fc_trend_30_day > 0 ? 'text-green-600 dark:text-green-400' : player.fc_trend_30_day < 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-500'}>{player.fc_trend_30_day > 0 ? '↑+' : player.fc_trend_30_day < 0 ? '↓' : ''}{player.fc_trend_30_day}</span> : '-'}</td>,
             trade_freq: <td key={key} className="px-3 py-3 sm:py-4 whitespace-nowrap text-right text-sm font-mono">{player.fc_trade_frequency ? <span className={parseFloat(player.fc_trade_frequency) > 0.015 ? 'text-green-600 dark:text-green-400' : parseFloat(player.fc_trade_frequency) > 0.005 ? 'text-yellow-600 dark:text-yellow-400' : 'text-zinc-400'}>{(parseFloat(player.fc_trade_frequency) * 100).toFixed(2)}%</span> : '-'}</td>,
-            internal_rank: <td key={key} className={`px-3 py-3 sm:py-4 whitespace-nowrap text-right ${vffBg} text-sm font-mono text-zinc-700 dark:text-zinc-300`}>{player.rank_overall || '-'}</td>,
-            internal_pos: <td key={key} className={`px-3 py-3 sm:py-4 whitespace-nowrap text-right ${vffBg} text-sm font-mono text-zinc-700 dark:text-zinc-300`}>{player.rank_pos ? `${player.position}${player.rank_pos}` : '-'}</td>,
-            tier: <td key={key} className={`px-3 py-3 sm:py-4 whitespace-nowrap text-right ${vffBg} font-mono text-sm ${getTierColorClass(player.rank_tier)}`}>{player.rank_tier || '-'}</td>,
+            internal_rank: <td key={key} className={`px-3 py-2 whitespace-nowrap text-right ${vffBg}`}><div className="font-mono text-sm text-purple-700 dark:text-purple-300">{player.rank_overall || '-'}</div>{player.redraft_rank_overall && <div className="text-[10px] font-mono text-amber-600 dark:text-amber-400">{player.redraft_rank_overall}</div>}</td>,
+            internal_pos: <td key={key} className={`px-3 py-2 whitespace-nowrap text-right ${vffBg}`}><div className="font-mono text-sm text-purple-700 dark:text-purple-300">{player.rank_pos ? `${player.position}${player.rank_pos}` : '-'}</div>{player.redraft_rank_pos && <div className="text-[10px] font-mono text-amber-600 dark:text-amber-400">{player.position}{player.redraft_rank_pos}</div>}</td>,
+            tier: <td key={key} className={`px-3 py-2 whitespace-nowrap text-right ${vffBg}`}><div className={`font-mono text-sm ${getTierColorClass(player.rank_tier)}`}>{player.rank_tier || '-'}</div>{player.redraft_rank_tier && <div className="text-[10px] font-mono text-amber-600 dark:text-amber-400">T{player.redraft_rank_tier}</div>}</td>,
             value_gap: <td key={key} className={`px-3 py-3 sm:py-4 whitespace-nowrap text-right ${vffBg}`}>{valueGap ? <span className={`text-xs font-bold ${valueGap.color}`} title={rankingsVintage ? `Based on ${rankingsVintage} VFF ranks vs. current FC market ranks` : undefined}>{valueGap.label}</span> : '-'}</td>,
-            redraft_rank: <td key={key} className="px-3 py-3 sm:py-4 whitespace-nowrap text-right bg-amber-50/20 dark:bg-amber-950/10 text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.redraft_rank_overall || '-'}</td>,
-            redraft_pos: <td key={key} className="px-3 py-3 sm:py-4 whitespace-nowrap text-right bg-amber-50/20 dark:bg-amber-950/10 text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.redraft_rank_pos ? `${player.position}${player.redraft_rank_pos}` : '-'}</td>,
-            redraft_tier: <td key={key} className={`px-3 py-3 sm:py-4 whitespace-nowrap text-right bg-amber-50/20 dark:bg-amber-950/10 font-mono text-sm ${getTierColorClass(player.redraft_rank_tier)}`}>{player.redraft_rank_tier ? `T${player.redraft_rank_tier}` : '-'}</td>,
         };
         return c[key] || null;
     };
