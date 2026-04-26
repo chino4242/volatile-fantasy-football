@@ -38,6 +38,10 @@ def extract_rookie_profile(text, position):
         data['height'] = hw.group(1)
         data['weight'] = int(hw.group(2))
 
+    nfl_team = re.search(r'NFL Team:\s*([^\n]+)', text)
+    if nfl_team:
+        data['nfl_team'] = nfl_team.group(1).strip()
+
     comps = re.search(r'Statistical Comps?:\s*([^\n]+)', text)
     if comps:
         data['statistical_comparables'] = comps.group(1).strip()
@@ -173,6 +177,7 @@ def insert_prospects(prospects):
             p.get('full_name'),
             p.get('position'),
             p.get('college'),
+            p.get('nfl_team'),
             p.get('draft_year'),
             p.get('zap_score'),
             p.get('zap_category'),
@@ -199,13 +204,14 @@ def insert_prospects(prospects):
 
     insert_query = """
         INSERT INTO prospect_data (
-            full_name, position, college, draft_year, zap_score, zap_category,
+            full_name, position, college, nfl_team, draft_year, zap_score, zap_category,
             breakout_score, draft_capital_delta, height, weight,
             statistical_comparables, analysis_text, is_year_2
         ) VALUES %s
         ON CONFLICT (full_name, draft_year) DO UPDATE SET
             position = EXCLUDED.position,
             college = EXCLUDED.college,
+            nfl_team = EXCLUDED.nfl_team,
             zap_score = EXCLUDED.zap_score,
             zap_category = EXCLUDED.zap_category,
             breakout_score = EXCLUDED.breakout_score,

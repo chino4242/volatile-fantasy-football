@@ -33,6 +33,7 @@ interface Player {
     zap_stale?: boolean;
     zap_comps?: string | null;
     zap_analysis?: string | null;
+    zap_nfl_team?: string | null;
     zap_ai?: { confidence: number | null; summary: string | null; bull_case: string | null; bear_case: string | null; comps: string | null } | null;
     writeups?: { source: string; analysis_text: string; ai_confidence?: number | null; ai_summary?: string | null; ai_bull_case?: string | null; ai_bear_case?: string | null; ai_comps?: string | null }[] | null;
     rookie_rank?: number | null;
@@ -992,6 +993,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                             <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">
                                                 <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium mr-1 ${player.position === 'QB' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' : player.position === 'RB' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' : player.position === 'WR' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300'}`}>{player.position}</span>
                                                 {player.team || 'FA'} {player.years_exp != null ? `· Yr ${player.years_exp}` : ''}
+                                                {player.zap_nfl_team && <span className="text-amber-600 dark:text-amber-400 ml-1">→ {player.zap_nfl_team}</span>}
                                             </div>
                                             <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-zinc-500">
                                                 {(sf ? player.fc_rank_sf : player.fc_rank_1qb) && <span>FC #{sf ? player.fc_rank_sf : player.fc_rank_1qb}</span>}
@@ -1811,6 +1813,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${selectedDraftPlayer.position === 'QB' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' : selectedDraftPlayer.position === 'RB' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' : selectedDraftPlayer.position === 'WR' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300'}`}>{selectedDraftPlayer.position}</span>
                                             <span className="text-sm text-zinc-500">{selectedDraftPlayer.team || 'FA'}</span>
+                                            {selectedDraftPlayer.zap_nfl_team && <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 font-medium">→ {selectedDraftPlayer.zap_nfl_team}</span>}
                                             <span className="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">{selectedDraftPlayer.fc_value?.toLocaleString() || '0'}</span>
                                         </div>
                                     </div>

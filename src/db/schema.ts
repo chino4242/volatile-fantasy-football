@@ -250,6 +250,7 @@ export const prospectData = pgTable("prospect_data", {
     full_name: text("full_name").notNull(),
     position: text("position").notNull(), // WR, RB, TE
     college: text("college"),
+    nfl_team: text("nfl_team"),
     draft_year: integer("draft_year").notNull(), // e.g., 2025
     
     // ZAP Model Data

@@ -7,6 +7,7 @@ interface Prospect {
     full_name: string;
     position: string;
     college: string | null;
+    nfl_team: string | null;
     zap_score: string | null;
     zap_category: string | null;
     breakout_score: string | null;
@@ -114,6 +115,7 @@ export default function ProspectsTable({ rookies, year2 }: Props) {
                             <SortHeader label="Player" k="full_name" />
                             <SortHeader label="Pos" k="position" className="hidden sm:table-cell" />
                             <SortHeader label="College" k="college" className="hidden md:table-cell" />
+                            <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500 hidden sm:table-cell">NFL Team</th>
                             <SortHeader label="ZAP" k="zap_score" />
                             <SortHeader label="Category" k="zap_category" className="hidden sm:table-cell" />
                             <SortHeader label="Breakout" k="breakout_score" className="hidden lg:table-cell" />
@@ -137,6 +139,7 @@ export default function ProspectsTable({ rookies, year2 }: Props) {
                                 </td>
                                 <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400 hidden sm:table-cell">{p.position}</td>
                                 <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400 hidden md:table-cell">{p.college}</td>
+                                <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400 hidden sm:table-cell font-medium">{p.nfl_team || '—'}</td>
                                 <td className="px-3 py-2 font-bold text-zinc-900 dark:text-zinc-100">
                                     {p.zap_score ? parseFloat(p.zap_score).toFixed(1) : '—'}
                                 </td>
