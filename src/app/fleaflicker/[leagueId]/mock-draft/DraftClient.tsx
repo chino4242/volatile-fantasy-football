@@ -511,9 +511,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         return needs;
     };
 
-    const scorePlayer = (player: Player, teamId: number): number => {
+    const scorePlayer = (player: Player, teamId: number): { score: number; tags: string[] } => {
         let value = player.fc_value || 0;
-        
+        const tags: string[] = [];
+
         // Draft Supply/Demand Adjustments
         if (player.position === 'QB') {
             value *= format === 'sf' ? 0.85 : 0.55;
@@ -521,24 +522,51 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             value *= 0.85;
         }
 
-        // ZAP category modifier (prospect scouting signal)
-        if (player.zap_category && !player.zap_stale) {
-            const zapMod: Record<string, number> = { 'LEGENDARY PERFORMER': 0.15, 'ELITE PRODUCER': 0.10, 'WEEKLY STARTER': 0.05, 'FLEX PLAY': 0, 'BENCHWARMER': -0.05, 'WAIVER WIRE ADD': -0.10, 'DART THROW': -0.10 };
-            value *= 1 + (zapMod[player.zap_category.toUpperCase()] || 0);
+        // Dynasty conviction: your tier vs market rank
+        const dynTier = sf ? player.rank_sf_tier : player.rank_1qb_tier;
+        const dynRank = sf ? player.rank_sf_overall : player.rank_1qb_overall;
+        const fcRank = sf ? player.fc_rank_sf : player.fc_rank_1qb;
+        let dynastyBoost = 0;
+        if (dynRank && fcRank) {
+            const gap = fcRank - dynRank; // positive = you rank them higher than market
+            if (gap >= 15) { dynastyBoost = 0.12; tags.push('Dynasty Buy'); }
+            else if (gap >= 8) { dynastyBoost = 0.06; }
+            else if (gap <= -15) { dynastyBoost = -0.08; }
+        }
+
+        // Redraft production value: strong redraft rank relative to market
+        let redraftBoost = 0;
+        if (player.redraft_rank_overall && fcRank) {
+            const rdGap = fcRank - player.redraft_rank_overall;
+            if (rdGap >= 20) { redraftBoost = 0.10; tags.push('Redraft ↑'); }
+            else if (rdGap >= 10) { redraftBoost = 0.05; }
+            else if (rdGap <= -20) { redraftBoost = -0.05; }
+        }
+
+        // ZAP prospect quality (rookies/Year 2 only)
+        let zapBoost = 0;
+        if (player.zap_score && !player.zap_stale) {
+            if (player.zap_score >= 80) { zapBoost = 0.15; tags.push('Elite Prospect'); }
+            else if (player.zap_score >= 60) { zapBoost = 0.08; tags.push('ZAP ↑'); }
+            else if (player.zap_score >= 40) { zapBoost = 0.03; }
+            else if (player.zap_score < 15) { zapBoost = -0.08; }
         }
 
         // AI confidence modifier from writeup analysis
         if (player.writeups?.length) {
             const bestConfidence = Math.max(...player.writeups.map(w => w.ai_confidence || 0));
-            if (bestConfidence > 0) {
-                value *= 1 + (bestConfidence - 6) * 0.02; // 10 = +8%, 6 = 0%, 2 = -8%
-            }
+            if (bestConfidence >= 8) { value *= 1.04; }
+            else if (bestConfidence <= 3) { value *= 0.96; }
         }
+
+        const adjustedValue = value * (1 + dynastyBoost + redraftBoost + zapBoost);
 
         const needs = calculatePositionalNeed(teamId);
         const posNeed = needs[player.position || ''] || 0;
+        if (posNeed >= 0.5) tags.push('Need');
 
-        return (value * 0.92) + (posNeed * value * 0.08);
+        const score = (adjustedValue * 0.90) + (posNeed * adjustedValue * 0.10);
+        return { score, tags };
     };
 
     const simulatePick = (teamId: number): { player: Player; reason: string } | null => {
@@ -548,7 +576,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         const scoredPlayers = availablePlayers.map(p => {
             const value = p.fc_value || 0;
             const posNeed = needs[p.position || ''] || 0;
-            return { player: p, score: scorePlayer(p, teamId), value, posNeed };
+            const { score, tags } = scorePlayer(p, teamId);
+            return { player: p, score, value, posNeed, tags };
         });
 
         scoredPlayers.sort((a, b) => b.score - a.score);
@@ -1256,17 +1285,18 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                     </div>
                                     {(() => {
                                         const needs = calculatePositionalNeed(userTeamId!);
-                                        const top3 = availablePlayers
+                                        const top5 = availablePlayers
                                             .map(p => {
                                                 const value = p.fc_value || 0;
                                                 const posNeed = needs[p.position || ''] || 0;
-                                                return { player: p, score: scorePlayer(p, userTeamId!), value, posNeed };
+                                                const { score, tags } = scorePlayer(p, userTeamId!);
+                                                return { player: p, score, value, posNeed, tags };
                                             })
                                             .sort((a, b) => b.score - a.score)
-                                            .slice(0, 3);
+                                            .slice(0, 5);
                                         return (
-                                            <div className="flex flex-col sm:flex-row gap-2 justify-center mt-2">
-                                                {top3.map((c, i) => (
+                                            <div className="flex flex-col sm:flex-row gap-2 justify-center mt-2 flex-wrap">
+                                                {top5.map((c, i) => (
                                                     <button
                                                         key={c.player.id}
                                                         onClick={() => setSelectedDraftPlayer(c.player)}
@@ -1280,8 +1310,22 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                         <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">
                                                             {c.player.full_name} <span className="text-zinc-400">{c.player.position}</span>
                                                         </div>
-                                                        <div className="text-[10px] text-zinc-500">
-                                                            Value: {c.value} | {c.player.position} need: {(c.posNeed * 100).toFixed(0)}% | Score: {c.score.toFixed(0)}
+                                                        {c.tags.length > 0 && (
+                                                            <div className="flex gap-1 mt-0.5 flex-wrap">
+                                                                {c.tags.map(tag => (
+                                                                    <span key={tag} className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                                                                        tag === 'Elite Prospect' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' :
+                                                                        tag === 'ZAP ↑' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                                                        tag === 'Dynasty Buy' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' :
+                                                                        tag === 'Redraft ↑' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' :
+                                                                        tag === 'Need' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' :
+                                                                        'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
+                                                                    }`}>{tag}</span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        <div className="text-[10px] text-zinc-500 mt-0.5">
+                                                            Value: {c.value} | Score: {c.score.toFixed(0)}
                                                         </div>
                                                     </button>
                                                 ))}
@@ -1303,7 +1347,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                     {(() => {
                                         const needs = calculatePositionalNeed(currentPick.teamId);
                                         const top3 = availablePlayers
-                                            .map(p => ({ player: p, score: scorePlayer(p, currentPick.teamId), value: p.fc_value || 0, posNeed: needs[p.position || ''] || 0 }))
+                                            .map(p => { const { score, tags } = scorePlayer(p, currentPick.teamId); return { player: p, score, value: p.fc_value || 0, posNeed: needs[p.position || ''] || 0, tags }; })
                                             .sort((a, b) => b.score - a.score)
                                             .slice(0, 3);
                                         return (
@@ -1312,7 +1356,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                     <div key={c.player.id} onClick={() => makePick(c.player.id)} className={`text-left px-3 py-2 rounded-lg border-2 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors ${i === 0 ? 'border-zinc-300 dark:border-zinc-600' : 'border-zinc-200 dark:border-zinc-700'}`}>
                                                         <div className="text-xs text-zinc-400">Projected #{i + 1}</div>
                                                         <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">{c.player.full_name} <span className="text-zinc-400">{c.player.position}</span></div>
-                                                        <div className="text-[10px] text-zinc-500">Value: {c.value} | {c.player.position} need: {(c.posNeed * 100).toFixed(0)}% | Score: {c.score.toFixed(0)}</div>
+                                                        <div className="text-[10px] text-zinc-500">Value: {c.value} | Score: {c.score.toFixed(0)}</div>
                                                     </div>
                                                 ))}
                                             </div>
