@@ -97,15 +97,10 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'combined_value', label: 'Combined', defaultOn: false, group: 'fc' },
     { key: 'trend_30d', label: '30d Trend', defaultOn: false, group: 'fc' },
     { key: 'trade_freq', label: 'Trade Freq', defaultOn: false, group: 'fc' },
-    { key: 'vff_rank', label: 'VFF Rank', defaultOn: false, group: 'internal' },
-    { key: 'vff_pos', label: 'VFF Pos', defaultOn: false, group: 'internal' },
-    { key: 'tier', label: 'Tier', defaultOn: false, group: 'internal' },
-    { key: 'zap', label: 'ZAP / Yr 2', defaultOn: true, group: 'prospect' },
-    { key: 'rookie_pos_rank', label: 'Pos Rank', defaultOn: true, group: 'prospect' },
-    { key: 'rookie_tier', label: 'Tier', defaultOn: true, group: 'prospect' },
-    { key: 'redraft_rank', label: 'Redraft Rank', defaultOn: true, group: 'redraft' },
-    { key: 'redraft_pos', label: 'Redraft Pos', defaultOn: true, group: 'redraft' },
-    { key: 'redraft_tier', label: 'Redraft Tier', defaultOn: true, group: 'redraft' },
+    { key: 'ranks', label: 'Rank (Dyn / RD)', defaultOn: true, group: 'internal' },
+    { key: 'pos_ranks', label: 'Pos (Dyn / RD)', defaultOn: true, group: 'internal' },
+    { key: 'tiers', label: 'Tier (Dyn / RD)', defaultOn: true, group: 'internal' },
+    { key: 'prospect', label: 'Prospect', defaultOn: true, group: 'prospect' },
 ];
 
 export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock' }: DraftClientProps) {
@@ -295,7 +290,6 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         { id: 'core', label: 'Core' },
         { id: 'fc', label: 'FantasyCalc' },
         { id: 'internal', label: vffLabel },
-        { id: 'redraft', label: redraftLabel },
         { id: 'prospect', label: 'Prospect' },
     ];
     const { visibleCols: visibleColumns, columnOrder, toggle: toggleCol, reorder, orderedVisible } = useColumnState(MOCK_DRAFT_COLUMNS, 'vff_mock_draft_columns');
@@ -663,6 +657,9 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const redraftTh = "hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-amber-50/50 dark:bg-amber-950/20 cursor-pointer group hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors";
     const redraftTitle = redraftVintage ? `Redraft Rankings from ${redraftVintage}` : undefined;
 
+    const combinedTh = "hidden md:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors";
+    const prospectTh = `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`;
+
     const headerMap: Record<string, { className: string; sortKey: string; label: string; title?: string }> = {
         position: { className: `${coreTh} text-left`, sortKey: 'position', label: 'Pos' },
         team: { className: `${coreTh} hidden sm:table-cell text-left`, sortKey: 'team', label: 'Team' },
@@ -672,15 +669,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         combined_value: { className: `hidden lg:table-cell ${fcTh.replace('hidden md:table-cell ', '')}`, sortKey: 'fc_combined_value', label: 'Combined' },
         trend_30d: { className: `hidden lg:table-cell ${fcTh.replace('hidden md:table-cell ', '')}`, sortKey: 'fc_trend_30_day', label: '30d' },
         trade_freq: { className: `hidden lg:table-cell ${fcTh.replace('hidden md:table-cell ', '')}`, sortKey: 'fc_trade_frequency', label: 'Traded' },
-        vff_rank: { className: vffTh, sortKey: sf ? 'rank_sf_overall' : 'rank_1qb_overall', label: 'VFF Rank', title: vffTitle },
-        vff_pos: { className: vffTh, sortKey: sf ? 'rank_sf_pos' : 'rank_1qb_pos', label: 'VFF Pos', title: vffTitle },
-        tier: { className: vffTh, sortKey: sf ? 'rank_sf_tier' : 'rank_1qb_tier', label: 'Tier', title: vffTitle },
-        zap: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'zap_score', label: 'ZAP / Yr 2' },
-        rookie_pos_rank: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'rookie_pos_rank', label: 'Pos Rank' },
-        rookie_tier: { className: `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`, sortKey: 'rookie_tier', label: 'Tier' },
-        redraft_rank: { className: redraftTh, sortKey: 'redraft_rank_overall', label: 'Rank', title: redraftTitle },
-        redraft_pos: { className: redraftTh, sortKey: 'redraft_rank_pos', label: 'Pos', title: redraftTitle },
-        redraft_tier: { className: redraftTh, sortKey: 'redraft_rank_tier', label: 'Tier', title: redraftTitle },
+        ranks: { className: combinedTh, sortKey: sf ? 'rank_sf_overall' : 'rank_1qb_overall', label: 'Rank', title: vffTitle },
+        pos_ranks: { className: combinedTh, sortKey: sf ? 'rank_sf_pos' : 'rank_1qb_pos', label: 'Pos Rank', title: vffTitle },
+        tiers: { className: combinedTh, sortKey: sf ? 'rank_sf_tier' : 'rank_1qb_tier', label: 'Tier', title: vffTitle },
+        prospect: { className: prospectTh, sortKey: 'zap_score', label: 'Prospect' },
     };
 
     const renderHeader = (key: string) => {
@@ -692,9 +684,17 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const fcTd = "hidden md:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20";
     const vffTd = "hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20";
 
-    const redraftTd = "hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-amber-50/50 dark:bg-amber-950/20";
+    const combinedTd = "hidden md:table-cell px-4 py-2 text-right bg-purple-50/50 dark:bg-purple-950/20";
+    const prospectTdCls = "hidden sm:table-cell px-4 py-2 text-right bg-emerald-50/50 dark:bg-emerald-950/20";
 
     const renderCell = (key: string, player: Player) => {
+        const dynRank = sf ? player.rank_sf_overall : player.rank_1qb_overall;
+        const dynPos = sf ? player.rank_sf_pos : player.rank_1qb_pos;
+        const dynTier = sf ? player.rank_sf_tier : player.rank_1qb_tier;
+        const rdRank = player.redraft_rank_overall;
+        const rdPos = player.redraft_rank_pos;
+        const rdTier = player.redraft_rank_tier;
+
         switch (key) {
             case 'position': return <td key={key} className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">{player.position}</td>;
             case 'team': return <td key={key} className="hidden sm:table-cell px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">{player.team || '—'}</td>;
@@ -704,15 +704,35 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             case 'combined_value': return <td key={key} className={`${fcTd} hidden lg:table-cell`}>{player.fc_combined_value?.toFixed(0) || '—'}</td>;
             case 'trend_30d': return <td key={key} className="hidden lg:table-cell px-4 py-3 text-sm text-right bg-blue-50/50 dark:bg-blue-950/20">{player.fc_trend_30_day ? <span className={player.fc_trend_30_day > 0 ? 'text-green-600 dark:text-green-400' : player.fc_trend_30_day < 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-500'}>{player.fc_trend_30_day > 0 ? '+' : ''}{player.fc_trend_30_day}</span> : '—'}</td>;
             case 'trade_freq': return <td key={key} className={`${fcTd} hidden lg:table-cell`}>{player.fc_trade_frequency ? Number(player.fc_trade_frequency).toFixed(2) : '—'}</td>;
-            case 'vff_rank': return <td key={key} className={vffTd}>{(sf ? player.rank_sf_overall : player.rank_1qb_overall) || '—'}</td>;
-            case 'vff_pos': return <td key={key} className={vffTd}>{player.position}{(sf ? player.rank_sf_pos : player.rank_1qb_pos) || '—'}</td>;
-            case 'tier': return <td key={key} className={vffTd}>{(sf ? player.rank_sf_tier : player.rank_1qb_tier) || '—'}</td>;
-            case 'zap': return <td key={key} className="hidden sm:table-cell px-4 py-3 text-sm text-right bg-emerald-50/50 dark:bg-emerald-950/20">{player.zap_score ? <span className={player.zap_stale ? 'text-zinc-400 dark:text-zinc-600 italic' : 'text-zinc-700 dark:text-zinc-300'} title={`${player.zap_category || ''}${player.zap_stale ? ' (stale)' : ''}`}>{player.zap_score.toFixed(1)}</span> : '—'}</td>;
-            case 'rookie_pos_rank': { const zapTd = "hidden sm:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-emerald-50/50 dark:bg-emerald-950/20"; return <td key={key} className={zapTd}>{player.rookie_pos_rank ? `${player.position}${player.rookie_pos_rank}` : '—'}</td>; }
-            case 'rookie_tier': { const zapTd = "hidden sm:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-emerald-50/50 dark:bg-emerald-950/20"; return <td key={key} className={zapTd}>{player.rookie_tier || '—'}</td>; }
-            case 'redraft_rank': return <td key={key} className={redraftTd}>{player.redraft_rank_overall || '—'}</td>;
-            case 'redraft_pos': return <td key={key} className={redraftTd}>{player.redraft_rank_pos ? `${player.position}${player.redraft_rank_pos}` : '—'}</td>;
-            case 'redraft_tier': return <td key={key} className={redraftTd}>{player.redraft_rank_tier || '—'}</td>;
+            case 'ranks': return (
+                <td key={key} className={combinedTd}>
+                    <div className="text-sm font-mono text-purple-700 dark:text-purple-300">{dynRank || '—'}</div>
+                    {rdRank && <div className="text-[10px] font-mono text-amber-600 dark:text-amber-400">{rdRank}</div>}
+                </td>
+            );
+            case 'pos_ranks': return (
+                <td key={key} className={combinedTd}>
+                    <div className="text-sm font-mono text-purple-700 dark:text-purple-300">{dynPos ? `${player.position}${dynPos}` : '—'}</div>
+                    {rdPos && <div className="text-[10px] font-mono text-amber-600 dark:text-amber-400">{player.position}{rdPos}</div>}
+                </td>
+            );
+            case 'tiers': return (
+                <td key={key} className={combinedTd}>
+                    <div className="text-sm font-mono text-purple-700 dark:text-purple-300">{dynTier ? `T${dynTier}` : '—'}</div>
+                    {rdTier && <div className="text-[10px] font-mono text-amber-600 dark:text-amber-400">T{rdTier}</div>}
+                </td>
+            );
+            case 'prospect': {
+                const hasZap = player.zap_score && player.zap_score > 0;
+                const hasRookie = player.rookie_pos_rank;
+                if (!hasZap && !hasRookie) return <td key={key} className={prospectTdCls}><span className="text-sm text-zinc-400">—</span></td>;
+                return (
+                    <td key={key} className={prospectTdCls}>
+                        {hasZap && <div className={`text-sm font-mono ${player.zap_stale ? 'text-zinc-400 italic' : 'text-emerald-700 dark:text-emerald-300'}`} title={player.zap_category || ''}>{player.zap_score!.toFixed(1)}</div>}
+                        {hasRookie && <div className="text-[10px] text-zinc-500">{player.position}{player.rookie_pos_rank} · T{player.rookie_tier}</div>}
+                    </td>
+                );
+            }
             default: return null;
         }
     };
