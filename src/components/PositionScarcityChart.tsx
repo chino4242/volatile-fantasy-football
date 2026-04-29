@@ -136,17 +136,17 @@ export function PositionScarcityChart({
     return (
         <div className="mb-4" onClick={() => setTooltip(null)}>
             {/* Header */}
-            <div className="flex items-center gap-2 mb-2">
-                <button
-                    onClick={(e) => { e.stopPropagation(); setCollapsed(!collapsed); }}
-                    className="flex items-center gap-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
-                >
-                    {collapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-                    {title}
-                </button>
-                {!collapsed && (
-                    <>
-                        <div className="flex rounded-md overflow-hidden border border-zinc-300 dark:border-zinc-600 ml-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 mb-2">
+                <div className="flex items-center justify-between">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); setCollapsed(!collapsed); }}
+                        className="flex items-center gap-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+                    >
+                        {collapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                        {title}
+                    </button>
+                    {!collapsed && (
+                        <div className="flex rounded-md overflow-hidden border border-zinc-300 dark:border-zinc-600 sm:ml-2">
                             <button
                                 onClick={(e) => { e.stopPropagation(); setView('dynasty'); }}
                                 className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${view === 'dynasty' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
@@ -154,22 +154,23 @@ export function PositionScarcityChart({
                             <button
                                 onClick={(e) => { e.stopPropagation(); setView('zap'); }}
                                 className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${view === 'zap' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
-                            >Rookie ZAP</button>
+                            >ZAP</button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); setView('redraft'); }}
                                 className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${view === 'redraft' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
                             >Redraft</button>
                         </div>
-                        {/* Legend — hidden on mobile, shown on sm+ */}
-                        <div className="hidden sm:flex gap-2 ml-auto flex-wrap">
-                            {legend.map(b => (
-                                <span key={b.label} className="flex items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                                    <span className={`w-2 h-2 rounded-sm ${b.bg}`} />
-                                    {b.label}
-                                </span>
-                            ))}
-                        </div>
-                    </>
+                    )}
+                </div>
+                {!collapsed && (
+                    <div className="hidden sm:flex gap-2 ml-auto flex-wrap">
+                        {legend.map(b => (
+                            <span key={b.label} className="flex items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                                <span className={`w-2 h-2 rounded-sm ${b.bg}`} />
+                                {b.label}
+                            </span>
+                        ))}
+                    </div>
                 )}
             </div>
 

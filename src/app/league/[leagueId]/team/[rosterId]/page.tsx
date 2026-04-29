@@ -253,8 +253,11 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                                 )}
                             </div>
                         </div>
-                        <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} />
                     </div>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
+                    <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} />
                 </div>
 
                 <TeamRosterTable
