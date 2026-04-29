@@ -15,7 +15,7 @@ interface Props {
     defaultCollapsed?: boolean;
 }
 
-type ViewMode = 'dynasty' | 'zap';
+type ViewMode = 'dynasty' | 'zap' | 'redraft';
 
 const TIER_BUCKETS = [
     { label: 'T1-3', max: 3, bg: 'bg-emerald-500', hex: '#10b981' },
@@ -38,6 +38,21 @@ const ZAP_BUCKETS: Record<string, { label: string; bg: string; hex: string }> = 
 };
 const ZAP_DEFAULT = { label: 'No ZAP', bg: 'bg-zinc-300 dark:bg-zinc-700', hex: '#d4d4d8' };
 const ZAP_LEGEND = Object.values(ZAP_BUCKETS);
+
+const REDRAFT_BUCKETS = [
+    { label: 'T1-3', max: 3, bg: 'bg-emerald-400', hex: '#34d399' },
+    { label: 'T4-6', max: 6, bg: 'bg-cyan-500', hex: '#06b6d4' },
+    { label: 'T7-9', max: 9, bg: 'bg-amber-400', hex: '#fbbf24' },
+    { label: 'T10-12', max: 12, bg: 'bg-orange-500', hex: '#f97316' },
+    { label: 'T13-15', max: 15, bg: 'bg-rose-500', hex: '#f43f5e' },
+    { label: 'T16-18', max: 18, bg: 'bg-purple-500', hex: '#a855f7' },
+    { label: 'T19+', max: Infinity, bg: 'bg-zinc-400 dark:bg-zinc-600', hex: '#a1a1aa' },
+] as const;
+
+function getRedraftBucket(tier: number | null | undefined) {
+    if (!tier) return REDRAFT_BUCKETS[REDRAFT_BUCKETS.length - 1];
+    return REDRAFT_BUCKETS.find(b => tier <= b.max) || REDRAFT_BUCKETS[REDRAFT_BUCKETS.length - 1];
+}
 
 const POS_COLORS: Record<string, string> = {
     QB: 'bg-green-400', RB: 'bg-rose-400', WR: 'bg-cyan-400', TE: 'bg-amber-400',
@@ -74,12 +89,12 @@ export function PositionScarcityChart({
         return () => document.removeEventListener('scroll', dismiss);
     }, [tooltip]);
 
-    const handleSegmentInteraction = useCallback((e: React.MouseEvent | React.TouchEvent, player: any, dynastyTier: number | null, zapCategory: string | null) => {
+    const handleSegmentInteraction = useCallback((e: React.MouseEvent | React.TouchEvent, player: any, dynastyTier: number | null, zapCategory: string | null, redraftTier: number | null = null) => {
         e.stopPropagation();
         const rect = (e.target as HTMLElement).getBoundingClientRect();
         const x = rect.left + rect.width / 2;
         const y = rect.top;
-        setTooltip({ player: { ...player, _dynastyTier: dynastyTier, _zapCategory: zapCategory }, x, y });
+        setTooltip({ player: { ...player, _dynastyTier: dynastyTier, _zapCategory: zapCategory, _redraftTier: redraftTier }, x, y });
         clearTimeout(tooltipTimeout.current);
         tooltipTimeout.current = setTimeout(() => setTooltip(null), 3000);
     }, []);
@@ -105,6 +120,8 @@ export function PositionScarcityChart({
                     dynastyTier,
                     zapBucket: getZapBucket(p.zap_category),
                     zapCategory: p.zap_category || null,
+                    redraftBucket: getRedraftBucket(p.redraft_rank_tier),
+                    redraftTier: p.redraft_rank_tier || null,
                 };
             });
             return { pos, segments, total, qualityCount, count: posPlayers.length };
@@ -113,7 +130,7 @@ export function PositionScarcityChart({
         return { byPos, maxTotal };
     }, [players, format, topN]);
 
-    const legend = view === 'dynasty' ? TIER_BUCKETS : ZAP_LEGEND;
+    const legend = view === 'dynasty' ? TIER_BUCKETS : view === 'redraft' ? REDRAFT_BUCKETS : ZAP_LEGEND;
     const hasPlayers = data.byPos.some(d => d.segments.length > 0);
 
     return (
@@ -138,6 +155,10 @@ export function PositionScarcityChart({
                                 onClick={(e) => { e.stopPropagation(); setView('zap'); }}
                                 className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${view === 'zap' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
                             >Rookie ZAP</button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setView('redraft'); }}
+                                className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${view === 'redraft' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
+                            >Redraft</button>
                         </div>
                         {/* Legend — hidden on mobile, shown on sm+ */}
                         <div className="hidden sm:flex gap-2 ml-auto flex-wrap">
@@ -174,16 +195,16 @@ export function PositionScarcityChart({
                                         {segments.map((seg) => {
                                             const widthPct = (seg.value / data.maxTotal) * 100;
                                             if (widthPct < 0.3) return null;
-                                            const bg = view === 'dynasty' ? seg.dynastyBucket.bg : seg.zapBucket.bg;
+                                            const bg = view === 'dynasty' ? seg.dynastyBucket.bg : view === 'redraft' ? seg.redraftBucket.bg : seg.zapBucket.bg;
                                             return (
                                                 <div
                                                     key={seg.player.id}
                                                     className={`${bg} cursor-pointer hover:brightness-110 active:brightness-90 transition-all duration-500 ease-out rounded-sm`}
                                                     style={{ width: `${widthPct}%` }}
                                                     onClick={(e) => { e.stopPropagation(); onPlayerClick(seg.player); }}
-                                                    onMouseEnter={e => handleSegmentInteraction(e, seg.player, seg.dynastyTier, seg.zapCategory)}
+                                                    onMouseEnter={e => handleSegmentInteraction(e, seg.player, seg.dynastyTier, seg.zapCategory, seg.redraftTier)}
                                                     onMouseLeave={() => { clearTimeout(tooltipTimeout.current); setTooltip(null); }}
-                                                    onTouchStart={e => handleSegmentInteraction(e, seg.player, seg.dynastyTier, seg.zapCategory)}
+                                                    onTouchStart={e => handleSegmentInteraction(e, seg.player, seg.dynastyTier, seg.zapCategory, seg.redraftTier)}
                                                 />
                                             );
                                         })}
@@ -223,6 +244,9 @@ export function PositionScarcityChart({
                     )}
                     {view === 'zap' && tooltip.player._zapCategory && (
                         <span className="text-zinc-400 ml-1.5">{tooltip.player._zapCategory}</span>
+                    )}
+                    {view === 'redraft' && tooltip.player._redraftTier && (
+                        <span className="text-amber-400 ml-1.5">RD T{tooltip.player._redraftTier}</span>
                     )}
                 </div>
             )}
