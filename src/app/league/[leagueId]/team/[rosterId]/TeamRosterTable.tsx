@@ -351,9 +351,44 @@ export function TeamRosterTable({
             combined_value: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${fcBgCell}`}><span className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{player.fc_combined_value?.toLocaleString() || '–'}</span></td>,
             trend_30d: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${fcBgCell}`}><TrendCell value={player.fc_trend_30_day} /></td>,
             trade_freq: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${fcBgCell}`}><TradeFreqCell value={player.fc_trade_frequency} /></td>,
-            internal_rank: <td key={key} className={`px-3 sm:px-6 py-2 whitespace-nowrap text-right ${vffBgCell}`}><div className="font-mono text-sm text-purple-700 dark:text-purple-300">{fcOverall || '–'}</div>{player.redraft_rank_overall && <div className="text-[10px] font-mono text-amber-600 dark:text-amber-400">{player.redraft_rank_overall}</div>}</td>,
-            internal_pos: <td key={key} className={`px-3 sm:px-6 py-2 whitespace-nowrap text-right ${vffBgCell}`}><div className="font-mono text-sm text-purple-700 dark:text-purple-300">{fcPosInternal ? `${player.position}${fcPosInternal}` : '–'}</div>{player.redraft_rank_pos && <div className="text-[10px] font-mono text-amber-600 dark:text-amber-400">{player.position}{player.redraft_rank_pos}</div>}</td>,
-            tier: <td key={key} className={`px-3 sm:px-6 py-2 whitespace-nowrap text-right ${vffBgCell}`}><div className={`font-mono text-sm ${getTierColorClass(fcTier)}`}>{fcTier ? `T${fcTier}` : '–'}</div>{player.redraft_rank_tier && <div className="text-[10px] font-mono text-amber-600 dark:text-amber-400">T{player.redraft_rank_tier}</div>}</td>,
+            internal_rank: (() => {
+                const dyn = fcOverall;
+                const rd = player.redraft_rank_overall;
+                const delta = dyn && rd ? dyn - rd : null;
+                return <td key={key} className={`px-2 sm:px-4 py-2 whitespace-nowrap text-right ${vffBgCell}`}>
+                    <div className="flex items-center justify-end gap-1.5">
+                        <span className="font-mono text-sm text-purple-700 dark:text-purple-300" title="Dynasty">{dyn || '–'}</span>
+                        <span className="text-[9px] text-zinc-500">|</span>
+                        <span className="font-mono text-sm text-amber-600 dark:text-amber-400" title="Redraft">{rd || '–'}</span>
+                    </div>
+                    {delta !== null && Math.abs(delta) >= 10 && (
+                        <div className={`text-[9px] font-bold text-right ${delta > 0 ? 'text-green-500' : 'text-blue-400'}`}>
+                            {delta > 0 ? '↑ Win Now' : '↑ Long Term'}
+                        </div>
+                    )}
+                </td>;
+            })(),
+            internal_pos: (() => {
+                const dynPos = fcPosInternal;
+                const rdPos = player.redraft_rank_pos;
+                return <td key={key} className={`px-2 sm:px-4 py-2 whitespace-nowrap text-right ${vffBgCell}`}>
+                    <div className="flex items-center justify-end gap-1.5">
+                        <span className="font-mono text-sm text-purple-700 dark:text-purple-300" title="Dynasty">{dynPos ? `${player.position}${dynPos}` : '–'}</span>
+                        <span className="text-[9px] text-zinc-500">|</span>
+                        <span className="font-mono text-sm text-amber-600 dark:text-amber-400" title="Redraft">{rdPos ? `${player.position}${rdPos}` : '–'}</span>
+                    </div>
+                </td>;
+            })(),
+            tier: (() => {
+                const rdTier = player.redraft_rank_tier;
+                return <td key={key} className={`px-2 sm:px-4 py-2 whitespace-nowrap text-right ${vffBgCell}`}>
+                    <div className="flex items-center justify-end gap-1.5">
+                        <span className={`font-mono text-sm ${getTierColorClass(fcTier)}`} title="Dynasty">{fcTier ? `T${fcTier}` : '–'}</span>
+                        <span className="text-[9px] text-zinc-500">|</span>
+                        <span className="font-mono text-sm text-amber-600 dark:text-amber-400" title="Redraft">{rdTier ? `T${rdTier}` : '–'}</span>
+                    </div>
+                </td>;
+            })(),
             value_gap: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-center ${vffBgCell}`}>{gapLabel ? <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ${gapLabel.color}`} title={rankingsVintage ? `Based on ${rankingsVintage} VFF ranks vs. current FC market ranks` : undefined}>{gapLabel.label}</span> : '–'}</td>,
         };
         if (cells[key]) return cells[key];

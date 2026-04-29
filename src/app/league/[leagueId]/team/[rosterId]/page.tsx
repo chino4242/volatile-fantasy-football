@@ -8,6 +8,7 @@ import { eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { TeamRosterTable } from "./TeamRosterTable";
+import { TeamRosterComposition } from "./TeamRosterComposition";
 
 export const dynamic = 'force-dynamic';
 
@@ -252,6 +253,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                                 )}
                             </div>
                         </div>
+                        <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} />
                     </div>
                 </div>
 

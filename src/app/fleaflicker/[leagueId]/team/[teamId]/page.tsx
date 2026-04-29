@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { players, playerValues, leagues, prospectData, prospectWriteups } from "@/db/schema";
 import { inArray, eq, sql } from "drizzle-orm";
 import { TeamRosterTable } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterTable";
+import { TeamRosterComposition } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterComposition";
 
 export const dynamic = "force-dynamic";
 
@@ -279,6 +280,7 @@ export default async function FleaflickerTeamPage({
                             </p>
                         )}
                     </div>
+                    <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} />
                 </div>
 
                 <TeamRosterTable

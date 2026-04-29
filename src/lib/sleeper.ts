@@ -79,12 +79,53 @@ export async function getTradedPicks(leagueId: string): Promise<SleeperTradedPic
 }
 
 export async function getLeagueData(leagueId: string): Promise<LeagueData> {
+    // Auto-resolve to current season's league
+    const currentLeagueId = await getCurrentSeasonLeagueId(leagueId);
     const [users, rosters, tradedPicks] = await Promise.all([
-        getLeagueUsers(leagueId),
-        getLeagueRosters(leagueId),
-        getTradedPicks(leagueId),
+        getLeagueUsers(currentLeagueId),
+        getLeagueRosters(currentLeagueId),
+        getTradedPicks(currentLeagueId),
     ]);
     return { users, rosters, tradedPicks };
+}
+
+/**
+ * Resolve the current season's league ID by following Sleeper's league chain.
+ * Each season creates a new league_id linked via previous_league_id.
+ */
+export async function getCurrentSeasonLeagueId(leagueId: string): Promise<string> {
+    const cacheKey = `sleeper:resolved_league:${leagueId}`;
+    const cached = cache.get<string>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+
+    // Check if this league is still active
+    const leagueRes = await fetch(`${BASE_URL}/league/${leagueId}`, { cache: 'no-store' });
+    if (!leagueRes.ok) return leagueId;
+    const league = await leagueRes.json();
+
+    if (league.status !== 'complete') {
+        cache.set(cacheKey, leagueId);
+        return leagueId;
+    }
+
+    // League is complete — find the current season's league via a user
+    const users = await getLeagueUsers(leagueId);
+    if (!users.length) return leagueId;
+
+    const currentYear = new Date().getFullYear();
+    const res = await fetch(`${BASE_URL}/user/${users[0].user_id}/leagues/nfl/${currentYear}`, { cache: 'no-store' });
+    if (!res.ok) return leagueId;
+    const userLeagues = await res.json();
+    if (!Array.isArray(userLeagues)) return leagueId;
+
+    const nextLeague = userLeagues.find((l: any) => l.previous_league_id === leagueId);
+    if (nextLeague) {
+        cache.set(cacheKey, nextLeague.league_id);
+        return nextLeague.league_id;
+    }
+
+    cache.set(cacheKey, leagueId);
+    return leagueId;
 }
 
 export function getPickFantasyCalcId(season: string, round: number): string {
