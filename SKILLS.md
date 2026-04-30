@@ -796,9 +796,9 @@ Inputs: current roster composition, players drafted during mock, starting lineup
 2. Queries database for player values and rankings
 3. Generates draft order (handles traded picks)
 4. Fetches roster requirements (Fleaflicker: `FetchLeagueStandings` API → `rosterRequirements.positions`)
-5. Passes data to `MockDraftClient` including `rosterSlots`
+5. Passes data to `DraftClient` including `rosterSlots`
 
-#### Client Component (`MockDraftClient.tsx`)
+#### Client Component (`DraftClient.tsx`)
 Manages all draft state:
 ```typescript
 interface DraftPick {
@@ -960,7 +960,7 @@ Teams ranked by score. Grades assigned relative to the best team (A+ for ≥90% 
 
 ## Live Draft Mode
 
-Separate mode for tracking real drafts in real-time. Shares `MockDraftClient` component with `mode="live"` prop.
+Separate mode for tracking real drafts in real-time. Shares `DraftClient` component with `mode="live"` prop.
 
 ### Key Differences from Mock Draft
 | Feature | Mock | Live |
@@ -1053,7 +1053,7 @@ Shared helpers in `src/lib/draft-data.ts`:
 - `getFleaflickerDraftData(leagueId, format, keepers)` — Fleaflicker leagues
 - `getSleeperDraftData(leagueId, format, keepers)` — Sleeper leagues
 
-Both return `{ teams, freeAgents, format, rankingsVintage, rosterSlots?, keeperCount? }` — the exact props needed by `MockDraftClient`. All 4 draft pages (mock + live × 2 platforms) are ~10 lines each.
+Both return `{ teams, freeAgents, format, rankingsVintage, rosterSlots?, keeperCount? }` — the exact props needed by `DraftClient`. All 4 draft pages (mock + live × 2 platforms) are ~10 lines each.
 
 ---
 

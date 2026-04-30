@@ -56,7 +56,7 @@ export default function Home() {
     const fetch_ = async () => {
       setIsFetchingSleeperLeagues(true);
       try {
-        const res = await fetch(`https://api.sleeper.app/v1/user/${sleeperUserId}/leagues/nfl/2025`);
+        const res = await fetch(`https://api.sleeper.app/v1/user/${sleeperUserId}/leagues/nfl/${new Date().getFullYear()}`);
         if (res.ok) setSleeperLeagues(await res.json());
       } catch (err) {
         console.error("Failed to fetch Sleeper leagues", err);
@@ -253,6 +253,10 @@ export default function Home() {
                 <Link href="/players"
                   className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-zinc-900 shadow-sm ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 dark:bg-white/10 dark:text-white dark:ring-0 dark:hover:bg-white/20">
                   Player Ranks
+                </Link>
+                <Link href="/mock-draft"
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
+                  🎯 Mock Draft
                 </Link>
                 <button onClick={logout}
                   className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30 transition-colors">

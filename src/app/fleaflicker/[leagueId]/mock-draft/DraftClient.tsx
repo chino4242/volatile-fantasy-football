@@ -84,6 +84,7 @@ interface DraftClientProps {
     rosterSlots?: { QB: number; RB: number; WR: number; TE: number; FLEX: number };
     keeperCount?: number;
     mode?: 'mock' | 'live';
+    defaultUserTeamId?: number;
 }
 
 const ROUNDS = 5;
@@ -103,7 +104,7 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'prospect', label: 'Prospect', defaultOn: true, group: 'prospect' },
 ];
 
-export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock' }: DraftClientProps) {
+export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock', defaultUserTeamId }: DraftClientProps) {
     const { sleeperUsername, fleaflickerUsername } = useAuth();
     const userId = platform === 'sleeper' ? sleeperUsername : fleaflickerUsername;
 
@@ -151,7 +152,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [currentPickIndex, setCurrentPickIndex] = useState(0);
     const [availablePlayers, setAvailablePlayers] = useState<Player[]>(freeAgents);
     const [activeTeams, setActiveTeams] = useState<Team[]>(teams);
-    const [userTeamId, setUserTeamId] = useState<number | null>(null);
+    const [userTeamId, setUserTeamId] = useState<number | null>(defaultUserTeamId ?? null);
     const [draftStarted, setDraftStarted] = useState(false);
 
     // CPU drafting personalities

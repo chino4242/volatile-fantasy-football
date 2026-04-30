@@ -50,6 +50,15 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 - **FantasyCalc Valuations** — Player trade values sourced from [FantasyCalc](https://fantasycalc.com/)
 - **Mobile-Responsive** — Optimized table layouts for phones and tablets
 - **Smart Caching** — In-memory cache with 10-minute TTL for external API calls, with manual refresh option for instant updates
+- **Generic Rookie Mock Draft** — Standalone mock draft at `/mock-draft` with configurable league size (8-14), draft format (snake/linear), rounds, roster slots, and draft position. No league required.
+- **Admin Dashboard** — Upload VFF rankings (1QB/SF/Redraft) via Excel, upload custom rankings from external sources, paste prospect writeups
+- **Position Scarcity Chart** — Visual stacked bar chart showing available talent by position, colored by dynasty tier, ZAP category, or redraft tier. Collapsible with Dynasty/ZAP/Redraft toggle
+- **Roster Composition** — Same scarcity chart on team roster pages showing your team's composition
+- **Trade Evaluator (Team Page)** — Standalone trade evaluator on team roster pages with player search, deal builder, and dynasty/redraft value blend slider
+- **Redraft Rankings** — Upload and display redraft rankings alongside dynasty rankings. Side-by-side display with delta indicators (Win Now / Long Term)
+- **Custom Rankings** — Import rankings from external sources (e.g., RP) with signal indicators (Super Buy/Buy/Hold/Sell/Super Sell)
+- **PWA Support** — Installable as a Progressive Web App with offline support and install prompts
+- **Nickname Aliasing** — Automatic player name matching for common nicknames (Nick→Nicholas, Hollywood Brown→Marquise Brown)
 
 ## Tech Stack
 
@@ -134,6 +143,8 @@ volatile-fantasy-football/
 │   │   ├── layout.tsx          # Root layout (header, providers, fonts, metadata)
 │   │   ├── page.tsx            # Home page / personalized dashboard (login)
 │   │   ├── providers.tsx       # Client-side context providers (AuthProvider)
+│   │   ├── mock-draft/         # Generic mock draft (no league required)
+│   │   ├── admin/              # Admin dashboard (rankings upload, writeups)
 │   │   ├── players/
 │   │   │   └── page.tsx        # Top 50 players list
 │   │   ├── prospects/
@@ -144,6 +155,7 @@ volatile-fantasy-football/
 │   │   │       ├── page.tsx    # League dashboard (all teams ranked)
 │   │   │       ├── free-agents/
 │   │   │       │   └── page.tsx  # Free agent view (Sleeper)
+│   │   │       ├── live-draft/   # Sleeper live draft
 │   │   │       └── team/
 │   │   │           └── [rosterId]/
 │   │   │               └── page.tsx  # Individual team roster
@@ -152,7 +164,8 @@ volatile-fantasy-football/
 │   │           ├── page.tsx          # Fleaflicker league dashboard
 │   │           ├── mock-draft/
 │   │           │   ├── page.tsx      # Mock draft page (server component)
-│   │           │   └── MockDraftClient.tsx  # Mock draft simulator (client)
+│   │           │   └── DraftClient.tsx  # Mock draft simulator (client)
+│   │           ├── live-draft/       # Fleaflicker live draft
 │   │           ├── free-agents/
 │   │           │   └── page.tsx      # Free agent view (Fleaflicker)
 │   │           └── team/
@@ -161,7 +174,14 @@ volatile-fantasy-football/
 │   ├── components/
 │   │   ├── AppHeader.tsx       # Sticky navigation header (auth-aware)
 │   │   ├── FreeAgentTable.tsx  # Client component for Free Agent view (with filters & sorting)
-│   │   └── LeagueTable.tsx     # League dashboard table (sortable)
+│   │   ├── LeagueTable.tsx     # League dashboard table (sortable)
+│   │   ├── RefreshButton.tsx   # Manual cache refresh button
+│   │   ├── ColumnPicker.tsx    # Configurable column visibility picker
+│   │   ├── PositionScarcityChart.tsx  # Stacked bar chart for position scarcity
+│   │   ├── TradeEvaluator.tsx  # Standalone trade evaluator component
+│   │   ├── PlayerStatsModal.tsx # Weekly player stats modal
+│   │   ├── InstallBanner.tsx   # PWA install prompt banner
+│   │   └── CustomRankingsBadge.tsx  # Signal badge for custom rankings
 │   ├── db/
 │   │   ├── index.ts            # Database connection (Drizzle + postgres.js)
 │   │   └── schema.ts           # Drizzle schema (players, leagues, rosters, values, prospects)
@@ -169,7 +189,14 @@ volatile-fantasy-football/
 │   │   └── useUser.tsx         # AuthProvider & useAuth hook (localStorage-backed login)
 │   └── lib/
 │       ├── sleeper.ts          # Sleeper API client (users, rosters, leagues)
-│       └── fleaflicker.ts      # Fleaflicker API client
+│       ├── fleaflicker.ts      # Fleaflicker API client
+│       ├── cache.ts            # In-memory cache with TTL support
+│       ├── draft-data.ts       # Shared draft data fetching helpers
+│       ├── rankings-upload.ts  # VFF rankings Excel upload processing
+│       ├── rankings-vintage.ts # Rankings history and vintage tracking
+│       ├── custom-rankings.ts  # Custom rankings import/processing
+│       ├── nameUtils.ts        # Player name matching and nickname aliasing
+│       └── nfl-data.ts         # NFL stats data utilities
 ├── drizzle.config.ts           # Drizzle Kit configuration
 ├── package.json
 └── tsconfig.json
@@ -177,18 +204,23 @@ volatile-fantasy-football/
 
 ## Database Schema
 
-The app uses six tables managed by Drizzle ORM:
+The app uses thirteen tables managed by Drizzle ORM:
 
 | Table             | Description                                            |
 | ----------------- | ------------------------------------------------------ |
-| `players`         | Master player list (name, position, team, age, `years_exp`) |
-| `player_values`   | Dynasty trade values from FantasyCalc and KTC          |
-| `prospect_data`   | Late Round prospect guide data (ZAP scores, categories, analysis) |
-| `prospect_writeups` | Multi-source scouting writeups (matched to players by name)    |
-| `draft_history`   | Saved mock/live draft results (picks, grades, per user/league) |
+| `players`         | Master player list (name, position, team, age, years_exp) |
+| `player_values`   | Dynasty/redraft trade values, FC metrics, VFF ranks    |
+| `prospect_data`   | Late Round prospect guide data (ZAP, categories, NFL team) |
+| `prospect_writeups` | Multi-source scouting writeups                       |
+| `draft_history`   | Saved mock/live draft results                          |
 | `leagues`         | League metadata (platform, scoring, roster settings)   |
-| `rosters`         | Team rosters within a league (W/L record, points)      |
+| `rosters`         | Team rosters within a league                           |
 | `roster_players`  | Join table linking rosters to players                  |
+| `rankings_history` | Archives VFF rankings per upload with timestamps      |
+| `ranking_sources` | External ranking source metadata                       |
+| `custom_rankings` | Custom rankings from external sources                  |
+| `weekly_player_stats` | Weekly player stats (targets, yards, TDs, fantasy points) |
+| `weekly_roster_snapshots` | Weekly roster composition snapshots              |
 
 > **Rookie identification:** The `players.years_exp` column (sourced from FantasyCalc's `maybeYoe` field) is used to flag rookies. Players with `years_exp === 0` are considered rookies.
 
@@ -246,6 +278,7 @@ See [`scripts/README-PROSPECTS.md`](scripts/README-PROSPECTS.md) for detailed in
 | `npx tsx scripts/analyze-prospects.ts` | AI-analyze Late Round prospect data via Claude |
 | `python3 scripts/ingest-sleeper-stats.py [year]` | Ingest weekly player stats from Sleeper API |
 | `npx tsx scripts/verify-db.ts`     | Verify database connection and data              |
+| `npm run ingest:nfl`               | Ingest NFL stats via Python script               |
 
 ## Testing
 
