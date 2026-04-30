@@ -9,6 +9,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { TeamRosterTable } from "./TeamRosterTable";
 import { TeamRosterComposition } from "./TeamRosterComposition";
+import TradeEvaluator from "@/components/TradeEvaluator";
 
 export const dynamic = 'force-dynamic';
 
@@ -259,6 +260,15 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                 <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                     <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} />
                 </div>
+
+                <TradeEvaluator
+                    myPlayers={allAssetsWithWriteups as any[]}
+                    allLeaguePlayers={allLeaguePlayers as any[]}
+                    playerOwnershipMap={playerOwnershipMap}
+                    rosterToOwnerMap={rosterToOwnerMap}
+                    currentRosterId={Number(rosterId)}
+                    scoringFormat={format}
+                />
 
                 <TeamRosterTable
                     players={allAssetsWithWriteups as any[]}
