@@ -319,12 +319,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         const dynVal = player.fc_value || 0;
         if (redraftWeight === 0) return dynVal;
         const rdRank = player.redraft_rank_overall;
-        const fcRank = sf ? player.fc_rank_sf : player.fc_rank_1qb;
         if (!rdRank) return dynVal;
-        const rankRatio = fcRank && rdRank ? fcRank / rdRank : 1;
-        const rdEstValue = dynVal * rankRatio;
+        const rdValue = Math.max(1000, Math.round(5000 - (rdRank - 1) * 16));
         const w = redraftWeight / 100;
-        return Math.round(dynVal * (1 - w) + rdEstValue * w);
+        return Math.round(dynVal * (1 - w) + rdValue * w);
     };
     const [selectedTradeAssets, setSelectedTradeAssets] = useState<Set<string>>(new Set());
     const [tradeSearch, setTradeSearch] = useState('');

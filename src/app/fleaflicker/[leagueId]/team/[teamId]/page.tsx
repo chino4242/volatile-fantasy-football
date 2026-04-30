@@ -258,12 +258,22 @@ export default async function FleaflickerTeamPage({
                         >
                             ← Back to League
                         </Link>
-                        <Link
-                            href={`/fleaflicker/${leagueId}/free-agents`}
-                            className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
-                        >
-                            View Free Agents →
-                        </Link>
+                        <div className="flex items-center gap-3">
+                            <TradeEvaluator
+                                myPlayers={allAssetsWithWriteups as any[]}
+                                allLeaguePlayers={allLeagueValues as any[]}
+                                playerOwnershipMap={playerOwnershipMap}
+                                rosterToOwnerMap={rosterToOwnerMap}
+                                currentRosterId={Number(teamId)}
+                                scoringFormat={format}
+                            />
+                            <Link
+                                href={`/fleaflicker/${leagueId}/free-agents`}
+                                className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+                            >
+                                Free Agents →
+                            </Link>
+                        </div>
                     </div>
                 </div>
 
@@ -286,15 +296,6 @@ export default async function FleaflickerTeamPage({
                 <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                     <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} />
                 </div>
-
-                <TradeEvaluator
-                    myPlayers={allAssetsWithWriteups as any[]}
-                    allLeaguePlayers={allLeagueValues as any[]}
-                    playerOwnershipMap={playerOwnershipMap}
-                    rosterToOwnerMap={rosterToOwnerMap}
-                    currentRosterId={Number(teamId)}
-                    scoringFormat={format}
-                />
 
                 <TeamRosterTable
                     players={allAssetsWithWriteups as any[]}

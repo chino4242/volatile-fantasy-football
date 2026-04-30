@@ -37,12 +37,12 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
         const dynVal = player.fc_value || 0;
         if (redraftWeight === 0) return dynVal;
         const rdRank = player.redraft_rank_overall;
-        const fcRank = sf ? player.fc_rank_sf : player.fc_rank_1qb;
         if (!rdRank) return dynVal;
-        const rankRatio = fcRank && rdRank ? fcRank / rdRank : 1;
-        const rdEstValue = dynVal * rankRatio;
+        // Redraft value: linear decay — rank 1 = 5000, rank 250 = 1000
+        // Reflects real production gaps (rank 1 WR ~17ppg, rank 20 ~14ppg = ~20% gap, not 5x)
+        const rdValue = Math.max(1000, Math.round(5000 - (rdRank - 1) * 16));
         const w = redraftWeight / 100;
-        return Math.round(dynVal * (1 - w) + rdEstValue * w);
+        return Math.round(dynVal * (1 - w) + rdValue * w);
     };
 
     const otherTeamPlayers = useMemo(() => {
@@ -107,15 +107,16 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
 
     if (!open) {
         return (
-            <button onClick={() => setOpen(true)} className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-colors text-sm">
-                <ArrowRightLeft size={16} />
+            <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg transition-colors">
+                <ArrowRightLeft size={13} />
                 Trade Evaluator
             </button>
         );
     }
 
     return (
-        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm ring-1 ring-zinc-900/5 p-4 sm:p-6 space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center pt-12 sm:pt-20 p-4" onClick={() => { setOpen(false); resetTrade(); }}>
+        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl ring-1 ring-zinc-900/5 p-4 sm:p-6 space-y-4 w-full max-w-lg max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Trade Evaluator</h3>
                 <button onClick={() => { setOpen(false); resetTrade(); }} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
@@ -267,6 +268,7 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
                     </div>
                 </div>
             )}
+        </div>
         </div>
     );
 }
