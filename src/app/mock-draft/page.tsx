@@ -39,7 +39,7 @@ export default async function GenericMockDraftPage({ searchParams }: { searchPar
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
-        .where(sql`${players.position} IN ('QB', 'RB', 'WR', 'TE') AND ${players.years_exp} = 0`)
+        .where(sql`${players.position} IN ('QB', 'RB', 'WR', 'TE') AND ${sf ? playerValues.fc_value_sf : playerValues.fc_value_1qb} IS NOT NULL`)
         .orderBy(sf ? playerValues.fc_value_sf : playerValues.fc_value_1qb);
 
     // Prospect data
@@ -107,5 +107,7 @@ export default async function GenericMockDraftPage({ searchParams }: { searchPar
         getRankingsVintage('redraft').then(formatVintage),
     ]);
 
-    return <GenericMockDraftSetup players={enrichedPlayers} format={format} rankingsVintage={rankingsVintage} redraftVintage={redraftVintage} />;
+    const rookiePlayers = enrichedPlayers.filter(p => p.years_exp === 0);
+
+    return <GenericMockDraftSetup players={rookiePlayers} allPlayers={enrichedPlayers} format={format} rankingsVintage={rankingsVintage} redraftVintage={redraftVintage} />;
 }

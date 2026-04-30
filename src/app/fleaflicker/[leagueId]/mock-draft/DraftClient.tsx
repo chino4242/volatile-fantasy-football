@@ -87,7 +87,7 @@ interface DraftClientProps {
     defaultUserTeamId?: number;
 }
 
-const ROUNDS = 5;
+const DEFAULT_ROUNDS = 5;
 
 const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'position', label: 'Position', defaultOn: true, group: 'core' },
@@ -122,6 +122,12 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     }, [userId, leagueId]);
 
     // Generate draft order from current year picks
+    // Derive rounds from team draft picks, fallback to default
+    const ROUNDS = useMemo(() => {
+        const maxRound = Math.max(...teams.flatMap(t => t.draftPicks.map(p => p.round)), 0);
+        return maxRound > 0 ? maxRound : DEFAULT_ROUNDS;
+    }, [teams]);
+
     const draftOrder = useMemo(() => {
         const currentYear = new Date().getFullYear();
         const order: DraftPick[] = [];
@@ -548,11 +554,15 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         let value = player.fc_value || 0;
         const tags: string[] = [];
 
-        // Draft Supply/Demand Adjustments
+        // Draft Supply/Demand Adjustments based on roster slots
+        const slots = rosterSlots || { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
+        const qbSlots = slots.QB;
         if (player.position === 'QB') {
-            value *= format === 'sf' ? 0.85 : 0.55;
+            // 1 QB slot = heavy discount (market overvalues QBs for 1QB leagues)
+            // 2+ QB slots (SF) = no discount, market values are accurate
+            if (qbSlots <= 1) value *= 0.55;
         } else if (player.position === 'TE') {
-            value *= 0.85;
+            value *= slots.TE >= 2 ? 0.95 : 0.85;
         }
 
         // Dynasty conviction: your tier vs market rank
