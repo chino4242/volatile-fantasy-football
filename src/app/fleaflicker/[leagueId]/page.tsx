@@ -6,6 +6,7 @@ import { inArray, eq } from "drizzle-orm";
 import { getPickFantasyCalcId } from "@/lib/sleeper";
 import { ChevronRight } from "lucide-react";
 import { LeagueTable } from "@/components/LeagueTable";
+import TradeFinderCard from "@/components/TradeFinderCard";
 import { RefreshButton } from "@/components/RefreshButton";
 
 export const dynamic = "force-dynamic";
@@ -85,6 +86,9 @@ export default async function FleaflickerLeaguePage({
                 fc_value: playerValues.fc_value,
                 fc_value_sf: playerValues.fc_value_sf,
                 fc_value_1qb: playerValues.fc_value_1qb,
+                fc_rank_sf: playerValues.fc_rank_sf,
+                fc_rank_1qb: playerValues.fc_rank_1qb,
+                redraft_rank_overall: playerValues.redraft_rank_overall,
             })
             .from(playerValues)
             .where(inArray(playerValues.sleeper_id, allLookupIds));
@@ -197,6 +201,20 @@ export default async function FleaflickerLeaguePage({
                     </div>
 
                     <LeagueTable teams={teams} platform="fleaflicker" leagueId={leagueId} format={format} keeperCount={keeperCount} />
+
+                    <TradeFinderCard
+                        teams={fleaflickerData.rosters.map(r => ({
+                            rosterId: r.id,
+                            ownerName: r.name,
+                            players: r.players.map(p => {
+                                const db = nameToPlayerMap.get(normalizeName(p.full_name));
+                                if (!db) return null;
+                                const v = values.find(val => val.sleeper_id === db.sleeper_id);
+                                return { sleeper_id: db.sleeper_id, full_name: db.full_name, position: db.position, fc_value: v ? (format === 'sf' ? v.fc_value_sf : v.fc_value_1qb) : 0, fc_rank_sf: v?.fc_rank_sf, fc_rank_1qb: v?.fc_rank_1qb, redraft_rank_overall: v?.redraft_rank_overall };
+                            }).filter(Boolean) as any[],
+                        }))}
+                        format={format}
+                    />
                 </div>
             </div>
         );

@@ -3,6 +3,7 @@ import { players, playerValues, leagues } from "@/db/schema";
 import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from "@/lib/sleeper";
 import { desc, eq, inArray } from "drizzle-orm";
 import { LeagueTable } from "@/components/LeagueTable";
+import TradeFinderCard from "@/components/TradeFinderCard";
 import { RefreshButton } from "@/components/RefreshButton";
 import Link from "next/link";
 
@@ -40,7 +41,11 @@ export default async function LeagueSummaryPage({ params, searchParams }: PagePr
         const dbPlayers = await db
             .select({
                 sleeper_id: players.sleeper_id,
+                full_name: players.full_name,
                 fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
+                fc_rank_sf: playerValues.fc_rank_sf,
+                fc_rank_1qb: playerValues.fc_rank_1qb,
+                redraft_rank_overall: playerValues.redraft_rank_overall,
                 position: players.position,
             })
             .from(players)
@@ -146,6 +151,19 @@ export default async function LeagueSummaryPage({ params, searchParams }: PagePr
                         </div>
                     </div>
                     <LeagueTable teams={teamStats.map(t => ({ id: t.rosterId, ...t }))} platform="sleeper" leagueId={leagueId} format={format} keeperCount={keeperCount} />
+
+                    <TradeFinderCard
+                        teams={rosters.map(r => {
+                            const owner = userMap.get(r.owner_id);
+                            return {
+                                rosterId: r.roster_id,
+                                ownerName: owner?.display_name || `Team ${r.roster_id}`,
+                                players: (r.players || []).map(pid => playerMap.get(pid)).filter(Boolean) as any[],
+                            };
+                        })}
+                        currentRosterId={undefined}
+                        format={format}
+                    />
                 </div>
             </div>
         );
