@@ -10,6 +10,7 @@ import { notFound } from "next/navigation";
 import { TeamRosterTable } from "./TeamRosterTable";
 import { TeamRosterComposition } from "./TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
+import TeamHealthDashboard from "@/components/TeamHealthDashboard";
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +63,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
             full_name: players.full_name,
             position: players.position,
             team: players.team,
+            age: players.age,
             fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
             fc_rank: playerValues.fc_rank,
             fc_rank_sf: playerValues.fc_rank_sf,
@@ -266,6 +268,24 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                         </div>
                     </div>
                 </div>
+
+                <TeamHealthDashboard
+                    myTeam={{
+                        rosterId: Number(rosterId),
+                        ownerName: owner?.display_name || 'Unknown',
+                        players: allAssetsWithWriteups as any[],
+                    }}
+                    allTeams={rosters.map(r => {
+                        const u = users.find(user => user.user_id === r.owner_id);
+                        const leaguePlayerMap = new Map(allLeaguePlayers.map(p => [p.sleeper_id, p]));
+                        return {
+                            rosterId: r.roster_id,
+                            ownerName: u?.display_name || `Team ${r.roster_id}`,
+                            players: (r.players || []).map(pid => leaguePlayerMap.get(pid)).filter(Boolean) as any[],
+                        };
+                    })}
+                    format={format}
+                />
 
                 <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                     <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} />

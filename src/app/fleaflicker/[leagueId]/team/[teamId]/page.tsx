@@ -9,6 +9,7 @@ import { inArray, eq, sql } from "drizzle-orm";
 import { TeamRosterTable } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterTable";
 import { TeamRosterComposition } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
+import TeamHealthDashboard from "@/components/TeamHealthDashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -292,6 +293,25 @@ export default async function FleaflickerTeamPage({
                         )}
                     </div>
                 </div>
+
+                <TeamHealthDashboard
+                    myTeam={{
+                        rosterId: Number(teamId),
+                        ownerName: roster.name,
+                        players: allAssetsWithWriteups as any[],
+                    }}
+                    allTeams={fleaflickerData.rosters.map(r => ({
+                        rosterId: r.id,
+                        ownerName: r.name,
+                        players: r.players.map(p => {
+                            const db = nameToPlayerMap.get(normalizeName(p.full_name));
+                            if (!db) return null;
+                            const v = values.find(val => val.sleeper_id === db.sleeper_id);
+                            return { sleeper_id: db.sleeper_id, full_name: db.full_name, position: db.position, age: db.age, fc_value: v ? (format === 'sf' ? v.fc_value_sf : v.fc_value_1qb) : 0, fc_rank_sf: v?.fc_rank_sf, fc_rank_1qb: v?.fc_rank_1qb, redraft_rank_overall: v?.redraft_rank_overall };
+                        }).filter(Boolean) as any[],
+                    }))}
+                    format={format}
+                />
 
                 <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                     <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} />
