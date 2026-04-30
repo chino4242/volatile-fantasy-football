@@ -312,6 +312,20 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     ];
     const { visibleCols: visibleColumns, columnOrder, toggle: toggleCol, reorder, orderedVisible } = useColumnState(MOCK_DRAFT_COLUMNS, 'vff_mock_draft_columns');
     const [showTradeModal, setShowTradeModal] = useState(false);
+
+    // Value mode: 0 = pure dynasty, 100 = pure redraft
+    const [redraftWeight, setRedraftWeight] = useState(0);
+    const getEffectiveValue = (player: Player): number => {
+        const dynVal = player.fc_value || 0;
+        if (redraftWeight === 0) return dynVal;
+        const rdRank = player.redraft_rank_overall;
+        const fcRank = sf ? player.fc_rank_sf : player.fc_rank_1qb;
+        if (!rdRank) return dynVal;
+        const rankRatio = fcRank && rdRank ? fcRank / rdRank : 1;
+        const rdEstValue = dynVal * rankRatio;
+        const w = redraftWeight / 100;
+        return Math.round(dynVal * (1 - w) + rdEstValue * w);
+    };
     const [selectedTradeAssets, setSelectedTradeAssets] = useState<Set<string>>(new Set());
     const [tradeSearch, setTradeSearch] = useState('');
     const [tradeTargetPlayer, setTradeTargetPlayer] = useState<(Player & { teamName: string; teamId: number }) | null>(null);
@@ -830,7 +844,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         assets.forEach(assetId => {
             if (assetId.startsWith('player_')) {
                 const player = teamPlayers.find(p => p.id === assetId.replace('player_', ''));
-                if (player) total += player.fc_value || 0;
+                if (player) total += getEffectiveValue(player);
             } else if (assetId.startsWith('draftpick_')) {
                 // Current draft pick: draftpick_round_slot — value based on BPA
                 const [, r, s] = assetId.split('_');
@@ -871,7 +885,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
         return rosteredPlayers
             .filter(p => {
-                const value = p.fc_value || 0;
+                const value = getEffectiveValue(p);
                 return value >= minValue && value <= maxValue;
             })
             .sort((a, b) => {
@@ -1025,11 +1039,22 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             </div>
                         </div>
 
+                        {/* Value Blend Slider */}
+                        <div className="mb-4 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] font-bold text-purple-500 uppercase">Dynasty</span>
+                                <span className="text-[10px] font-bold text-zinc-400">{redraftWeight === 0 ? 'Pure Dynasty' : redraftWeight === 100 ? 'Pure Redraft' : redraftWeight === 50 ? 'Combined' : `${100 - redraftWeight}% Dyn / ${redraftWeight}% RD`}</span>
+                                <span className="text-[10px] font-bold text-amber-500 uppercase">Redraft</span>
+                            </div>
+                            <input type="range" min={0} max={100} step={10} value={redraftWeight} onChange={e => setRedraftWeight(Number(e.target.value))}
+                                className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-purple-500 via-zinc-400 to-amber-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-indigo-500" />
+                        </div>
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
                             {(() => {
                                 const userTeam = activeTeams.find(t => t.id === userTeamId);
                                 if (!userTeam) return null;
-                                const sortedPlayers = [...userTeam.players].sort((a,b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                const sortedPlayers = [...userTeam.players].sort((a,b) => getEffectiveValue(b) - getEffectiveValue(a));
                                 
                                 return sortedPlayers.map(player => {
                                     const isSelected = selectedKeepers.has(player.id);
@@ -1055,7 +1080,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                     {player.full_name}
                                                 </div>
                                                 <div className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                                                    {player.fc_value?.toFixed(0) || '0'}
+                                                    {getEffectiveValue(player).toLocaleString()}
                                                 </div>
                                             </div>
                                             <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">
@@ -1976,6 +2001,16 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                         <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                             <div className="sticky top-0 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 z-10">
                                 <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-3">Trade Evaluator</h2>
+                                {/* Value Blend Slider */}
+                                <div className="mb-3 p-2 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-[9px] font-bold text-purple-500 uppercase">Dynasty</span>
+                                        <span className="text-[9px] font-bold text-zinc-400">{redraftWeight === 0 ? 'Pure Dynasty' : redraftWeight === 100 ? 'Pure Redraft' : redraftWeight === 50 ? 'Combined' : `${100 - redraftWeight}/${redraftWeight}`}</span>
+                                        <span className="text-[9px] font-bold text-amber-500 uppercase">Redraft</span>
+                                    </div>
+                                    <input type="range" min={0} max={100} step={10} value={redraftWeight} onChange={e => setRedraftWeight(Number(e.target.value))}
+                                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-purple-500 via-zinc-400 to-amber-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-indigo-500" />
+                                </div>
                                 {/* Search for target player */}
                                 <input
                                     type="text"
