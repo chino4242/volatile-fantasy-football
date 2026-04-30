@@ -304,10 +304,11 @@ export default async function FleaflickerTeamPage({
                         rosterId: r.id,
                         ownerName: r.name,
                         players: r.players.map(p => {
-                            const db = nameToPlayerMap.get(normalizeName(p.full_name));
+                            const norm = normalizeName(p.full_name);
+                            const db = allPlayers.find(ap => normalizeName(ap.full_name) === norm);
                             if (!db) return null;
-                            const v = values.find(val => val.sleeper_id === db.sleeper_id);
-                            return { sleeper_id: db.sleeper_id, full_name: db.full_name, position: db.position, age: db.age, fc_value: v ? (format === 'sf' ? v.fc_value_sf : v.fc_value_1qb) : 0, fc_rank_sf: v?.fc_rank_sf, fc_rank_1qb: v?.fc_rank_1qb, redraft_rank_overall: v?.redraft_rank_overall };
+                            const v = values.find(val => val.sleeper_id === db.sleeper_id) || allLeagueValues.find(val => val.sleeper_id === db.sleeper_id);
+                            return { sleeper_id: db.sleeper_id, full_name: db.full_name, position: db.position, age: db.age, fc_value: v ? (format === 'sf' ? (v as any).fc_value_sf : (v as any).fc_value_1qb) || (v as any).fc_value || 0 : 0, fc_rank_sf: (v as any)?.fc_rank_sf, fc_rank_1qb: (v as any)?.fc_rank_1qb, redraft_rank_overall: (v as any)?.redraft_rank_overall };
                         }).filter(Boolean) as any[],
                     }))}
                     format={format}
