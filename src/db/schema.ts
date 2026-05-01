@@ -316,6 +316,22 @@ export const prospectWriteups = pgTable("prospect_writeups", {
     };
 });
 
+// Value Snapshots Table (weekly tracking for alerts)
+export const valueSnapshots = pgTable("value_snapshots", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
+    fc_value_sf: integer("fc_value_sf"),
+    fc_value_1qb: integer("fc_value_1qb"),
+    fc_rank_sf: integer("fc_rank_sf"),
+    fc_rank_1qb: integer("fc_rank_1qb"),
+    snapshot_date: timestamp("snapshot_date").notNull(),
+}, (table) => {
+    return {
+        playerDateIdx: index("idx_value_snapshots_player_date").on(table.sleeper_id, table.snapshot_date),
+        dateIdx: index("idx_value_snapshots_date").on(table.snapshot_date),
+    };
+});
+
 // Draft History Table
 export const draftHistory = pgTable("draft_history", {
     id: uuid("id").primaryKey().defaultRandom(),

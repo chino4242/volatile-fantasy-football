@@ -5,6 +5,7 @@ import { LogOut, Loader2, Plus, X } from "lucide-react";
 import { useAuth } from "@/hooks/useUser";
 import { useState, useEffect } from "react";
 import { InstallBanner } from "@/components/InstallBanner";
+import ValueMovers from "@/components/ValueMovers";
 
 interface SleeperLeague {
   name: string;
@@ -264,6 +265,9 @@ export default function Home() {
                 </button>
               </div>
             </div>
+
+            {/* Value Movers */}
+            <ValueMovers format="1qb" />
 
             {/* Sleeper Leagues */}
             {sleeperUserId && (
