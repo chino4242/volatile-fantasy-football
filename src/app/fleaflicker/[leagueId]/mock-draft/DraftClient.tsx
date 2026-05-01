@@ -157,9 +157,37 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [picks, setPicks] = useState<DraftPick[]>(draftOrder);
     const [currentPickIndex, setCurrentPickIndex] = useState(0);
     const [availablePlayers, setAvailablePlayers] = useState<Player[]>(freeAgents);
+
+    // Live draft persistence key
+    const liveDraftKey = `live_draft_${leagueId}`;
     const [activeTeams, setActiveTeams] = useState<Team[]>(teams);
     const [userTeamId, setUserTeamId] = useState<number | null>(defaultUserTeamId ?? null);
     const [draftStarted, setDraftStarted] = useState(false);
+
+    // Live draft persistence — restore on mount
+    useEffect(() => {
+        if (mode !== 'live') return;
+        try {
+            const saved = localStorage.getItem(liveDraftKey);
+            if (saved) {
+                const { picks: savedPicks, currentPickIndex: savedIdx, draftedPlayerIds } = JSON.parse(saved);
+                if (savedPicks?.length === draftOrder.length) {
+                    setPicks(savedPicks);
+                    setCurrentPickIndex(savedIdx || 0);
+                    setDraftStarted(true);
+                    const draftedIds = new Set(draftedPlayerIds || []);
+                    setAvailablePlayers(freeAgents.filter(p => !draftedIds.has(p.id)));
+                }
+            }
+        } catch {}
+    }, []);
+
+    // Live draft persistence — save on every pick
+    useEffect(() => {
+        if (mode !== 'live' || !draftStarted) return;
+        const draftedPlayerIds = picks.filter(p => p.playerId).map(p => p.playerId);
+        localStorage.setItem(liveDraftKey, JSON.stringify({ picks, currentPickIndex, draftedPlayerIds }));
+    }, [picks, currentPickIndex, draftStarted, mode, liveDraftKey]);
 
     // Team Health before/after snapshot
     const computeHealthSnapshot = (teamPlayers: Player[]) => {
@@ -438,6 +466,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     useEffect(() => {
         if (isDraftComplete && userId && userTeamId !== null && !draftSavedRef.current) {
             draftSavedRef.current = true;
+            localStorage.removeItem(liveDraftKey);
             const myTeam = activeTeams.find(t => t.id === userTeamId);
             const myPicks = picks.filter(p => p.teamId === userTeamId && p.playerName);
             const draftedValue = myPicks.reduce((s, p) => s + (p.playerValue || 0), 0);
