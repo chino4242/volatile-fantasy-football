@@ -92,6 +92,7 @@ export default async function FleaflickerTeamPage({
                 full_name: player.full_name,
                 position: dbPlayer.position,
                 team: player.team || dbPlayer.team,
+                age: dbPlayer.age,
                 fc_value: format === 'sf' ? (valueData?.fc_value_sf || null) : (valueData?.fc_value_1qb || null),
                 fc_rank: format === 'sf' ? (valueData?.fc_rank_sf || null) : (valueData?.fc_rank_1qb || null),
                 fc_rank_sf: valueData?.fc_rank_sf || null,
