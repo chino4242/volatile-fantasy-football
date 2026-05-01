@@ -161,6 +161,25 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [userTeamId, setUserTeamId] = useState<number | null>(defaultUserTeamId ?? null);
     const [draftStarted, setDraftStarted] = useState(false);
 
+    // Team Health before/after snapshot
+    const computeHealthSnapshot = (teamPlayers: Player[]) => {
+        const myPlayers = teamPlayers.filter(p => p.position !== 'PICK');
+        const posValues: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+        myPlayers.forEach(p => { if (p.position && posValues[p.position] !== undefined) posValues[p.position] += (p.fc_value || 0); });
+        const total = Object.values(posValues).reduce((s, v) => s + v, 0);
+        const totalAll = teams.reduce((s, t) => s + t.players.filter(p => p.position !== 'PICK').reduce((s2, p) => s2 + (p.fc_value || 0), 0), 0);
+        const avgPerTeam = totalAll / teams.length;
+        let rdBetter = 0, dynBetter = 0;
+        myPlayers.forEach(p => {
+            const fcRank = sf ? p.fc_rank_sf : p.fc_rank_1qb;
+            const rdRank = p.redraft_rank_overall;
+            if (fcRank && rdRank) { if (rdRank < fcRank - 10) rdBetter++; if (fcRank < rdRank - 10) dynBetter++; }
+        });
+        const window = rdBetter > dynBetter + 2 ? 'Competing' : dynBetter > rdBetter + 2 ? 'Rebuilding' : 'Balanced';
+        return { posValues, total, window };
+    };
+    const [preHealthSnapshot, setPreHealthSnapshot] = useState<ReturnType<typeof computeHealthSnapshot> | null>(null);
+
     // CPU drafting personalities
     type DraftStyle = 'balanced' | 'bpa' | 'need' | 'prospect' | 'winNow';
     const DRAFT_STYLES: { style: DraftStyle; label: string; weights: { value: number; need: number; dynasty: number; redraft: number; prospect: number } }[] = [
@@ -1298,6 +1317,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         return [t.id, pv];
                                     })));
                                     setDraftStarted(true);
+                                    if (userTeamId) {
+                                        const myTeam = activeTeams.find(t => t.id === userTeamId);
+                                        if (myTeam) setPreHealthSnapshot(computeHealthSnapshot(myTeam.players));
+                                    }
                                 }}
                                 className="px-8 py-4 text-lg font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-lg"
                             >
@@ -1508,6 +1531,51 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             <div className="bg-green-50 dark:bg-green-950 rounded-xl p-6 text-center">
                                 <div className="text-2xl font-bold text-green-900 dark:text-green-100">Draft Complete!</div>
                             </div>
+
+                            {/* Team Health Before/After */}
+                            {preHealthSnapshot && userTeamId !== null && (() => {
+                                const myTeam = activeTeams.find(t => t.id === userTeamId);
+                                if (!myTeam) return null;
+                                const myDraftedPicks = picks.filter(p => p.teamId === userTeamId && p.playerId);
+                                const draftedPlayers = myDraftedPicks.map(p => freeAgents.find(fa => fa.id === p.playerId) || draftedPlayerMap.current.get(p.playerId!)).filter(Boolean) as Player[];
+                                const postPlayers = [...myTeam.players, ...draftedPlayers];
+                                const post = computeHealthSnapshot(postPlayers);
+                                const pre = preHealthSnapshot;
+                                const positions = ['QB', 'RB', 'WR', 'TE'] as const;
+                                return (
+                                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6">
+                                        <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-3">📊 Team Health: Before → After</h3>
+                                        <div className="grid grid-cols-2 gap-3 mb-3">
+                                            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3 text-center">
+                                                <div className="text-[9px] font-bold text-zinc-500 uppercase">Before</div>
+                                                <div className="text-lg font-black text-zinc-400">{pre.total.toLocaleString()}</div>
+                                                <div className="text-[9px] text-zinc-500">{pre.window}</div>
+                                            </div>
+                                            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3 text-center">
+                                                <div className="text-[9px] font-bold text-zinc-500 uppercase">After</div>
+                                                <div className="text-lg font-black text-green-500">{post.total.toLocaleString()}</div>
+                                                <div className="text-[9px] text-zinc-500">{post.window}</div>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {positions.map(pos => {
+                                                const before = pre.posValues[pos] || 0;
+                                                const after = post.posValues[pos] || 0;
+                                                const delta = after - before;
+                                                return (
+                                                    <div key={pos} className="text-center bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-2">
+                                                        <div className="text-[10px] font-bold text-zinc-400">{pos}</div>
+                                                        <div className="text-xs font-mono text-zinc-500">{before.toLocaleString()}</div>
+                                                        <div className="text-[10px]">→</div>
+                                                        <div className="text-xs font-mono font-bold text-zinc-900 dark:text-zinc-100">{after.toLocaleString()}</div>
+                                                        {delta > 0 && <div className="text-[9px] font-bold text-green-500">+{delta.toLocaleString()}</div>}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             {/* Your picks detail */}
                             {userTeamId !== null && (() => {
