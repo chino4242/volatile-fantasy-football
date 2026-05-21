@@ -256,3 +256,19 @@ export function getAllDraftPicks(rosters: SleeperRoster[], tradedPicks: SleeperT
     
     return picks;
 }
+
+// --- Multi-user platform helpers ---
+
+export async function getSleeperUserId(username: string): Promise<string | null> {
+    const res = await fetch(`${BASE_URL}/user/${username}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.user_id || null;
+}
+
+export async function getUserLeagues(sleeperUserId: string, season?: number): Promise<any[]> {
+    const year = season || new Date().getFullYear();
+    const res = await fetch(`${BASE_URL}/user/${sleeperUserId}/leagues/nfl/${year}`, { cache: 'no-store' });
+    if (!res.ok) return [];
+    return res.json();
+}

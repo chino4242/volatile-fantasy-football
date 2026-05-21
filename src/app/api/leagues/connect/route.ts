@@ -2,9 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { db } from '@/db';
 import { userLeagues } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
-
-const SLEEPER_API = 'https://api.sleeper.app/v1';
+import { getSleeperUserId, getUserLeagues, getLeagueUsers, getLeagueRosters } from '@/lib/sleeper';
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -15,31 +13,20 @@ export async function POST(request: Request) {
   if (!sleeper_username) return NextResponse.json({ error: 'Username required' }, { status: 400 });
 
   try {
-    // 1. Get Sleeper user ID from username
-    const userRes = await fetch(`${SLEEPER_API}/user/${sleeper_username}`);
-    if (!userRes.ok) return NextResponse.json({ error: 'Sleeper user not found' }, { status: 404 });
-    const sleeperUser = await userRes.json();
+    const sleeperUserId = await getSleeperUserId(sleeper_username);
+    if (!sleeperUserId) return NextResponse.json({ error: 'Sleeper user not found' }, { status: 404 });
 
-    // 2. Get all leagues for this user (current NFL season)
-    const season = new Date().getFullYear();
-    const leaguesRes = await fetch(`${SLEEPER_API}/user/${sleeperUser.user_id}/leagues/nfl/${season}`);
-    if (!leaguesRes.ok) return NextResponse.json({ error: 'Failed to fetch leagues' }, { status: 502 });
-    const leagues = await leaguesRes.json();
+    const leagues = await getUserLeagues(sleeperUserId);
 
-    // 3. Store each league in user_leagues
     const connected = [];
     for (const league of leagues) {
-      // Fetch rosters for this league
-      const rostersRes = await fetch(`${SLEEPER_API}/league/${league.league_id}/rosters`);
-      const rosters = rostersRes.ok ? await rostersRes.json() : [];
+      const [rosters, users] = await Promise.all([
+        getLeagueRosters(league.league_id),
+        getLeagueUsers(league.league_id),
+      ]);
 
-      // Fetch users to map roster_id → display_name
-      const usersRes = await fetch(`${SLEEPER_API}/league/${league.league_id}/users`);
-      const users = usersRes.ok ? await usersRes.json() : [];
-      const userMap = Object.fromEntries(users.map((u: any) => [u.user_id, u.display_name]));
-
-      // Enrich rosters with owner names
-      const enrichedRosters = rosters.map((r: any) => ({
+      const userMap = Object.fromEntries(users.map(u => [u.user_id, u.display_name]));
+      const enrichedRosters = rosters.map(r => ({
         roster_id: r.roster_id,
         owner_id: r.owner_id,
         owner_name: userMap[r.owner_id] || 'Unknown',
@@ -47,8 +34,7 @@ export async function POST(request: Request) {
         starters: r.starters || [],
       }));
 
-      // Find user's roster
-      const myRoster = enrichedRosters.find((r: any) => r.owner_id === sleeperUser.user_id);
+      const myRoster = enrichedRosters.find(r => r.owner_id === sleeperUserId);
 
       await db.insert(userLeagues).values({
         user_id: user.id,
