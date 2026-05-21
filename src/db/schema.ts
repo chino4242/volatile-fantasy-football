@@ -346,3 +346,79 @@ export const draftHistory = pgTable("draft_history", {
         userLeagueIdx: index("idx_draft_history_user_league").on(table.user_id, table.league_id),
     };
 });
+
+// ============================================
+// MULTI-USER PLATFORM TABLES (Phase 1)
+// ============================================
+
+// User Leagues — connected leagues per authenticated user
+export const userLeagues = pgTable("user_leagues", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id").notNull(), // from Supabase Auth
+    platform: text("platform").notNull(), // 'sleeper' or 'fleaflicker'
+    external_league_id: text("external_league_id").notNull(),
+    league_name: text("league_name"),
+    scoring_format: text("scoring_format").default('sf'), // '1qb' or 'sf'
+    roster_data: jsonb("roster_data"), // cached roster snapshot
+    synced_at: timestamp("synced_at"),
+    created_at: timestamp("created_at").defaultNow(),
+}, (table) => {
+    return {
+        userPlatformLeague: unique("unique_user_league").on(table.user_id, table.platform, table.external_league_id),
+        userIdx: index("idx_user_leagues_user").on(table.user_id),
+    };
+});
+
+// User Sources — uploaded files/pastes per user
+export const userSources = pgTable("user_sources", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id").notNull(),
+    type: text("type").notNull(), // 'csv', 'excel', 'pdf', 'text', 'quick_rank'
+    name: text("name").notNull(), // user-provided or auto-generated name
+    storage_path: text("storage_path"), // null for paste/quick_rank
+    status: text("status").default('processing'), // 'processing', 'matched', 'failed'
+    player_count: integer("player_count"),
+    raw_content: text("raw_content"), // for paste text, store the original
+    created_at: timestamp("created_at").defaultNow(),
+}, (table) => {
+    return {
+        userIdx: index("idx_user_sources_user").on(table.user_id),
+    };
+});
+
+// User Rankings — extracted rankings per user per player
+export const userRankings = pgTable("user_rankings", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id").notNull(),
+    source_id: uuid("source_id").references(() => userSources.id, { onDelete: "cascade" }),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
+    rank: integer("rank"),
+    position_rank: integer("position_rank"),
+    tier: integer("tier"),
+    notes: text("notes"),
+    confidence: decimal("confidence", { precision: 3, scale: 2 }).default("1.00"), // AI extraction confidence
+    created_at: timestamp("created_at").defaultNow(),
+}, (table) => {
+    return {
+        userPlayerUnique: unique("unique_user_player_ranking").on(table.user_id, table.sleeper_id),
+        userIdx: index("idx_user_rankings_user").on(table.user_id),
+        sourceIdx: index("idx_user_rankings_source").on(table.source_id),
+    };
+});
+
+// User Signals — generated BUY/SELL/HOLD per user per league
+export const userSignals = pgTable("user_signals", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id").notNull(),
+    league_id: uuid("league_id").references(() => userLeagues.id, { onDelete: "cascade" }),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
+    signal: text("signal").notNull(), // 'BUY', 'SELL', 'HOLD'
+    delta: integer("delta").notNull(), // user_rank - market_rank
+    owner_name: text("owner_name"), // leaguemate who owns the player
+    owner_roster_id: text("owner_roster_id"),
+    generated_at: timestamp("generated_at").defaultNow(),
+}, (table) => {
+    return {
+        userLeagueIdx: index("idx_user_signals_user_league").on(table.user_id, table.league_id),
+    };
+});
