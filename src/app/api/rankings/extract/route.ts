@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { db } from '@/db';
 import { userSources } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -53,7 +54,7 @@ ${text}`
     });
 
     if (!response.ok) {
-      await db.update(userSources).set({ status: 'failed' }).where(({ id }: any) => id === source.id);
+      await db.update(userSources).set({ status: 'failed' }).where(eq(userSources.id, source.id));
       return NextResponse.json({ error: 'AI extraction failed' }, { status: 502 });
     }
 
@@ -66,7 +67,7 @@ ${text}`
     await db.update(userSources).set({
       status: 'matched',
       player_count: extracted.length,
-    }).where(({ id }: any) => id === source.id);
+    }).where(eq(userSources.id, source.id));
 
     return NextResponse.json({
       success: true,
