@@ -58,7 +58,7 @@ export async function POST(request: Request) {
         for (const p of allPlayers) {
           const candidate = p.full_name.toLowerCase();
           // Simple similarity: shared characters / max length
-          const shared = [...new Set(target.split(''))].filter(c => candidate.includes(c)).length;
+          const shared = [...new Set<string>(target.split(''))].filter(c => candidate.includes(c)).length;
           const score = shared / Math.max(target.length, candidate.length);
           if (score > bestScore && score > 0.7) {
             bestScore = score;
