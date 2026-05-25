@@ -7,7 +7,7 @@ import { sql } from "drizzle-orm";
 import { eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { TeamRosterTable } from "./TeamRosterTable";
+import TeamRosterView from "./TeamRosterView";
 import { TeamRosterComposition } from "./TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
 import TeamHealthDashboard from "@/components/TeamHealthDashboard";
@@ -291,7 +291,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                     <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} />
                 </div>
 
-                <TeamRosterTable
+                <TeamRosterView
                     players={allAssetsWithWriteups as any[]}
                     scoringFormat={format}
                     positionValues={positionValues}
