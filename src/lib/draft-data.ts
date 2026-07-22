@@ -1,11 +1,42 @@
 import { db } from '@/db';
-import { players, playerValues, prospectData, prospectWriteups, leagues } from '@/db/schema';
+import { players, playerValues, prospectData, prospectWriteups, leagues, customRankings, rankingSources } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { getFleaflickerLeague, getFleaflickerRosterSlots } from '@/lib/fleaflicker';
 import { getRankingsVintage, formatVintage } from '@/lib/rankings-vintage';
 import { cleanseName } from '@/lib/nameUtils';
 
 const normalizeName = (name: string) => cleanseName(name);
+
+async function fetchCustomRankingsMap() {
+    const results = await db
+        .select({
+            sleeper_id: customRankings.sleeper_id,
+            rank: customRankings.rank,
+            notes: customRankings.notes,
+            signal: customRankings.signal,
+            source_display_name: rankingSources.display_name,
+        })
+        .from(customRankings)
+        .innerJoin(rankingSources, eq(customRankings.source_id, rankingSources.id))
+        .where(eq(rankingSources.is_active, true));
+
+    const map: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]> = {};
+    for (const r of results) {
+        if (!r.sleeper_id) continue;
+        if (!map[r.sleeper_id]) map[r.sleeper_id] = [];
+        // Parse market score and tier from notes (format: "Tier 14 | RB 5 | Market Score: 82.3 | Target (Confidence: 7/10)")
+        let marketScore: number | null = null;
+        let tier: number | null = null;
+        if (r.notes) {
+            const msMatch = r.notes.match(/Market Score:\s*([\d.]+)/);
+            if (msMatch) marketScore = parseFloat(msMatch[1]);
+            const tierMatch = r.notes.match(/Tier\s+(\d+)/);
+            if (tierMatch) tier = parseInt(tierMatch[1]);
+        }
+        map[r.sleeper_id].push({ rank: r.rank, signal: r.signal, notes: r.notes, source: r.source_display_name, marketScore, tier });
+    }
+    return map;
+}
 
 export async function getFleaflickerDraftData(leagueId: string, formatParam?: string, keepersParam?: string) {
     let format = (formatParam === 'sf' || formatParam === '1qb') ? formatParam as '1qb' | 'sf' : undefined;
@@ -59,12 +90,13 @@ export async function getFleaflickerDraftData(leagueId: string, formatParam?: st
         return { id: roster.id, name: roster.name, owner: roster.owners[0]?.display_name || 'Unknown', players: playersWithValues, positionValues, draftPicks: roster.draftPicks };
     }));
 
-    const [rankingsVintage, redraftVintage] = await Promise.all([
+    const [rankingsVintage, redraftVintage, customRankingsData] = await Promise.all([
         getRankingsVintage(format as '1qb' | 'sf').then(formatVintage),
         getRankingsVintage('redraft').then(formatVintage),
+        fetchCustomRankingsMap(),
     ]);
 
-    return { teams, freeAgents, format, rankingsVintage, redraftVintage, rosterSlots, keeperCount };
+    return { teams, freeAgents, format, rankingsVintage, redraftVintage, rosterSlots, keeperCount, customRankingsMap: customRankingsData };
 }
 
 import { getLeagueData, getAllDraftPicks, getDraftTradedPicks, getCurrentSeasonDraft, type SleeperTradedPick } from '@/lib/sleeper';
@@ -156,10 +188,11 @@ export async function getSleeperDraftData(leagueId: string, formatParam?: string
         return { id: roster.roster_id, name: owner?.display_name || `Team ${roster.roster_id}`, owner: owner?.display_name || 'Unknown', players: rosterPlayers, positionValues, draftPicks: [...currentYearPicks, ...futurePicks] };
     });
 
-    const [rankingsVintage, redraftVintage] = await Promise.all([
+    const [rankingsVintage, redraftVintage, customRankingsData] = await Promise.all([
         getRankingsVintage(format as '1qb' | 'sf').then(formatVintage),
         getRankingsVintage('redraft').then(formatVintage),
+        fetchCustomRankingsMap(),
     ]);
 
-    return { teams, freeAgents: freeAgentsWithZap, format, rankingsVintage, redraftVintage, keeperCount };
+    return { teams, freeAgents: freeAgentsWithZap, format, rankingsVintage, redraftVintage, keeperCount, customRankingsMap: customRankingsData };
 }

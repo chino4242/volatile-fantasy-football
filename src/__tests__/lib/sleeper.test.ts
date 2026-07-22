@@ -27,7 +27,7 @@ describe('Sleeper API Library', () => {
 
             const result = await getLeagueUsers(mockLeagueId);
             expect(result).toEqual(mockUsers);
-            expect(fetch).toHaveBeenCalledWith(`https://api.sleeper.app/v1/league/${mockLeagueId}/users`);
+            expect(fetch).toHaveBeenCalledWith(`https://api.sleeper.app/v1/league/${mockLeagueId}/users`, { cache: 'no-store' });
         });
 
         it('should throw an error on failed fetch', async () => {
@@ -53,7 +53,7 @@ describe('Sleeper API Library', () => {
 
             const result = await getLeagueRosters(mockLeagueId);
             expect(result).toEqual(mockRosters);
-            expect(fetch).toHaveBeenCalledWith(`https://api.sleeper.app/v1/league/${mockLeagueId}/rosters`);
+            expect(fetch).toHaveBeenCalledWith(`https://api.sleeper.app/v1/league/${mockLeagueId}/rosters`, { cache: 'no-store' });
         });
 
         it('should throw an error on failed fetch', async () => {
@@ -73,6 +73,8 @@ describe('Sleeper API Library', () => {
             const mockTradedPicks = [{ season: '2025', round: 1, roster_id: 1, previous_owner_id: 2, owner_id: 1 }];
 
             (fetch as any)
+                // getCurrentSeasonLeagueId: fetch league metadata (status not 'complete' = return same ID)
+                .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'in_season' }) })
                 .mockResolvedValueOnce({ ok: true, json: async () => mockUsers })
                 .mockResolvedValueOnce({ ok: true, json: async () => mockRosters })
                 .mockResolvedValueOnce({ ok: true, json: async () => mockTradedPicks });
@@ -80,7 +82,7 @@ describe('Sleeper API Library', () => {
             const result = await getLeagueData(mockLeagueId);
 
             expect(result).toEqual({ users: mockUsers, rosters: mockRosters, tradedPicks: mockTradedPicks });
-            expect(fetch).toHaveBeenCalledTimes(3);
+            expect(fetch).toHaveBeenCalledTimes(4);
         });
     });
 
@@ -98,7 +100,7 @@ describe('Sleeper API Library', () => {
 
             const result = await getTradedPicks(mockLeagueId);
             expect(result).toEqual(mockPicks);
-            expect(fetch).toHaveBeenCalledWith(`https://api.sleeper.app/v1/league/${mockLeagueId}/traded_picks`);
+            expect(fetch).toHaveBeenCalledWith(`https://api.sleeper.app/v1/league/${mockLeagueId}/traded_picks`, { cache: 'no-store' });
         });
 
         it('should throw an error on failed fetch', async () => {

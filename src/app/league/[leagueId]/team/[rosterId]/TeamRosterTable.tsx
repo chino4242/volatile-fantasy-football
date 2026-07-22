@@ -66,16 +66,16 @@ interface ColDef {
 }
 
 const BASE_COLUMNS: ColDef[] = [
-    { key: 'market_value', label: 'Market Value', description: 'FantasyCalc dynasty trade value', defaultOn: true, group: 'core' },
-    { key: 'fc_rank', label: 'FC Overall', description: 'FantasyCalc overall rank', defaultOn: true, group: 'fc' },
-    { key: 'fc_pos_rank', label: 'FC Pos Rank', description: 'FantasyCalc position rank (e.g. RB5)', defaultOn: true, group: 'fc' },
-    { key: 'combined_value', label: 'Combined', description: 'Dynasty + redraft combined value', defaultOn: false, group: 'fc' },
-    { key: 'trend_30d', label: '30d Trend', description: 'Value change over last 30 days', defaultOn: true, group: 'fc' },
-    { key: 'trade_freq', label: 'Trade Freq', description: 'How often this player trades (liquidity)', defaultOn: false, group: 'fc' },
-    { key: 'internal_rank', label: 'Rank (Dyn / RD)', description: 'Dynasty + Redraft overall rank', defaultOn: true, group: 'internal' },
-    { key: 'internal_pos', label: 'Pos (Dyn / RD)', description: 'Dynasty + Redraft position rank', defaultOn: true, group: 'internal' },
-    { key: 'tier', label: 'Tier (Dyn / RD)', description: 'Dynasty + Redraft tier', defaultOn: true, group: 'internal' },
-    { key: 'value_gap', label: 'Value Gap', description: 'Difference between FC rank and VFF rank', defaultOn: true, group: 'internal' },
+    { key: 'market_value', label: 'Market Value', description: 'Dynasty trade value from FantasyCalc (crowd-sourced market consensus)', defaultOn: true, group: 'core' },
+    { key: 'fc_rank', label: 'FC Overall', description: 'Overall dynasty rank from FantasyCalc (market consensus)', defaultOn: true, group: 'fc' },
+    { key: 'fc_pos_rank', label: 'FC Pos Rank', description: 'Position rank from FantasyCalc (e.g. RB5) based on market consensus', defaultOn: true, group: 'fc' },
+    { key: 'combined_value', label: 'Combined', description: 'Dynasty + redraft combined value from FantasyCalc', defaultOn: false, group: 'fc' },
+    { key: 'trend_30d', label: '30d Trend', description: 'Market value change over last 30 days (from FantasyCalc)', defaultOn: true, group: 'fc' },
+    { key: 'trade_freq', label: 'Trade Freq', description: 'How often this player is traded on FantasyCalc (liquidity indicator)', defaultOn: false, group: 'fc' },
+    { key: 'internal_rank', label: 'Rank (Dyn / RD)', description: 'VFF proprietary overall rank — dynasty (purple) and redraft (amber)', defaultOn: true, group: 'internal' },
+    { key: 'internal_pos', label: 'Pos (Dyn / RD)', description: 'VFF proprietary position rank — dynasty (purple) and redraft (amber)', defaultOn: true, group: 'internal' },
+    { key: 'tier', label: 'Tier (Dyn / RD)', description: 'VFF proprietary tier grouping — dynasty (purple) and redraft (amber)', defaultOn: true, group: 'internal' },
+    { key: 'value_gap', label: 'Value Gap', description: 'BUY/SELL signal: FC market rank minus VFF rank. Positive = market undervalues (BUY)', defaultOn: true, group: 'internal' },
 ];
 
 // ── Props ──────────────────────────────────────────────────────────────────────
@@ -318,16 +318,16 @@ export function TeamRosterTable({
     const renderHeader = (key: string): React.ReactNode => {
         const customSource = key.startsWith('custom_') ? rankingSources.find(s => `custom_${s.id}` === key) : null;
         const headers: Record<string, React.ReactNode> = {
-            market_value: <th key={key} className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('fc_value')}>Value <SortIcon column="fc_value" /></th>,
+            market_value: <th key={key} className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('fc_value')}>FC Value <SortIcon column="fc_value" /></th>,
             fc_rank: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${fcBg} cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors`} onClick={() => handleSort(sf ? 'fc_rank_sf' : 'fc_rank_1qb')}>{fmtLabel} Rank <SortIcon column={sf ? 'fc_rank_sf' : 'fc_rank_1qb'} /></th>,
             fc_pos_rank: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${fcBg} cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors`} onClick={() => handleSort(sf ? 'fc_position_rank_sf' : 'fc_position_rank_1qb')}>{fmtLabel} Pos <SortIcon column={sf ? 'fc_position_rank_sf' : 'fc_position_rank_1qb'} /></th>,
             combined_value: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${fcBg} hidden md:table-cell cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors`} onClick={() => handleSort('fc_combined_value')}>Combined <SortIcon column="fc_combined_value" /></th>,
             trend_30d: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${fcBg} cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors`} onClick={() => handleSort('fc_trend_30_day')}>30d <SortIcon column="fc_trend_30_day" /></th>,
             trade_freq: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${fcBg} cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors`} onClick={() => handleSort('fc_trade_frequency')}>Traded <SortIcon column="fc_trade_frequency" /></th>,
-            internal_rank: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort(sf ? 'rank_sf_overall' : 'rank_1qb_overall')}>Rank <SortIcon column={sf ? 'rank_sf_overall' : 'rank_1qb_overall'} /></th>,
-            internal_pos: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort(sf ? 'rank_sf_pos' : 'rank_1qb_pos')}>Pos Rank <SortIcon column={sf ? 'rank_sf_pos' : 'rank_1qb_pos'} /></th>,
-            tier: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort(sf ? 'rank_sf_tier' : 'rank_1qb_tier')}>Tier <SortIcon column={sf ? 'rank_sf_tier' : 'rank_1qb_tier'} /></th>,
-            value_gap: <th key={key} className={`px-3 sm:px-6 py-3 text-center text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg}`} title={signalTitle}>Signal{rankingsVintage ? <span className="ml-1 text-[9px] font-normal normal-case text-purple-400">({rankingsVintage})</span> : null}</th>,
+            internal_rank: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort(sf ? 'rank_sf_overall' : 'rank_1qb_overall')}>VFF Rank <SortIcon column={sf ? 'rank_sf_overall' : 'rank_1qb_overall'} /></th>,
+            internal_pos: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort(sf ? 'rank_sf_pos' : 'rank_1qb_pos')}>VFF Pos <SortIcon column={sf ? 'rank_sf_pos' : 'rank_1qb_pos'} /></th>,
+            tier: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} title={vintageTitle} onClick={() => handleSort(sf ? 'rank_sf_tier' : 'rank_1qb_tier')}>VFF Tier <SortIcon column={sf ? 'rank_sf_tier' : 'rank_1qb_tier'} /></th>,
+            value_gap: <th key={key} className={`px-3 sm:px-6 py-3 text-center text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg}`} title={signalTitle}>FC vs VFF{rankingsVintage ? <span className="ml-1 text-[9px] font-normal normal-case text-purple-400">({rankingsVintage})</span> : null}</th>,
         };
         if (headers[key]) return headers[key];
         if (customSource) return <th key={key} className={`px-3 sm:px-6 py-3 text-center text-xs font-medium text-zinc-400 uppercase tracking-wider ${fcBg}`}>{customSource.display_name}</th>;
@@ -400,6 +400,18 @@ export function TeamRosterTable({
                     {ranking ? (
                         <div className="space-y-1">
                             <div className="font-mono text-sm font-semibold">#{ranking.rank}</div>
+                            {ranking.notes && (() => {
+                                const tierMatch = ranking.notes.match(/Tier\s+(\d+)/);
+                                const msMatch = ranking.notes.match(/Market Score:\s*([\d.]+)/);
+                                if (!tierMatch && !msMatch) return null;
+                                return (
+                                    <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                                        {tierMatch && <span>T{tierMatch[1]}</span>}
+                                        {tierMatch && msMatch && <span> · </span>}
+                                        {msMatch && <span className={Number(msMatch[1]) >= 70 ? 'text-green-600 dark:text-green-400 font-medium' : ''}>{Number(msMatch[1]).toFixed(0)} MS</span>}
+                                    </div>
+                                );
+                            })()}
                             {ranking.signal && (
                                 <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded font-medium ${
                                     ranking.signal.includes('Super Buy') ? 'bg-green-600 text-white' :

@@ -29,7 +29,17 @@ export function ColumnPicker({ columns, visibleCols, columnOrder, onToggle, onRe
     useEffect(() => {
         if (open && buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
-            setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+            const dropdownHeight = Math.min(window.innerHeight * 0.7, 500);
+            const spaceBelow = window.innerHeight - rect.bottom - 16;
+            
+            if (spaceBelow >= dropdownHeight) {
+                // Enough space below — position dropdown below button
+                setPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+            } else {
+                // Not enough space — cap top so dropdown stays within viewport
+                const maxTop = window.innerHeight - dropdownHeight - 16;
+                setPos({ top: Math.max(16, Math.min(rect.bottom + 8, maxTop)), right: window.innerWidth - rect.right });
+            }
         }
     }, [open]);
 
@@ -74,7 +84,7 @@ export function ColumnPicker({ columns, visibleCols, columnOrder, onToggle, onRe
             {open && (
                 <>
                     <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-                    <div style={{ top: pos.top, right: pos.right }} className="fixed z-40 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl p-4 w-80 max-h-[70vh] overflow-y-auto">
+                    <div style={{ top: pos.top, right: pos.right, maxHeight: `calc(100vh - ${pos.top + 16}px)` }} className="fixed z-40 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl p-4 w-80 overflow-y-auto">
                         <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Columns</h3>
                         <p className="text-[10px] text-zinc-400 mb-3">Drag to reorder · Toggle to show/hide</p>
                         <div className="space-y-0.5">

@@ -2,7 +2,7 @@
 
 import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 
-export function TeamRosterComposition({ players, format }: { players: any[]; format: string }) {
+export function TeamRosterComposition({ players, format, customRankingsMap }: { players: any[]; format: string; customRankingsMap?: Map<string, any[]> }) {
     const rosterPlayers = players.filter(p => p.position !== 'PICK');
     if (rosterPlayers.length === 0) return null;
 
@@ -13,6 +13,7 @@ export function TeamRosterComposition({ players, format }: { players: any[]; for
             onPlayerClick={() => {}}
             title="Roster Composition"
             topN={30}
+            customRankingsMap={customRankingsMap}
         />
     );
 }

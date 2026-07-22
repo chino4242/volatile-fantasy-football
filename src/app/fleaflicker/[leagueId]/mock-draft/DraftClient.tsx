@@ -7,6 +7,8 @@ import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
 import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 import { useAuth } from '@/hooks/useUser';
+import { analyzeLeaguePostDraft } from '@/lib/post-draft-analysis';
+import type { PlayerForAnalysis } from '@/lib/post-draft-analysis';
 
 interface Player {
     id: string;
@@ -85,6 +87,7 @@ interface DraftClientProps {
     keeperCount?: number;
     mode?: 'mock' | 'live';
     defaultUserTeamId?: number;
+    customRankingsMap?: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]>;
 }
 
 const DEFAULT_ROUNDS = 5;
@@ -97,14 +100,15 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'fc_pos_rank', label: 'FC Pos Rank', defaultOn: true, group: 'fc' },
     { key: 'combined_value', label: 'Combined', defaultOn: false, group: 'fc' },
     { key: 'trend_30d', label: '30d Trend', defaultOn: false, group: 'fc' },
-    { key: 'trade_freq', label: 'Trade Freq', defaultOn: false, group: 'fc' },
     { key: 'ranks', label: 'Rank (Dyn / RD)', defaultOn: true, group: 'internal' },
     { key: 'pos_ranks', label: 'Pos (Dyn / RD)', defaultOn: true, group: 'internal' },
     { key: 'tiers', label: 'Tier (Dyn / RD)', defaultOn: true, group: 'internal' },
     { key: 'prospect', label: 'Prospect', defaultOn: true, group: 'prospect' },
+    { key: 'signal', label: 'LR Rank', defaultOn: true, group: 'prospect' },
+    { key: 'market_score_lr', label: 'Market Score', defaultOn: true, group: 'prospect' },
 ];
 
-export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock', defaultUserTeamId }: DraftClientProps) {
+export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock', defaultUserTeamId, customRankingsMap }: DraftClientProps) {
     const { sleeperUsername, fleaflickerUsername } = useAuth();
     const userId = platform === 'sleeper' ? sleeperUsername : fleaflickerUsername;
 
@@ -123,10 +127,16 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
     // Generate draft order from current year picks
     // Derive rounds from team draft picks, fallback to default
+    // Cap at total roster spots to avoid drafting more players than can fit
     const ROUNDS = useMemo(() => {
         const maxRound = Math.max(...teams.flatMap(t => t.draftPicks.map(p => p.round)), 0);
-        return maxRound > 0 ? maxRound : DEFAULT_ROUNDS;
-    }, [teams]);
+        const picksRounds = maxRound > 0 ? maxRound : DEFAULT_ROUNDS;
+        if (rosterSlots) {
+            const totalRosterSpots = rosterSlots.QB + rosterSlots.RB + rosterSlots.WR + rosterSlots.TE + rosterSlots.FLEX;
+            return Math.min(picksRounds, totalRosterSpots);
+        }
+        return picksRounds;
+    }, [teams, rosterSlots]);
 
     const draftOrder = useMemo(() => {
         const currentYear = new Date().getFullYear();
@@ -792,6 +802,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         pos_ranks: { className: combinedTh, sortKey: sf ? 'rank_sf_pos' : 'rank_1qb_pos', label: 'Pos Rank', title: vffTitle },
         tiers: { className: combinedTh, sortKey: sf ? 'rank_sf_tier' : 'rank_1qb_tier', label: 'Tier', title: vffTitle },
         prospect: { className: prospectTh, sortKey: 'zap_score', label: 'Prospect' },
+        signal: { className: prospectTh, sortKey: 'signal', label: 'LR Rank' },
+        market_score_lr: { className: prospectTh, sortKey: 'market_score_lr', label: 'Mkt Score' },
     };
 
     const renderHeader = (key: string) => {
@@ -849,6 +861,32 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                     <td key={key} className={prospectTdCls}>
                         {hasZap && <div className={`text-sm font-mono ${player.zap_stale ? 'text-zinc-400 italic' : 'text-emerald-700 dark:text-emerald-300'}`} title={player.zap_category || ''}>{player.zap_score!.toFixed(1)}</div>}
                         {hasRookie && <div className="text-[10px] text-zinc-500">{player.position}{player.rookie_pos_rank} · T{player.rookie_tier}</div>}
+                    </td>
+                );
+            }
+            case 'signal': {
+                const rankings = customRankingsMap?.[player.id];
+                if (!rankings || rankings.length === 0) return <td key={key} className={prospectTdCls}><span className="text-sm text-zinc-400">—</span></td>;
+                const signalColors: Record<string, string> = { 'Super Buy': 'bg-green-600 text-white', 'Buy': 'bg-green-500 text-white', 'Hold': 'bg-zinc-400 text-white', 'Sell': 'bg-red-500 text-white', 'Super Sell': 'bg-red-600 text-white' };
+                return (
+                    <td key={key} className={prospectTdCls}>
+                        {rankings.map((r, i) => (
+                            <div key={i} className="flex flex-col items-end gap-0.5">
+                                {r.rank && <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-300">#{r.rank}</span>}
+                                {r.signal && <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${signalColors[r.signal] || 'bg-zinc-600 text-white'}`}>{r.signal}</span>}
+                            </div>
+                        ))}
+                    </td>
+                );
+            }
+            case 'market_score_lr': {
+                const rankings = customRankingsMap?.[player.id];
+                const ms = rankings?.[0]?.marketScore;
+                if (!ms) return <td key={key} className={prospectTdCls}><span className="text-sm text-zinc-400">—</span></td>;
+                const color = ms >= 80 ? 'text-green-600 dark:text-green-400' : ms >= 60 ? 'text-emerald-600 dark:text-emerald-400' : ms >= 40 ? 'text-zinc-700 dark:text-zinc-300' : 'text-red-600 dark:text-red-400';
+                return (
+                    <td key={key} className={prospectTdCls}>
+                        <span className={`text-sm font-mono font-medium ${color}`}>{ms.toFixed(0)}</span>
                     </td>
                 );
             }
@@ -1152,6 +1190,30 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                 {(sf ? player.rank_sf_overall : player.rank_1qb_overall) && <span>VFF #{sf ? player.rank_sf_overall : player.rank_1qb_overall}</span>}
                                                 {player.redraft_rank_overall && <span className="text-amber-600 dark:text-amber-400">RD #{player.redraft_rank_overall}</span>}
                                             </div>
+                                            {/* Late Round Draft Guide data */}
+                                            {(() => {
+                                                const lr = customRankingsMap?.[player.id]?.find((r: any) => r.source?.toLowerCase().includes('late round'));
+                                                if (!lr) return null;
+                                                const tier = lr.tier || (lr.notes ? (() => { const m = lr.notes.match(/Tier\s+(\d+)/); return m ? parseInt(m[1]) : null; })() : null);
+                                                const ms = lr.marketScore || (lr.notes ? (() => { const m = lr.notes.match(/Market Score:\s*([\d.]+)/); return m ? parseFloat(m[1]) : null; })() : null);
+                                                return (
+                                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] mt-1">
+                                                        {lr.rank && <span className="font-medium text-emerald-700 dark:text-emerald-400">LR #{lr.rank}</span>}
+                                                        {tier && <span className="text-zinc-500">T{tier}</span>}
+                                                        {ms && <span className={`font-medium ${ms >= 70 ? 'text-green-600 dark:text-green-400' : ms >= 50 ? 'text-zinc-600 dark:text-zinc-400' : 'text-red-500'}`}>MS {ms.toFixed(0)}</span>}
+                                                        {lr.signal && (
+                                                            <span className={`px-1.5 py-0.5 rounded font-medium ${
+                                                                lr.signal.includes('Super Buy') ? 'bg-green-600 text-white' :
+                                                                lr.signal === 'Buy' ? 'bg-green-500 text-white' :
+                                                                lr.signal === 'Hold' ? 'bg-zinc-400 text-white' :
+                                                                lr.signal === 'Sell' ? 'bg-red-500 text-white' :
+                                                                lr.signal.includes('Super Sell') ? 'bg-red-600 text-white' :
+                                                                'bg-zinc-600 text-white'
+                                                            }`}>{lr.signal}</span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                             {player.zap_category && !player.zap_stale && <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1">{player.zap_category}{player.zap_score ? ` · ZAP ${player.zap_score.toFixed(1)}` : ''}</div>}
                                             {player.writeups && player.writeups.length > 0 && player.writeups[0].ai_summary && (
                                                 <div className="text-[10px] text-zinc-600 dark:text-zinc-400 mt-1 italic">{player.writeups[0].ai_summary}</div>
@@ -1676,6 +1738,88 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* Late Round Power Rankings */}
+                            {(() => {
+                                // Build full rosters (existing + drafted) for each team
+                                const teamsForAnalysis = activeTeams.map(team => {
+                                    const teamDraftedPicks = picks.filter(p => p.teamId === team.id && p.playerId);
+                                    const draftedPlayers = teamDraftedPicks.map(p => {
+                                        const fa = freeAgents.find(f => f.id === p.playerId) || draftedPlayerMap.current.get(p.playerId!);
+                                        if (!fa) return null;
+                                        return { id: fa.id, full_name: fa.full_name, position: fa.position, fc_value: fa.fc_value, years_exp: fa.years_exp, zap_score: fa.zap_score, zap_category: fa.zap_category } as PlayerForAnalysis;
+                                    }).filter(Boolean) as PlayerForAnalysis[];
+
+                                    const existingPlayers = team.players.map(p => ({
+                                        id: p.id, full_name: p.full_name, position: p.position, fc_value: p.fc_value, years_exp: p.years_exp, zap_score: p.zap_score, zap_category: p.zap_category,
+                                    } as PlayerForAnalysis));
+
+                                    return { id: team.id, name: team.name, players: [...existingPlayers, ...draftedPlayers] };
+                                });
+
+                                const analyses = analyzeLeaguePostDraft(teamsForAnalysis, customRankingsMap);
+                                const gradeColor2 = (g: string) => g.startsWith('A') ? 'text-green-600 dark:text-green-400' : g.startsWith('B') ? 'text-blue-600 dark:text-blue-400' : g.startsWith('C') ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400';
+                                const posGradeColor = (g: string) => g.startsWith('A') ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : g.startsWith('B') ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : g.startsWith('C') ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+
+                                return (
+                                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6">
+                                        <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-1">📋 Late Round Power Rankings</h3>
+                                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">Full roster evaluation based on Late Round Draft Guide tiers, Market Score, and strategic fit</p>
+                                        <div className="space-y-4">
+                                            {analyses.map(ta => (
+                                                <div key={ta.teamId} className={`border rounded-lg p-4 ${ta.teamId === userTeamId ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50/30 dark:bg-indigo-950/10' : 'border-zinc-200 dark:border-zinc-700'}`}>
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-sm font-bold text-zinc-500">#{ta.powerRank}</span>
+                                                                <span className="font-semibold text-zinc-900 dark:text-zinc-100">{ta.teamName}</span>
+                                                                {ta.teamId === userTeamId && <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-medium">YOU</span>}
+                                                            </div>
+                                                            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{ta.summary}</p>
+                                                        </div>
+                                                        <span className={`text-2xl font-bold ${gradeColor2(ta.overallGrade)}`}>{ta.overallGrade}</span>
+                                                    </div>
+
+                                                    {/* Position grades */}
+                                                    <div className="grid grid-cols-4 gap-2 mb-3">
+                                                        {ta.positionGrades.map(pg => (
+                                                            <div key={pg.position} className="text-center">
+                                                                <div className="text-[10px] font-bold text-zinc-400">{pg.position}</div>
+                                                                <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold ${posGradeColor(pg.grade)}`}>{pg.grade}</span>
+                                                                <div className="text-[9px] text-zinc-400 mt-0.5">{pg.tierBreakdown}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+
+                                                    {/* Strengths & Weaknesses */}
+                                                    {(ta.strengths.length > 0 || ta.weaknesses.length > 0) && (
+                                                        <div className="flex flex-col sm:flex-row gap-2 text-[11px]">
+                                                            {ta.strengths.length > 0 && (
+                                                                <div className="flex-1">
+                                                                    <span className="font-semibold text-green-600 dark:text-green-400">✓ </span>
+                                                                    {ta.strengths.slice(0, 2).join(' · ')}
+                                                                </div>
+                                                            )}
+                                                            {ta.weaknesses.length > 0 && (
+                                                                <div className="flex-1">
+                                                                    <span className="font-semibold text-red-500 dark:text-red-400">✗ </span>
+                                                                    {ta.weaknesses.slice(0, 2).join(' · ')}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Market Score + Elite count */}
+                                                    <div className="flex gap-3 mt-2 text-[10px] text-zinc-400">
+                                                        {ta.marketScoreAvg && <span>Avg Mkt Score: <span className={ta.marketScoreAvg >= 60 ? 'text-green-600 dark:text-green-400 font-medium' : ''}>{ta.marketScoreAvg.toFixed(0)}</span></span>}
+                                                        {ta.eliteCount > 0 && <span>Elite players (T1-5): <span className="font-medium text-zinc-600 dark:text-zinc-300">{ta.eliteCount}</span></span>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     );
                 })()}
@@ -1687,6 +1831,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             players={availablePlayers}
                             format={format}
                             onPlayerClick={setSelectedDraftPlayer}
+                            customRankingsMap={customRankingsMap}
                         />
                         {userTeamId !== null && (
                             <PositionScarcityChart
@@ -1696,6 +1841,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 title="My Roster"
                                 topN={30}
                                 emptyMessage="Draft players to build your roster"
+                                customRankingsMap={customRankingsMap}
                             />
                         )}
                     </div>
@@ -1765,8 +1911,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                             return true;
                                         })
                                         .sort((a, b) => {
-                                            let valA: any = a[sortColumn as keyof Player];
-                                            let valB: any = b[sortColumn as keyof Player];
+                                            let valA: any = sortColumn === 'signal' ? (customRankingsMap?.[a.id]?.[0]?.rank ?? null) : sortColumn === 'market_score_lr' ? (customRankingsMap?.[a.id]?.[0]?.marketScore ?? null) : a[sortColumn as keyof Player];
+                                            let valB: any = sortColumn === 'signal' ? (customRankingsMap?.[b.id]?.[0]?.rank ?? null) : sortColumn === 'market_score_lr' ? (customRankingsMap?.[b.id]?.[0]?.marketScore ?? null) : b[sortColumn as keyof Player];
                                             
                                             if (valA === null || valA === undefined) valA = sortDirection === 'desc' ? -Infinity : Infinity;
                                             if (valB === null || valB === undefined) valB = sortDirection === 'desc' ? -Infinity : Infinity;

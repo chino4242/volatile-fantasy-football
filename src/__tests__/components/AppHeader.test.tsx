@@ -10,17 +10,28 @@ vi.mock('@/hooks/useUser', () => ({
     }),
 }));
 
+// Mock next/image
+vi.mock('next/image', () => ({
+    default: (props: any) => <img {...props} />,
+}));
+
+// Mock InstallPWA
+vi.mock('@/components/InstallPWA', () => ({
+    InstallPWA: () => null,
+}));
+
 describe('AppHeader Component', () => {
     it('should render the logo and branding', () => {
         render(<AppHeader />);
 
-        // Check for the Logo icon based on the Lucide SVG element presence
-        expect(document.querySelector('svg.lucide-trophy')).toBeInTheDocument();
+        // Check for the logo image
+        const logo = document.querySelector('img[alt="VFF"]');
+        expect(logo).toBeInTheDocument();
 
         // Desktop Branding
         expect(screen.getByText('Volatile Fantasy Football')).toBeInTheDocument();
         // Mobile Branding
-        expect(screen.getByText('Volatile')).toBeInTheDocument();
+        expect(screen.getByText('VFF')).toBeInTheDocument();
     });
 
     it('should render navigation links', () => {

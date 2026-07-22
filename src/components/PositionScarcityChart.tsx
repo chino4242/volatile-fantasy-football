@@ -13,45 +13,65 @@ interface Props {
     title?: string;
     emptyMessage?: string;
     defaultCollapsed?: boolean;
+    customRankingsMap?: Map<string, any[]> | Record<string, any[]>;
 }
 
 type ViewMode = 'dynasty' | 'zap' | 'redraft';
 
 const TIER_BUCKETS = [
-    { label: 'T1-3', max: 3, bg: 'bg-emerald-500', hex: '#10b981' },
-    { label: 'T4-6', max: 6, bg: 'bg-sky-500', hex: '#0ea5e9' },
-    { label: 'T7-9', max: 9, bg: 'bg-violet-500', hex: '#8b5cf6' },
-    { label: 'T10-12', max: 12, bg: 'bg-yellow-400', hex: '#facc15' },
-    { label: 'T13-15', max: 15, bg: 'bg-orange-500', hex: '#f97316' },
-    { label: 'T16-18', max: 18, bg: 'bg-rose-500', hex: '#f43f5e' },
+    { label: 'T1-3', max: 3, bg: 'bg-green-500', hex: '#22c55e' },
+    { label: 'T4-6', max: 6, bg: 'bg-blue-500', hex: '#3b82f6' },
+    { label: 'T7-9', max: 9, bg: 'bg-purple-600', hex: '#9333ea' },
+    { label: 'T10-12', max: 12, bg: 'bg-amber-500', hex: '#f59e0b' },
+    { label: 'T13-15', max: 15, bg: 'bg-pink-500', hex: '#ec4899' },
+    { label: 'T16-18', max: 18, bg: 'bg-cyan-600', hex: '#0891b2' },
     { label: 'T19+', max: Infinity, bg: 'bg-zinc-400 dark:bg-zinc-600', hex: '#a1a1aa' },
 ] as const;
 
 const ZAP_BUCKETS: Record<string, { label: string; bg: string; hex: string }> = {
-    'Legendary Performer': { label: 'Legendary', bg: 'bg-purple-500', hex: '#a855f7' },
-    'Elite Producer': { label: 'Elite', bg: 'bg-emerald-500', hex: '#10b981' },
-    'Weekly Starter': { label: 'Starter', bg: 'bg-sky-500', hex: '#0ea5e9' },
-    'Flex Play': { label: 'Flex', bg: 'bg-yellow-400', hex: '#facc15' },
-    'Benchwarmer': { label: 'Bench', bg: 'bg-orange-500', hex: '#f97316' },
-    'Waiver Wire Add': { label: 'Waiver', bg: 'bg-rose-500', hex: '#f43f5e' },
+    'Legendary Performer': { label: 'Legendary', bg: 'bg-fuchsia-600', hex: '#c026d3' },
+    'Elite Producer': { label: 'Elite', bg: 'bg-green-500', hex: '#22c55e' },
+    'Weekly Starter': { label: 'Starter', bg: 'bg-blue-500', hex: '#3b82f6' },
+    'Flex Play': { label: 'Flex', bg: 'bg-amber-500', hex: '#f59e0b' },
+    'Benchwarmer': { label: 'Bench', bg: 'bg-pink-500', hex: '#ec4899' },
+    'Waiver Wire Add': { label: 'Waiver', bg: 'bg-cyan-600', hex: '#0891b2' },
     'Dart Throw': { label: 'Dart', bg: 'bg-zinc-400 dark:bg-zinc-600', hex: '#a1a1aa' },
 };
 const ZAP_DEFAULT = { label: 'No ZAP', bg: 'bg-zinc-300 dark:bg-zinc-700', hex: '#d4d4d8' };
 const ZAP_LEGEND = Object.values(ZAP_BUCKETS);
 
 const REDRAFT_BUCKETS = [
-    { label: 'T1-3', max: 3, bg: 'bg-emerald-400', hex: '#34d399' },
-    { label: 'T4-6', max: 6, bg: 'bg-cyan-500', hex: '#06b6d4' },
-    { label: 'T7-9', max: 9, bg: 'bg-amber-400', hex: '#fbbf24' },
-    { label: 'T10-12', max: 12, bg: 'bg-orange-500', hex: '#f97316' },
-    { label: 'T13-15', max: 15, bg: 'bg-rose-500', hex: '#f43f5e' },
-    { label: 'T16-18', max: 18, bg: 'bg-purple-500', hex: '#a855f7' },
-    { label: 'T19+', max: Infinity, bg: 'bg-zinc-400 dark:bg-zinc-600', hex: '#a1a1aa' },
+    { label: 'T1-5', max: 5, bg: 'bg-green-500', hex: '#22c55e' },
+    { label: 'T6-10', max: 10, bg: 'bg-blue-500', hex: '#3b82f6' },
+    { label: 'T11-15', max: 15, bg: 'bg-purple-600', hex: '#9333ea' },
+    { label: 'T16-20', max: 20, bg: 'bg-amber-500', hex: '#f59e0b' },
+    { label: 'T21-25', max: 25, bg: 'bg-pink-500', hex: '#ec4899' },
+    { label: 'T26-30', max: 30, bg: 'bg-cyan-600', hex: '#0891b2' },
+    { label: 'T31+', max: Infinity, bg: 'bg-zinc-400 dark:bg-zinc-600', hex: '#a1a1aa' },
 ] as const;
 
 function getRedraftBucket(tier: number | null | undefined) {
     if (!tier) return REDRAFT_BUCKETS[REDRAFT_BUCKETS.length - 1];
     return REDRAFT_BUCKETS.find(b => tier <= b.max) || REDRAFT_BUCKETS[REDRAFT_BUCKETS.length - 1];
+}
+
+function getLateRoundTier(playerId: string, rankingsMap?: Map<string, any[]> | Record<string, any[]>): number | null {
+    if (!rankingsMap) return null;
+    const rankings = rankingsMap instanceof Map ? rankingsMap.get(playerId) : rankingsMap[playerId];
+    if (!rankings || rankings.length === 0) return null;
+    // Find Late Round source and parse tier from notes
+    for (const r of rankings) {
+        const sourceName = r.source_name || r.source || '';
+        if (sourceName.toLowerCase().includes('late round')) {
+            if (r.notes) {
+                const tierMatch = r.notes.match(/Tier\s+(\d+)/);
+                if (tierMatch) return parseInt(tierMatch[1]);
+            }
+            // If no tier in notes but has a rank, estimate tier from rank (roughly 7 players per tier)
+            if (r.rank) return Math.ceil(r.rank / 7);
+        }
+    }
+    return null;
 }
 
 const POS_COLORS: Record<string, string> = {
@@ -74,7 +94,7 @@ const QUALITY_MAX_TIER = 9;
 
 export function PositionScarcityChart({
     players, format, onPlayerClick, topN = 15,
-    title = 'Position Scarcity', emptyMessage, defaultCollapsed = false,
+    title = 'Position Scarcity', emptyMessage, defaultCollapsed = false, customRankingsMap,
 }: Props) {
     const [tooltip, setTooltip] = useState<{ player: any; x: number; y: number } | null>(null);
     const [view, setView] = useState<ViewMode>('dynasty');
@@ -113,6 +133,7 @@ export function PositionScarcityChart({
             }).length;
             const segments = posPlayers.map(p => {
                 const dynastyTier = (sf ? p.rank_sf_tier : p.rank_1qb_tier) || null;
+                const lrTier = getLateRoundTier(p.id || p.sleeper_id, customRankingsMap);
                 return {
                     player: p,
                     value: p.fc_value || 0,
@@ -120,15 +141,15 @@ export function PositionScarcityChart({
                     dynastyTier,
                     zapBucket: getZapBucket(p.zap_category),
                     zapCategory: p.zap_category || null,
-                    redraftBucket: getRedraftBucket(p.redraft_rank_tier),
-                    redraftTier: p.redraft_rank_tier || null,
+                    redraftBucket: getRedraftBucket(lrTier || p.redraft_rank_tier),
+                    redraftTier: lrTier || p.redraft_rank_tier || null,
                 };
             });
             return { pos, segments, total, qualityCount, count: posPlayers.length };
         });
         const maxTotal = Math.max(...byPos.map(d => d.total), 1);
         return { byPos, maxTotal };
-    }, [players, format, topN]);
+    }, [players, format, topN, customRankingsMap]);
 
     const legend = view === 'dynasty' ? TIER_BUCKETS : view === 'redraft' ? REDRAFT_BUCKETS : ZAP_LEGEND;
     const hasPlayers = data.byPos.some(d => d.segments.length > 0);
@@ -158,7 +179,7 @@ export function PositionScarcityChart({
                             <button
                                 onClick={(e) => { e.stopPropagation(); setView('redraft'); }}
                                 className={`px-2 py-0.5 text-[10px] font-medium transition-colors ${view === 'redraft' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
-                            >Redraft</button>
+                            >Late Round</button>
                         </div>
                     )}
                 </div>
