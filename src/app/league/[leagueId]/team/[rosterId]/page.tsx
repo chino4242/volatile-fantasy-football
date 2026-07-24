@@ -5,7 +5,6 @@ import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/l
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { sql } from "drizzle-orm";
 import { eq, inArray } from "drizzle-orm";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import TeamRosterView from "./TeamRosterView";
 import { TeamRosterComposition } from "./TeamRosterComposition";
@@ -217,10 +216,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
             <div className="max-w-4xl mx-auto">
                 <div className="mb-6 sm:mb-8">
-                    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                        <Link href={`/league/${leagueId}?format=${format}`} className="text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300">
-                            ← Back to League
-                        </Link>
+                    <div className="flex items-center justify-end mb-4 flex-wrap gap-2">
                         <div className="flex items-center gap-3">
                             <TradeEvaluator
                                 myPlayers={allAssetsWithWriteups as any[]}
@@ -230,12 +226,6 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                                 currentRosterId={Number(rosterId)}
                                 scoringFormat={format}
                             />
-                            <Link
-                                href={`/league/${leagueId}/free-agents?format=${format}`}
-                                className="text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
-                            >
-                                Free Agents →
-                            </Link>
                         </div>
                     </div>
 

@@ -376,6 +376,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     ];
     const { visibleCols: visibleColumns, columnOrder, toggle: toggleCol, reorder, orderedVisible } = useColumnState(MOCK_DRAFT_COLUMNS, 'vff_mock_draft_columns');
     const [showTradeModal, setShowTradeModal] = useState(false);
+    const [draftBottomTab, setDraftBottomTab] = useState<'board' | 'roster'>('board');
 
     // Value mode: 0 = pure dynasty, 100 = pure redraft
     const [redraftWeight, setRedraftWeight] = useState(0);
@@ -1045,6 +1046,53 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                         </button>
                     </div>
                 </div>
+
+                {/* Sticky On-Deck Bar */}
+                {draftStarted && !isDraftComplete && userTeamId !== null && (
+                    <div className="sticky top-14 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 mb-4">
+                        <div className={`flex items-center justify-between px-4 py-2 rounded-lg text-sm ${
+                            isUserPick
+                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-900/50'
+                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                        }`}>
+                            <div className="flex items-center gap-3">
+                                {isUserPick ? (
+                                    <>
+                                        <span className="inline-flex items-center gap-1.5 font-bold">
+                                            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                                            YOUR PICK
+                                        </span>
+                                        <span className="text-indigo-100">
+                                            Round {currentPick?.round}, Pick {currentPick?.pick}
+                                        </span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="font-medium">{currentPick?.teamName}</span>
+                                        <span className="text-zinc-500 dark:text-zinc-400">
+                                            R{currentPick?.round}.{String(currentPick?.pick || 0).padStart(2, '0')}
+                                        </span>
+                                    </>
+                                )}
+                            </div>
+                            {!isUserPick && (() => {
+                                const nextIdx = picks.findIndex((p, i) => i > currentPickIndex && p.teamId === userTeamId && !p.playerId);
+                                if (nextIdx === -1) return <span className="text-xs text-zinc-400">No more picks</span>;
+                                const next = picks[nextIdx];
+                                const away = nextIdx - currentPickIndex;
+                                return (
+                                    <span className="text-xs font-medium">
+                                        You pick: <span className="text-indigo-600 dark:text-indigo-400">{next.round}.{String(next.pick).padStart(2, '0')}</span>
+                                        <span className="text-zinc-400 ml-1">({away} away)</span>
+                                    </span>
+                                );
+                            })()}
+                            {isUserPick && (
+                                <span className="text-xs text-indigo-100 font-medium">Select a player below</span>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Draft History */}
                 {!draftStarted && draftHistoryList.length > 0 && (
@@ -1824,8 +1872,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                     );
                 })()}
 
-                {/* Position Scarcity (always visible during draft) */}
-                {draftStarted && !isDraftComplete && (
+                {/* Position Scarcity (collapsed when it's your pick to reduce noise) */}
+                {draftStarted && !isDraftComplete && !isUserPick && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 mb-6">
                         <PositionScarcityChart
                             players={availablePlayers}
@@ -2038,10 +2086,28 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                     </div>
                 )}
 
-                {/* Draft Board + Roster Sidebar */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+                {/* Draft Board + Roster Sidebar (Tabbed) */}
+                {draftStarted && !isDraftComplete && (
+                <div className="mb-6">
+                    <div className="flex items-center gap-1 mb-3">
+                        <button
+                            onClick={() => setDraftBottomTab('board')}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${draftBottomTab === 'board' ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
+                        >
+                            Draft Board
+                        </button>
+                        <button
+                            onClick={() => setDraftBottomTab('roster')}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${draftBottomTab === 'roster' ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}
+                        >
+                            Your Roster
+                        </button>
+                    </div>
+
+                {draftBottomTab === 'board' && (
+                <div className="grid grid-cols-1 gap-4 sm:gap-6">
                     {/* Draft Board */}
-                    <div className="lg:col-span-2 bg-white dark:bg-zinc-900 rounded-xl shadow-lg overflow-hidden order-2 lg:order-1">
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg overflow-hidden">
                         <div className="overflow-x-auto">
                             {(() => {
                                 const numTeams = teams.length;
@@ -2105,9 +2171,14 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                         </div>
                     </div>
 
+                </div>
+                )}
+
+                {draftBottomTab === 'roster' && userTeamId !== null && draftStarted && (
+                    <div>
                     {/* Your Roster Sidebar */}
                     {userTeamId !== null && draftStarted && (
-                        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 order-1 lg:order-2">
+                        <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6">
                             <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-4">
                                 Your Roster
                             </h3>
@@ -2160,7 +2231,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             </div>
                         </div>
                     )}
+                    </div>
+                )}
                 </div>
+                )}
 
                 {/* Player Detail Modal */}
                 {selectedDraftPlayer && (

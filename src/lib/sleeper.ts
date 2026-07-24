@@ -128,6 +128,33 @@ export async function getCurrentSeasonLeagueId(leagueId: string): Promise<string
     return leagueId;
 }
 
+export interface SleeperLeagueInfo {
+    league_id: string;
+    name: string;
+    season: string;
+    status: string;
+    total_rosters: number;
+}
+
+export async function getLeagueInfo(leagueId: string): Promise<SleeperLeagueInfo> {
+    const cacheKey = `sleeper:league_info:${leagueId}`;
+    const cached = cache.get<SleeperLeagueInfo>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+
+    const res = await fetch(`${BASE_URL}/league/${leagueId}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error("Failed to fetch league info");
+    const data = await res.json();
+    const info: SleeperLeagueInfo = {
+        league_id: data.league_id,
+        name: data.name || `League ${leagueId}`,
+        season: data.season,
+        status: data.status,
+        total_rosters: data.total_rosters,
+    };
+    cache.set(cacheKey, info);
+    return info;
+}
+
 export function getPickFantasyCalcId(season: string, round: number): string {
     return `FP_${season}_${round}`;
 }

@@ -1,10 +1,8 @@
-import Link from "next/link";
 import { getFleaflickerLeague } from "@/lib/fleaflicker";
 import { db } from "@/db";
 import { players, playerValues, leagues } from "@/db/schema";
 import { inArray, eq } from "drizzle-orm";
 import { getPickFantasyCalcId } from "@/lib/sleeper";
-import { ChevronRight } from "lucide-react";
 import { LeagueTable } from "@/components/LeagueTable";
 import TradeFinderCard from "@/components/TradeFinderCard";
 import { RefreshButton } from "@/components/RefreshButton";
@@ -179,24 +177,6 @@ export default async function FleaflickerLeaguePage({
                         </div>
                         <div className="flex gap-2">
                             <RefreshButton leagueId={leagueId} platform="fleaflicker" />
-                            <Link
-                                href={`/fleaflicker/${leagueId}/free-agents?format=${format}`}
-                                className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-zinc-700 bg-white border border-zinc-300 rounded-lg hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700 dark:hover:bg-zinc-700 transition-colors shadow-sm"
-                            >
-                                View Free Agents
-                            </Link>
-                            <Link
-                                href={`/fleaflicker/${leagueId}/mock-draft?format=${format}${keeperCount ? `&keepers=${keeperCount}` : ''}`}
-                                className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
-                            >
-                                Mock Draft
-                            </Link>
-                            <Link
-                                href={`/fleaflicker/${leagueId}/live-draft?format=${format}${keeperCount ? `&keepers=${keeperCount}` : ''}`}
-                                className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors shadow-sm"
-                            >
-                                Live Draft
-                            </Link>
                         </div>
                     </div>
 

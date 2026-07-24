@@ -67,14 +67,14 @@ interface ColDef {
 
 const BASE_COLUMNS: ColDef[] = [
     { key: 'market_value', label: 'Market Value', description: 'Dynasty trade value from FantasyCalc (crowd-sourced market consensus)', defaultOn: true, group: 'core' },
-    { key: 'fc_rank', label: 'FC Overall', description: 'Overall dynasty rank from FantasyCalc (market consensus)', defaultOn: true, group: 'fc' },
-    { key: 'fc_pos_rank', label: 'FC Pos Rank', description: 'Position rank from FantasyCalc (e.g. RB5) based on market consensus', defaultOn: true, group: 'fc' },
+    { key: 'fc_rank', label: 'FC Overall', description: 'Overall dynasty rank from FantasyCalc (market consensus)', defaultOn: false, group: 'fc' },
+    { key: 'fc_pos_rank', label: 'FC Pos Rank', description: 'Position rank from FantasyCalc (e.g. RB5) based on market consensus', defaultOn: false, group: 'fc' },
     { key: 'combined_value', label: 'Combined', description: 'Dynasty + redraft combined value from FantasyCalc', defaultOn: false, group: 'fc' },
-    { key: 'trend_30d', label: '30d Trend', description: 'Market value change over last 30 days (from FantasyCalc)', defaultOn: true, group: 'fc' },
+    { key: 'trend_30d', label: '30d Trend', description: 'Market value change over last 30 days (from FantasyCalc)', defaultOn: false, group: 'fc' },
     { key: 'trade_freq', label: 'Trade Freq', description: 'How often this player is traded on FantasyCalc (liquidity indicator)', defaultOn: false, group: 'fc' },
-    { key: 'internal_rank', label: 'Rank (Dyn / RD)', description: 'VFF proprietary overall rank — dynasty (purple) and redraft (amber)', defaultOn: true, group: 'internal' },
-    { key: 'internal_pos', label: 'Pos (Dyn / RD)', description: 'VFF proprietary position rank — dynasty (purple) and redraft (amber)', defaultOn: true, group: 'internal' },
-    { key: 'tier', label: 'Tier (Dyn / RD)', description: 'VFF proprietary tier grouping — dynasty (purple) and redraft (amber)', defaultOn: true, group: 'internal' },
+    { key: 'internal_rank', label: 'Rank (Dyn / RD)', description: 'VFF proprietary overall rank — dynasty (purple) and redraft (amber)', defaultOn: false, group: 'internal' },
+    { key: 'internal_pos', label: 'Pos (Dyn / RD)', description: 'VFF proprietary position rank — dynasty (purple) and redraft (amber)', defaultOn: false, group: 'internal' },
+    { key: 'tier', label: 'Tier (Dyn / RD)', description: 'VFF proprietary tier grouping — dynasty (purple) and redraft (amber)', defaultOn: false, group: 'internal' },
     { key: 'value_gap', label: 'Value Gap', description: 'BUY/SELL signal: FC market rank minus VFF rank. Positive = market undervalues (BUY)', defaultOn: true, group: 'internal' },
 ];
 
@@ -128,8 +128,11 @@ const getTierColorClass = (tier: number | null) => {
 
 const getPositionBgClass = (position: string | null) => {
     const colors: Record<string, string> = {
-        QB: 'bg-[#9de89f]/30', RB: 'bg-[#ffadad]/30',
-        WR: 'bg-[#9bf6ff]/30', TE: 'bg-[#ffd6a5]/30', PICK: 'bg-[#6fffe9]/30',
+        QB: 'border-l-4 border-l-green-400 dark:border-l-green-500', 
+        RB: 'border-l-4 border-l-blue-400 dark:border-l-blue-500',
+        WR: 'border-l-4 border-l-red-400 dark:border-l-red-500', 
+        TE: 'border-l-4 border-l-orange-400 dark:border-l-orange-500', 
+        PICK: 'border-l-4 border-l-zinc-300 dark:border-l-zinc-600',
     };
     return colors[position || ''] || '';
 };

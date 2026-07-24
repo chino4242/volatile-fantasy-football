@@ -6,15 +6,15 @@ import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
 
 const COLUMNS: ColumnDef[] = [
-    { key: 'fc_rank', label: 'FC Overall', defaultOn: true, group: 'fc' },
+    { key: 'fc_rank', label: 'FC Overall', defaultOn: false, group: 'fc' },
     { key: 'fc_pos_rank', label: 'FC Pos Rank', defaultOn: false, group: 'fc' },
     { key: 'combined_value', label: 'Combined', defaultOn: false, group: 'fc' },
     { key: 'trend_30d', label: '30d Trend', defaultOn: false, group: 'fc' },
     { key: 'trade_freq', label: 'Trade Freq', defaultOn: false, group: 'fc' },
-    { key: 'internal_rank', label: 'Rank (Dyn / RD)', defaultOn: true, group: 'internal' },
+    { key: 'internal_rank', label: 'Rank (Dyn / RD)', defaultOn: false, group: 'internal' },
     { key: 'internal_pos', label: 'Pos (Dyn / RD)', defaultOn: false, group: 'internal' },
     { key: 'tier', label: 'Tier (Dyn / RD)', defaultOn: false, group: 'internal' },
-    { key: 'value_gap', label: 'Signal', defaultOn: false, group: 'internal' },
+    { key: 'value_gap', label: 'Signal', defaultOn: true, group: 'internal' },
 ];
 
 function PlayerAvatar({ sleeperId, name }: { sleeperId: string; name: string }) {
@@ -106,6 +106,16 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
         return sortDirection === 'desc' ? (valB as number) - (valA as number) : (valA as number) - (valB as number);
     });
 
+    const getPositionBorderClass = (pos: string | null) => {
+        switch (pos) {
+            case 'QB': return 'border-l-4 border-l-green-400 dark:border-l-green-500';
+            case 'RB': return 'border-l-4 border-l-blue-400 dark:border-l-blue-500';
+            case 'WR': return 'border-l-4 border-l-red-400 dark:border-l-red-500';
+            case 'TE': return 'border-l-4 border-l-orange-400 dark:border-l-orange-500';
+            default: return 'border-l-4 border-l-zinc-200 dark:border-l-zinc-700';
+        }
+    };
+
     const posBadgeClass = (pos: string | null) => {
         switch (pos) {
             case 'QB': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
@@ -183,7 +193,79 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
                 <ColumnPicker columns={COLUMNS} visibleCols={visibleCols} columnOrder={columnOrder} onToggle={toggleCol} onReorder={reorder} groups={COLUMN_GROUPS} />
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Mobile Card Layout */}
+            <div className="sm:hidden divide-y divide-zinc-100 dark:divide-zinc-800">
+                {sortedPlayers.map((player, index) => {
+                    const valueGap = getValueGapLabel(player);
+                    const hasContent = player.zap_analysis || (player.writeups && player.writeups.length > 0);
+                    return (
+                        <div
+                            key={player.sleeper_id}
+                            className={`px-4 py-3 active:bg-zinc-50 dark:active:bg-zinc-800/50 ${getPositionBorderClass(player.position)}`}
+                            onClick={() => { if (hasContent) { setExpandedPlayer(expandedPlayer === player.sleeper_id ? null : player.sleeper_id); setActiveTab('late_round'); } }}
+                        >
+                            <div className="flex items-center gap-3">
+                                <PlayerAvatar sleeperId={player.sleeper_id} name={player.full_name || ''} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{player.full_name}</span>
+                                            {hasContent && <span className="text-[9px] text-zinc-400">{expandedPlayer === player.sleeper_id ? '▲' : '▼'}</span>}
+                                        </div>
+                                        <span className="text-sm font-mono font-bold text-green-600 dark:text-green-400 flex-shrink-0 ml-2">
+                                            {player.fc_value?.toLocaleString() || '0'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between mt-0.5">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${posBadgeClass(player.position)}`}>{player.position}</span>
+                                            <span className="text-xs text-zinc-500">{player.team || 'FA'}</span>
+                                        </div>
+                                        {valueGap && (
+                                            <span className={`text-[10px] font-bold ${valueGap.color}`}>{valueGap.label}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Expanded writeup content */}
+                            {expandedPlayer === player.sleeper_id && hasContent && (() => {
+                                const sources: { key: string; label: string; content: React.ReactNode }[] = [];
+                                if (player.zap_analysis) sources.push({ key: 'late_round', label: 'Late Round', content: (
+                                    <>
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <span className="text-xs font-medium text-zinc-500">{player.zap_category}{player.zap_score ? ` · ZAP: ${player.zap_score.toFixed(1)}` : ''}</span>
+                                            {player.zap_comps && <span className="text-xs text-zinc-400">Comps: {player.zap_comps}</span>}
+                                        </div>
+                                        <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{player.zap_analysis}</p>
+                                    </>
+                                )});
+                                player.writeups?.forEach(w => sources.push({ key: w.source, label: w.source.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), content: (
+                                    <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed">{w.analysis_text}</p>
+                                )}));
+                                const active = sources.find(s => s.key === activeTab) || sources[0];
+                                return (
+                                    <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                                        {sources.length > 1 && (
+                                            <div className="flex gap-1 mb-3">
+                                                {sources.map(s => (
+                                                    <button key={s.key} onClick={(e) => { e.stopPropagation(); setActiveTab(s.key); }} className={`px-2 py-1 text-[11px] font-medium rounded ${active.key === s.key ? 'bg-indigo-600 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'}`}>{s.label}</button>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {active.content}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    );
+                })}
+                {sortedPlayers.length === 0 && (
+                    <div className="px-4 py-8 text-center text-sm text-zinc-500">No available players found.</div>
+                )}
+            </div>
+
+            {/* Desktop Table Layout */}
+            <div className="hidden sm:block overflow-x-auto">
                 <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                     <thead className="bg-zinc-50 dark:bg-zinc-950/50 select-none">
                         <tr>
@@ -199,7 +281,7 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
                             const hasContent = player.zap_analysis || (player.writeups && player.writeups.length > 0);
                             return (
                             <React.Fragment key={player.sleeper_id}>
-                            <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                            <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBorderClass(player.position)}`}>
                                 <td className="px-3 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-zinc-400 dark:text-zinc-500 font-mono">{index + 1}</td>
                                 <td className="px-3 py-3 sm:py-4 whitespace-nowrap">
                                     <div className="flex items-center">

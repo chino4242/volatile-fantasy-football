@@ -1,7 +1,7 @@
 'use client';
 
 import Link from "next/link";
-import { LogOut, Loader2, Plus, X } from "lucide-react";
+import { LogOut, Loader2, Plus, X, Settings } from "lucide-react";
 import { useAuth } from "@/hooks/useUser";
 import { useState, useEffect } from "react";
 import { InstallBanner } from "@/components/InstallBanner";
@@ -50,6 +50,9 @@ export default function Home() {
   const [addLeagueFormat, setAddLeagueFormat] = useState<'1qb' | 'sf'>('1qb');
   const [isAddingLeague, setIsAddingLeague] = useState(false);
   const [addLeagueError, setAddLeagueError] = useState('');
+
+  // Settings toggle per league card
+  const [expandedSettings, setExpandedSettings] = useState<Set<string>>(new Set());
 
   // Fetch Sleeper leagues
   useEffect(() => {
@@ -287,18 +290,37 @@ export default function Home() {
                       }
                       return (
                         <div key={league.league_id} className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex flex-col gap-3">
-                          <Link href={`/league/${league.league_id}?${params.toString()}`}
-                            className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all flex items-center gap-3 group -m-5 p-5 rounded-2xl">
-                            {league.avatar ? (
-                              <img src={`https://sleepercdn.com/avatars/thumbs/${league.avatar}`} className="w-10 h-10 rounded-full bg-zinc-100 object-cover flex-shrink-0" alt="" />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-bold text-zinc-400 flex-shrink-0">{league.name[0]}</div>
-                            )}
-                            <div className="min-w-0">
-                              <h4 className="font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{league.name}</h4>
-                              <p className="text-xs text-zinc-500">Dynasty · {league.status === 'in_season' ? 'Active' : 'Off-season'}</p>
-                            </div>
-                          </Link>
+                          <div className="flex items-center gap-3">
+                            <Link href={`/league/${league.league_id}?${params.toString()}`}
+                              className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all flex items-center gap-3 group flex-1 min-w-0 -m-2 p-2 rounded-xl">
+                              {league.avatar ? (
+                                <img src={`https://sleepercdn.com/avatars/thumbs/${league.avatar}`} className="w-10 h-10 rounded-full bg-zinc-100 object-cover flex-shrink-0" alt="" />
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center font-bold text-zinc-400 flex-shrink-0">{league.name[0]}</div>
+                              )}
+                              <div className="min-w-0">
+                                <h4 className="font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">{league.name}</h4>
+                                <p className="text-xs text-zinc-500">
+                                  {(leagueTypes[league.league_id] || 'Dynasty').charAt(0).toUpperCase() + (leagueTypes[league.league_id] || 'dynasty').slice(1)}
+                                  {' · '}
+                                  {(sleeperLeagueFormats[league.league_id] || '1qb').toUpperCase()}
+                                  {leagueTypes[league.league_id] === 'keeper' && ` · ${keeperCounts[league.league_id] || 3} keepers`}
+                                </p>
+                              </div>
+                            </Link>
+                            <button
+                              onClick={() => setExpandedSettings(prev => {
+                                const next = new Set(prev);
+                                next.has(league.league_id) ? next.delete(league.league_id) : next.add(league.league_id);
+                                return next;
+                              })}
+                              className={`flex-shrink-0 p-2 rounded-lg transition-colors ${expandedSettings.has(league.league_id) ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300' : 'text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'}`}
+                              title="League settings"
+                            >
+                              <Settings className="w-4 h-4" />
+                            </button>
+                          </div>
+                          {expandedSettings.has(league.league_id) && (
                           <div className="flex flex-col gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                             {/* League Type */}
                             <div className="flex gap-2 items-center">
@@ -375,6 +397,7 @@ export default function Home() {
                               </button>
                             </div>
                           </div>
+                          )}
                         </div>
                       );
                     })}
@@ -408,8 +431,24 @@ export default function Home() {
                               className="font-semibold text-zinc-900 dark:text-zinc-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors truncate block">
                               {league.name}
                             </Link>
-                            <p className="text-xs text-zinc-500">Fleaflicker · #{league.id}</p>
+                            <p className="text-xs text-zinc-500">
+                              {(leagueTypes[league.id] || 'Dynasty').charAt(0).toUpperCase() + (leagueTypes[league.id] || 'dynasty').slice(1)}
+                              {' · '}
+                              {(fleaflickerLeagueFormats[league.id] || '1qb').toUpperCase()}
+                              {leagueTypes[league.id] === 'keeper' && ` · ${keeperCounts[league.id] || 3} keepers`}
+                            </p>
                           </div>
+                          <button
+                            onClick={() => setExpandedSettings(prev => {
+                              const next = new Set(prev);
+                              next.has(league.id) ? next.delete(league.id) : next.add(league.id);
+                              return next;
+                            })}
+                            className={`flex-shrink-0 p-2 rounded-lg transition-colors ${expandedSettings.has(league.id) ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300' : 'text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300'}`}
+                            title="League settings"
+                          >
+                            <Settings className="w-4 h-4" />
+                          </button>
                           <button
                             onClick={() => removeFleaflickerLeague(league.id)}
                             className="text-zinc-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 flex-shrink-0"
@@ -418,6 +457,7 @@ export default function Home() {
                             <X className="w-4 h-4" />
                           </button>
                         </div>
+                        {expandedSettings.has(league.id) && (
                         <div className="flex flex-col gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                           {/* League Type */}
                           <div className="flex gap-2 items-center">
@@ -474,6 +514,7 @@ export default function Home() {
                             </button>
                           </div>
                         </div>
+                        )}
                       </div>
                     );
                   })}

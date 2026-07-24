@@ -146,6 +146,29 @@ export async function getFleaflickerTeamPicks(leagueId: string, teamId: number):
     }
 }
 
+export interface FleaflickerLeagueInfo {
+    id: string;
+    name: string;
+}
+
+export async function getFleaflickerLeagueInfo(leagueId: string): Promise<FleaflickerLeagueInfo> {
+    const cacheKey = `fleaflicker:league_info:${leagueId}`;
+    const cached = cache.get<FleaflickerLeagueInfo>(cacheKey, TTL.FLEAFLICKER_LEAGUE);
+    if (cached) return cached;
+
+    const res = await fetch(`${BASE_URL}/FetchLeagueStandings?sport=NFL&league_id=${leagueId}`, { cache: 'no-store' });
+    if (!res.ok) {
+        return { id: leagueId, name: `League ${leagueId}` };
+    }
+    const data = await res.json();
+    const info: FleaflickerLeagueInfo = {
+        id: String(data.league?.id ?? leagueId),
+        name: data.league?.name ?? `League ${leagueId}`,
+    };
+    cache.set(cacheKey, info);
+    return info;
+}
+
 export interface RosterSlots { QB: number; RB: number; WR: number; TE: number; FLEX: number }
 
 export async function getFleaflickerRosterSlots(leagueId: string): Promise<RosterSlots> {

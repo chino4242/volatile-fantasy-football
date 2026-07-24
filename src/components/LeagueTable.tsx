@@ -73,7 +73,77 @@ export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: 
 
     return (
         <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden">
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
+            {/* Mobile Card Layout */}
+            <div className="sm:hidden divide-y divide-zinc-100 dark:divide-zinc-800">
+                {sortedTeams.map((team, idx) => {
+                    const total = team.qbValue + team.rbValue + team.wrValue + team.teValue + team.pickValue;
+                    const pctQB = total > 0 ? (team.qbValue / total) * 100 : 0;
+                    const pctRB = total > 0 ? (team.rbValue / total) * 100 : 0;
+                    const pctWR = total > 0 ? (team.wrValue / total) * 100 : 0;
+                    const pctTE = total > 0 ? (team.teValue / total) * 100 : 0;
+                    const pctPick = total > 0 ? (team.pickValue / total) * 100 : 0;
+                    return (
+                        <Link
+                            key={team.id}
+                            href={getTeamLink(team.id)}
+                            className="flex items-center gap-3 px-4 py-3 active:bg-zinc-50 dark:active:bg-zinc-800/50 transition-colors"
+                        >
+                            {/* Rank */}
+                            <div className="text-xs font-mono text-zinc-400 w-6 text-center flex-shrink-0">
+                                {idx + 1}
+                            </div>
+                            {/* Avatar */}
+                            <div className="flex-shrink-0">
+                                {platform === 'sleeper' ? (
+                                    team.ownerAvatar ? (
+                                        <img className="h-9 w-9 rounded-full bg-zinc-100" src={`https://sleepercdn.com/avatars/${team.ownerAvatar}`} alt="" />
+                                    ) : (
+                                        <div className="h-9 w-9 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 text-xs font-bold">
+                                            {team.ownerName.charAt(0).toUpperCase()}
+                                        </div>
+                                    )
+                                ) : (
+                                    <div className="h-9 w-9 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 text-xs font-bold">
+                                        {team.ownerName.charAt(0).toUpperCase()}
+                                    </div>
+                                )}
+                            </div>
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                                        {platform === 'fleaflicker' ? team.name : team.ownerName}
+                                    </span>
+                                    <span className="text-sm font-mono font-bold text-green-600 dark:text-green-400 flex-shrink-0 ml-2">
+                                        {team.totalValue.toLocaleString()}
+                                    </span>
+                                </div>
+                                {/* Position mini-bar */}
+                                <div className="flex h-1.5 rounded-full overflow-hidden mt-1.5 bg-zinc-100 dark:bg-zinc-800">
+                                    <div className="bg-green-400 dark:bg-green-500" style={{ width: `${pctQB}%` }} title={`QB: ${team.qbValue.toLocaleString()}`} />
+                                    <div className="bg-blue-400 dark:bg-blue-500" style={{ width: `${pctRB}%` }} title={`RB: ${team.rbValue.toLocaleString()}`} />
+                                    <div className="bg-red-400 dark:bg-red-500" style={{ width: `${pctWR}%` }} title={`WR: ${team.wrValue.toLocaleString()}`} />
+                                    <div className="bg-orange-400 dark:bg-orange-500" style={{ width: `${pctTE}%` }} title={`TE: ${team.teValue.toLocaleString()}`} />
+                                    <div className="bg-zinc-300 dark:bg-zinc-600" style={{ width: `${pctPick}%` }} title={`Picks: ${team.pickValue.toLocaleString()}`} />
+                                </div>
+                                {/* Position legend */}
+                                <div className="flex gap-2 mt-1 text-[9px] text-zinc-400">
+                                    <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-green-400" />QB</span>
+                                    <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" />RB</span>
+                                    <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-red-400" />WR</span>
+                                    <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-orange-400" />TE</span>
+                                    <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-600" />Picks</span>
+                                </div>
+                            </div>
+                            {/* Chevron */}
+                            <ChevronRight className="h-4 w-4 text-zinc-300 dark:text-zinc-600 flex-shrink-0" />
+                        </Link>
+                    );
+                })}
+            </div>
+
+            {/* Desktop Table Layout */}
+            <div className="hidden sm:block overflow-x-auto">
                 <div className="inline-block min-w-full align-middle">
                     <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                         <thead className="bg-zinc-50 dark:bg-zinc-950/50 select-none">

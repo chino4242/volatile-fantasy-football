@@ -44,12 +44,12 @@ const SIGNAL_FILTERS: { label: SignalFilter; activeColor: string }[] = [
 
 const COLUMNS: ColumnDef[] = [
     { key: 'market_value', label: 'Market Value', defaultOn: true, group: 'core' },
-    { key: 'fc_rank', label: 'FC Overall', defaultOn: true, group: 'fc' },
+    { key: 'fc_rank', label: 'FC Overall', defaultOn: false, group: 'fc' },
     { key: 'fc_pos_rank', label: 'FC Pos Rank', defaultOn: false, group: 'fc' },
     { key: 'combined_value', label: 'Combined', defaultOn: false, group: 'fc' },
     { key: 'trend_30d', label: '30d Trend', defaultOn: false, group: 'fc' },
     { key: 'trade_freq', label: 'Trade Freq', defaultOn: false, group: 'fc' },
-    { key: 'internal_rank', label: 'Rank (Dyn / RD)', defaultOn: true, group: 'internal' },
+    { key: 'internal_rank', label: 'Rank (Dyn / RD)', defaultOn: false, group: 'internal' },
     { key: 'internal_pos', label: 'Pos (Dyn / RD)', defaultOn: false, group: 'internal' },
     { key: 'tier', label: 'Tier (Dyn / RD)', defaultOn: false, group: 'internal' },
     { key: 'value_gap', label: 'Signal', defaultOn: true, group: 'internal' },
@@ -74,6 +74,17 @@ const getValueGapLabel = (gap: number | null) => {
 export function PlayersTable({ players, format, rankingsVintage }: PlayersTableProps) {
     const [activePositions, setActivePositions] = useState<Set<string>>(new Set(['QB', 'RB', 'WR', 'TE']));
     const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
+
+    const getPositionBorderClass = (pos: string | null) => {
+        switch (pos) {
+            case 'QB': return 'border-l-4 border-l-green-400 dark:border-l-green-500';
+            case 'RB': return 'border-l-4 border-l-blue-400 dark:border-l-blue-500';
+            case 'WR': return 'border-l-4 border-l-red-400 dark:border-l-red-500';
+            case 'TE': return 'border-l-4 border-l-orange-400 dark:border-l-orange-500';
+            case 'PICK': return 'border-l-4 border-l-zinc-300 dark:border-l-zinc-600';
+            default: return 'border-l-4 border-l-zinc-200 dark:border-l-zinc-700';
+        }
+    };
 
     const vffLabel = rankingsVintage ? `VFF Rankings (${rankingsVintage})` : 'VFF Rankings';
     const COLUMN_GROUPS = [
@@ -203,7 +214,7 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
                         </thead>
                         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                             {filteredPlayers.map((player, index) => (
-                                <tr key={player.sleeper_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                                <tr key={player.sleeper_id} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBorderClass(player.position)}`}>
                                     <td className="px-3 py-4 whitespace-nowrap text-sm text-zinc-400 dark:text-zinc-500 font-mono">{index + 1}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-zinc-900 dark:text-zinc-100">{player.full_name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400">{player.position}</td>
