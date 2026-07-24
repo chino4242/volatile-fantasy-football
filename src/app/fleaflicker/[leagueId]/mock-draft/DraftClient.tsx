@@ -779,25 +779,25 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
     const sf = format === 'sf';
     const coreTh = "px-2 sm:px-4 py-2 sm:py-3 text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors";
-    const fcTh = "hidden md:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors";
-    const vffTh = "hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors";
+    const fcTh = "px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-blue-50/50 dark:bg-blue-950/20 cursor-pointer group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors";
+    const vffTh = "px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors";
     const vffTitle = rankingsVintage ? `VFF Rankings from ${rankingsVintage}` : undefined;
 
-    const redraftTh = "hidden lg:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-amber-50/50 dark:bg-amber-950/20 cursor-pointer group hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors";
+    const redraftTh = "px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-amber-50/50 dark:bg-amber-950/20 cursor-pointer group hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors";
     const redraftTitle = redraftVintage ? `Redraft Rankings from ${redraftVintage}` : undefined;
 
-    const combinedTh = "hidden md:table-cell px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors";
-    const prospectTh = `${fcTh.replace('hidden md:table-cell', 'hidden sm:table-cell').replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`;
+    const combinedTh = "px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase bg-purple-50/50 dark:bg-purple-950/20 cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors";
+    const prospectTh = `${fcTh.replace('bg-blue-50/50 dark:bg-blue-950/20', 'bg-emerald-50/50 dark:bg-emerald-950/20').replace('hover:bg-blue-100/50 dark:hover:bg-blue-900/30', 'hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30')}`;
 
     const headerMap: Record<string, { className: string; sortKey: string; label: string; title?: string }> = {
         position: { className: `${coreTh} text-left`, sortKey: 'position', label: 'Pos' },
-        team: { className: `${coreTh} hidden sm:table-cell text-left`, sortKey: 'team', label: 'Team' },
+        team: { className: `${coreTh} text-left`, sortKey: 'team', label: 'Team' },
         market_value: { className: `${coreTh} text-right`, sortKey: 'fc_value', label: 'Value' },
         fc_rank: { className: fcTh, sortKey: sf ? 'fc_rank_sf' : 'fc_rank_1qb', label: 'FC Rank' },
         fc_pos_rank: { className: fcTh, sortKey: sf ? 'fc_position_rank_sf' : 'fc_position_rank_1qb', label: 'FC Pos' },
-        combined_value: { className: `hidden lg:table-cell ${fcTh.replace('hidden md:table-cell ', '')}`, sortKey: 'fc_combined_value', label: 'Combined' },
-        trend_30d: { className: `hidden lg:table-cell ${fcTh.replace('hidden md:table-cell ', '')}`, sortKey: 'fc_trend_30_day', label: '30d' },
-        trade_freq: { className: `hidden lg:table-cell ${fcTh.replace('hidden md:table-cell ', '')}`, sortKey: 'fc_trade_frequency', label: 'Traded' },
+        combined_value: { className: `${fcTh}`, sortKey: 'fc_combined_value', label: 'Combined' },
+        trend_30d: { className: `${fcTh}`, sortKey: 'fc_trend_30_day', label: '30d' },
+        trade_freq: { className: `${fcTh}`, sortKey: 'fc_trade_frequency', label: 'Traded' },
         ranks: { className: combinedTh, sortKey: sf ? 'rank_sf_overall' : 'rank_1qb_overall', label: 'Rank', title: vffTitle },
         pos_ranks: { className: combinedTh, sortKey: sf ? 'rank_sf_pos' : 'rank_1qb_pos', label: 'Pos Rank', title: vffTitle },
         tiers: { className: combinedTh, sortKey: sf ? 'rank_sf_tier' : 'rank_1qb_tier', label: 'Tier', title: vffTitle },
@@ -812,11 +812,11 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         return <th key={key} className={h.className} onClick={() => handleSort(h.sortKey)} title={h.title}>{h.label} <SortIcon column={h.sortKey} /></th>;
     };
 
-    const fcTd = "hidden md:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20";
-    const vffTd = "hidden lg:table-cell px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20";
+    const fcTd = "px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-blue-50/50 dark:bg-blue-950/20";
+    const vffTd = "px-4 py-3 text-sm text-right text-zinc-700 dark:text-zinc-300 bg-purple-50/50 dark:bg-purple-950/20";
 
-    const combinedTd = "hidden md:table-cell px-4 py-2 text-right bg-purple-50/50 dark:bg-purple-950/20";
-    const prospectTdCls = "hidden sm:table-cell px-4 py-2 text-right bg-emerald-50/50 dark:bg-emerald-950/20";
+    const combinedTd = "px-4 py-2 text-right bg-purple-50/50 dark:bg-purple-950/20";
+    const prospectTdCls = "px-4 py-2 text-right bg-emerald-50/50 dark:bg-emerald-950/20";
 
     const renderCell = (key: string, player: Player) => {
         const dynRank = sf ? player.rank_sf_overall : player.rank_1qb_overall;
@@ -828,13 +828,13 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
         switch (key) {
             case 'position': return <td key={key} className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">{player.position}</td>;
-            case 'team': return <td key={key} className="hidden sm:table-cell px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">{player.team || '—'}</td>;
+            case 'team': return <td key={key} className="px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">{player.team || '—'}</td>;
             case 'market_value': return <td key={key} className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-right text-zinc-900 dark:text-zinc-100">{player.fc_value?.toFixed(0) || '—'}</td>;
             case 'fc_rank': return <td key={key} className={fcTd}>{(sf ? player.fc_rank_sf : player.fc_rank_1qb) || '—'}</td>;
             case 'fc_pos_rank': return <td key={key} className={fcTd}>{player.position}{(sf ? player.fc_position_rank_sf : player.fc_position_rank_1qb) || '—'}</td>;
-            case 'combined_value': return <td key={key} className={`${fcTd} hidden lg:table-cell`}>{player.fc_combined_value?.toFixed(0) || '—'}</td>;
-            case 'trend_30d': return <td key={key} className="hidden lg:table-cell px-4 py-3 text-sm text-right bg-blue-50/50 dark:bg-blue-950/20">{player.fc_trend_30_day ? <span className={player.fc_trend_30_day > 0 ? 'text-green-600 dark:text-green-400' : player.fc_trend_30_day < 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-500'}>{player.fc_trend_30_day > 0 ? '+' : ''}{player.fc_trend_30_day}</span> : '—'}</td>;
-            case 'trade_freq': return <td key={key} className={`${fcTd} hidden lg:table-cell`}>{player.fc_trade_frequency ? Number(player.fc_trade_frequency).toFixed(2) : '—'}</td>;
+            case 'combined_value': return <td key={key} className={`${fcTd}`}>{player.fc_combined_value?.toFixed(0) || '—'}</td>;
+            case 'trend_30d': return <td key={key} className="px-4 py-3 text-sm text-right bg-blue-50/50 dark:bg-blue-950/20">{player.fc_trend_30_day ? <span className={player.fc_trend_30_day > 0 ? 'text-green-600 dark:text-green-400' : player.fc_trend_30_day < 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-500'}>{player.fc_trend_30_day > 0 ? '+' : ''}{player.fc_trend_30_day}</span> : '—'}</td>;
+            case 'trade_freq': return <td key={key} className={`${fcTd}`}>{player.fc_trade_frequency ? Number(player.fc_trade_frequency).toFixed(2) : '—'}</td>;
             case 'ranks': return (
                 <td key={key} className={combinedTd}>
                     <div className="text-sm font-mono text-purple-700 dark:text-purple-300">{dynRank || '—'}</div>
@@ -1894,8 +1894,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                                 <thead className="bg-zinc-50 dark:bg-zinc-950/50 sticky top-0">
                                     <tr>
-                                        <th className="px-1 sm:px-2 py-2 sm:py-3 w-8"><Star size={12} className="text-zinc-400 mx-auto" /></th>
-                                        <th className="px-3 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('full_name')}>
+                                        <th className="px-1 sm:px-2 py-2 sm:py-3 w-8 sticky left-0 z-10 bg-zinc-50 dark:bg-zinc-950/50"><Star size={12} className="text-zinc-400 mx-auto" /></th>
+                                        <th className="px-3 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors sticky left-8 z-10 bg-zinc-50 dark:bg-zinc-950/50 after:absolute after:right-0 after:top-0 after:bottom-0 after:w-px after:bg-zinc-200 dark:after:bg-zinc-700" onClick={() => handleSort('full_name')}>
                                             Player <SortIcon column="full_name" />
                                         </th>
                                         {orderedVisible.map(renderHeader)}
@@ -1927,12 +1927,12 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         .map(player => (
                                         <React.Fragment key={player.id}>
                                         <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-800 ${watchList.has(player.id) ? 'bg-amber-50/50 dark:bg-amber-950/10' : ''}`}>
-                                            <td className="px-1 sm:px-2 py-2 sm:py-3 text-center">
+                                            <td className="px-1 sm:px-2 py-2 sm:py-3 text-center sticky left-0 z-10 bg-white dark:bg-zinc-900">
                                                 <button onClick={() => toggleWatchList(player.id)} className={`p-1 rounded transition-colors ${watchList.has(player.id) ? 'text-amber-500 hover:text-amber-600' : 'text-zinc-300 dark:text-zinc-600 hover:text-amber-400'}`}>
                                                     <Star size={14} fill={watchList.has(player.id) ? 'currentColor' : 'none'} />
                                                 </button>
                                             </td>
-                                            <td className="px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100">
+                                            <td className="px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 sticky left-8 z-10 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-700">
                                                 {(player.zap_analysis || (player.writeups && player.writeups.length > 0)) ? (
                                                     <button className="text-left hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors" onClick={() => { setExpandedProspect(expandedProspect === player.id ? null : player.id); setActiveWriteupTab('late_round'); }}>
                                                         {player.full_name} <span className="text-[10px] text-zinc-400">{expandedProspect === player.id ? '▲' : '▼'}</span>
