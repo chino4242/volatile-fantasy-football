@@ -600,7 +600,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             const allocNeed = Math.max(0, Math.min(1, (targetPct - currentPct) / targetPct));
 
             // Depth need: if below starting requirement
-            const startReq = Math.ceil(effectiveSlots[pos]);
+            const startReq = Math.round(effectiveSlots[pos]);
             const depthNeed = rosterCounts[pos] < startReq ? (startReq - rosterCounts[pos]) / startReq : 0;
 
             // Combine: 50% allocation, 30% depth, 20% scarcity boost
@@ -794,7 +794,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             let posCount = 0;
             team.players.forEach(p => { if (p.position === pos) posCount++; });
             picks.filter(p => p.teamId === teamId && p.playerPosition === pos).forEach(() => posCount++);
-            const startReq = Math.ceil(effectiveSlots[pos as keyof typeof effectiveSlots] || 0);
+            const startReq = Math.round(effectiveSlots[pos as keyof typeof effectiveSlots] || 0);
             const excess = posCount - startReq;
             // Each player beyond starters applies increasing penalty
             // 1 over: -12%, 2 over: -24%, 3+ over: -36%, capped at -50%
@@ -1690,10 +1690,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         picks.filter(p => p.teamId === userTeamId && p.playerPosition).forEach(p => { if (p.playerPosition && p.playerPosition in rosterCounts) rosterCounts[p.playerPosition]++; });
 
                                         const startReqs: Record<string, number> = {
-                                            QB: Math.ceil(effectiveSlots.QB),
-                                            RB: Math.ceil(effectiveSlots.RB),
-                                            WR: Math.ceil(effectiveSlots.WR),
-                                            TE: Math.ceil(effectiveSlots.TE),
+                                            QB: Math.round(effectiveSlots.QB),
+                                            RB: Math.round(effectiveSlots.RB),
+                                            WR: Math.round(effectiveSlots.WR),
+                                            TE: Math.round(effectiveSlots.TE),
                                         };
 
                                         // Score all available players
