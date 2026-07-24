@@ -116,6 +116,15 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
         }
     };
 
+    const getTierBgClass = (tier: number | null | undefined) => {
+        if (!tier) return '';
+        if (tier <= 3) return 'bg-green-100/60 dark:bg-green-900/25';
+        if (tier <= 6) return 'bg-blue-100/50 dark:bg-blue-900/20';
+        if (tier <= 9) return 'bg-purple-100/40 dark:bg-purple-900/15';
+        if (tier <= 12) return 'bg-amber-100/40 dark:bg-amber-900/15';
+        return 'bg-zinc-100/30 dark:bg-zinc-800/20';
+    };
+
     const posBadgeClass = (pos: string | null) => {
         switch (pos) {
             case 'QB': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
@@ -201,7 +210,7 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
                     return (
                         <div
                             key={player.sleeper_id}
-                            className={`px-4 py-3 active:bg-zinc-50 dark:active:bg-zinc-800/50 ${getPositionBorderClass(player.position)}`}
+                            className={`px-4 py-3 active:bg-zinc-50 dark:active:bg-zinc-800/50 ${getPositionBorderClass(player.position)} ${getTierBgClass(player.rank_tier)}`}
                             onClick={() => { if (hasContent) { setExpandedPlayer(expandedPlayer === player.sleeper_id ? null : player.sleeper_id); setActiveTab('late_round'); } }}
                         >
                             <div className="flex items-center gap-3">
@@ -281,7 +290,7 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
                             const hasContent = player.zap_analysis || (player.writeups && player.writeups.length > 0);
                             return (
                             <React.Fragment key={player.sleeper_id}>
-                            <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBorderClass(player.position)}`}>
+                            <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBorderClass(player.position)} ${getTierBgClass(player.rank_tier)}`}>
                                 <td className="px-3 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-zinc-400 dark:text-zinc-500 font-mono">{index + 1}</td>
                                 <td className="px-3 py-3 sm:py-4 whitespace-nowrap">
                                     <div className="flex items-center">

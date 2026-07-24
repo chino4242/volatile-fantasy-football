@@ -86,6 +86,15 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
         }
     };
 
+    const getTierBgClass = (tier: number | null | undefined) => {
+        if (!tier) return '';
+        if (tier <= 3) return 'bg-green-100/60 dark:bg-green-900/25';
+        if (tier <= 6) return 'bg-blue-100/50 dark:bg-blue-900/20';
+        if (tier <= 9) return 'bg-purple-100/40 dark:bg-purple-900/15';
+        if (tier <= 12) return 'bg-amber-100/40 dark:bg-amber-900/15';
+        return 'bg-zinc-100/30 dark:bg-zinc-800/20';
+    };
+
     const vffLabel = rankingsVintage ? `VFF Rankings (${rankingsVintage})` : 'VFF Rankings';
     const COLUMN_GROUPS = [
         { id: 'core', label: 'Core' },
@@ -214,7 +223,7 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
                         </thead>
                         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                             {filteredPlayers.map((player, index) => (
-                                <tr key={player.sleeper_id} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBorderClass(player.position)}`}>
+                                <tr key={player.sleeper_id} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBorderClass(player.position)} ${getTierBgClass(player.rank_tier)}`}>
                                     <td className="px-3 py-4 whitespace-nowrap text-sm text-zinc-400 dark:text-zinc-500 font-mono">{index + 1}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-zinc-900 dark:text-zinc-100">{player.full_name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400">{player.position}</td>

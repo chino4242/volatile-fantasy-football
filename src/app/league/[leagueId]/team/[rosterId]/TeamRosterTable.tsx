@@ -137,6 +137,47 @@ const getPositionBgClass = (position: string | null) => {
     return colors[position || ''] || '';
 };
 
+const getTierBgClass = (tier: number | null | undefined) => {
+    if (!tier) return '';
+    if (tier === 1) return 'bg-purple-50/40 dark:bg-purple-950/20';
+    if (tier === 2) return 'bg-blue-50/30 dark:bg-blue-950/15';
+    if (tier === 3) return 'bg-green-50/25 dark:bg-green-950/10';
+    if (tier === 4) return 'bg-yellow-50/20 dark:bg-yellow-950/10';
+    return '';
+};
+
+// Tier color mode for row background wash
+type TierColorMode = 'dynasty' | 'zap' | 'redraft' | 'off';
+
+const getDynastyTierBg = (tier: number | null | undefined) => {
+    if (!tier) return '';
+    if (tier <= 3) return 'bg-green-100/60 dark:bg-green-900/25';
+    if (tier <= 6) return 'bg-blue-100/50 dark:bg-blue-900/20';
+    if (tier <= 9) return 'bg-purple-100/40 dark:bg-purple-900/15';
+    if (tier <= 12) return 'bg-amber-100/40 dark:bg-amber-900/15';
+    return 'bg-zinc-100/30 dark:bg-zinc-800/20';
+};
+
+const getZapTierBg = (category: string | null | undefined) => {
+    if (!category) return '';
+    const c = category.toLowerCase();
+    if (c.includes('legendary')) return 'bg-fuchsia-100/60 dark:bg-fuchsia-900/25';
+    if (c.includes('elite')) return 'bg-green-100/60 dark:bg-green-900/25';
+    if (c.includes('starter')) return 'bg-blue-100/50 dark:bg-blue-900/20';
+    if (c.includes('flex')) return 'bg-amber-100/40 dark:bg-amber-900/15';
+    if (c.includes('bench')) return 'bg-pink-100/40 dark:bg-pink-900/15';
+    return 'bg-zinc-100/30 dark:bg-zinc-800/20';
+};
+
+const getRedraftTierBg = (tier: number | null | undefined) => {
+    if (!tier) return '';
+    if (tier <= 5) return 'bg-green-100/60 dark:bg-green-900/25';
+    if (tier <= 10) return 'bg-blue-100/50 dark:bg-blue-900/20';
+    if (tier <= 15) return 'bg-purple-100/40 dark:bg-purple-900/15';
+    if (tier <= 20) return 'bg-amber-100/40 dark:bg-amber-900/15';
+    return 'bg-zinc-100/30 dark:bg-zinc-800/20';
+};
+
 const getValueGap = (player: PlayerData, format: '1qb' | 'sf') => {
     const marketRank = format === '1qb' ? player.fc_rank_1qb : player.fc_rank_sf;
     const analysisRank = format === '1qb' ? player.rank_1qb_overall : player.rank_sf_overall;
@@ -229,6 +270,7 @@ export function TeamRosterTable({
     const [selectedPlayer, setSelectedPlayer] = useState<PlayerData | null>(null);
     const [sortColumn, setSortColumn] = useState<string>('fc_value');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+    const [tierColorMode, setTierColorMode] = useState<TierColorMode>('dynasty');
 
     // Column visibility + order — shared hook
     const vffLabel = rankingsVintage ? `VFF Rankings (${rankingsVintage})` : 'VFF Rankings';
@@ -529,6 +571,28 @@ export function TeamRosterTable({
                 )}
             </div>
 
+            {/* Tier Color Mode */}
+            <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest mr-1">Tiers</span>
+                {([
+                    { key: 'dynasty', label: 'Dynasty' },
+                    { key: 'zap', label: 'ZAP' },
+                    { key: 'redraft', label: 'Redraft' },
+                    { key: 'off', label: 'Off' },
+                ] as const).map(opt => (
+                    <button
+                        key={opt.key}
+                        onClick={() => setTierColorMode(opt.key)}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${tierColorMode === opt.key
+                            ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
+                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                        }`}
+                    >
+                        {opt.label}
+                    </button>
+                ))}
+            </div>
+
             {/* Table + column picker */}
             <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden -mx-4 sm:mx-0">
                 {/* Column picker toolbar */}
@@ -567,7 +631,11 @@ export function TeamRosterTable({
                                 return (
                                     <React.Fragment key={player.sleeper_id}>
                                     <tr
-                                        className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer ${getPositionBgClass(player.position)}`}
+                                        className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer ${getPositionBgClass(player.position)} ${
+                                            tierColorMode === 'dynasty' ? getDynastyTierBg(sf ? player.rank_sf_tier : player.rank_1qb_tier) :
+                                            tierColorMode === 'zap' ? getZapTierBg(player.zap_category) :
+                                            tierColorMode === 'redraft' ? getRedraftTierBg(player.redraft_rank_tier) : ''
+                                        }`}
                                         onClick={() => handlePlayerClick(player)}
                                     >
                                         {/* Row number */}

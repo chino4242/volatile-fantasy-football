@@ -378,6 +378,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [showTradeModal, setShowTradeModal] = useState(false);
     const [draftBottomTab, setDraftBottomTab] = useState<'board' | 'roster' | 'needs'>('board');
     const [draftSpeed, setDraftSpeed] = useState<'instant' | 'fast' | 'realistic'>('fast');
+    const [draftTierMode, setDraftTierMode] = useState<'dynasty' | 'zap' | 'redraft' | 'off'>('dynasty');
 
     // Value mode: 0 = pure dynasty, 100 = pure redraft
     const [redraftWeight, setRedraftWeight] = useState(0);
@@ -672,6 +673,150 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         return { score, tags };
     };
 
+    // ── Algorithm V2: Late Round rank as spine ──────────────────────────────────
+    const [scoringAlgorithm, setScoringAlgorithm] = useState<'v1' | 'v2'>('v2');
+
+    const scorePlayerV2 = (player: Player, teamId: number): { score: number; tags: string[] } => {
+        const tags: string[] = [];
+
+        // ── 1. SPINE: Late Round rank → base score ──
+        // Convert LR rank to a score: rank 1 = 6000, rank 50 = 2500, rank 100 = 1000
+        // Falls back to VFF dynasty rank, then FC value
+        const lr = customRankingsMap?.[player.id];
+        const lrEntry = lr?.find((r: any) => r.source?.toLowerCase().includes('late round'));
+        const lrRank = lrEntry?.rank;
+        const lrTier = lrEntry?.tier;
+        const lrMarketScore = lrEntry?.marketScore || (lrEntry?.notes ? (() => { const m = lrEntry.notes!.match(/Market Score:\s*([\d.]+)/); return m ? parseFloat(m[1]) : null; })() : null);
+        const lrSignal = lrEntry?.signal;
+
+        const dynRank = sf ? player.rank_sf_overall : player.rank_1qb_overall;
+        const fcValue = player.fc_value || 0;
+
+        let baseScore: number;
+        let spineSource: 'lr' | 'vff' | 'fc';
+
+        if (lrRank) {
+            // LR rank → exponential decay curve: rank 1 ≈ 6000, rank 10 ≈ 4500, rank 50 ≈ 2500, rank 100 ≈ 1200
+            baseScore = Math.round(6000 * Math.pow(0.983, lrRank - 1));
+            spineSource = 'lr';
+        } else if (dynRank) {
+            // VFF dynasty rank fallback — similar curve but slightly discounted (less conviction)
+            baseScore = Math.round(5500 * Math.pow(0.984, dynRank - 1)) * 0.9;
+            spineSource = 'vff';
+        } else {
+            // FC value as last resort (already a score-like number)
+            baseScore = fcValue;
+            spineSource = 'fc';
+        }
+
+        // ── 2. FORMAT ADJUSTMENT ──
+        // In 1QB leagues, QBs are overvalued by market; in SF they're correctly priced
+        const slots = rosterSlots || { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
+        if (player.position === 'QB' && slots.QB <= 1) {
+            baseScore *= 0.6;
+        } else if (player.position === 'TE') {
+            baseScore *= slots.TE >= 2 ? 0.95 : 0.88;
+        }
+
+        // ── 3. MARKET CONFIRMATION ──
+        // If FC value significantly disagrees with our base, split the difference
+        let marketMod = 0;
+        if (spineSource === 'lr' && fcValue > 0) {
+            const fcImpliedRatio = fcValue / baseScore;
+            if (fcImpliedRatio > 1.4) {
+                // Market values them much higher — boost slightly (market might know something)
+                marketMod = 0.08;
+            } else if (fcImpliedRatio < 0.6) {
+                // Market values them much lower — slight concern
+                marketMod = -0.05;
+            }
+        }
+
+        // ── 4. CONVICTION SIGNALS ──
+        let convictionMod = 0;
+
+        // Late Round Market Score (strongest conviction signal)
+        if (lrMarketScore) {
+            if (lrMarketScore >= 80) { convictionMod += 0.12; tags.push('Strong Value'); }
+            else if (lrMarketScore >= 70) { convictionMod += 0.06; }
+            else if (lrMarketScore < 40) { convictionMod -= 0.06; }
+        }
+
+        // Late Round Signal
+        if (lrSignal) {
+            if (lrSignal.includes('Super Buy')) { convictionMod += 0.08; tags.push('Super Buy'); }
+            else if (lrSignal === 'Buy') { convictionMod += 0.04; tags.push('Buy'); }
+            else if (lrSignal === 'Sell') { convictionMod -= 0.04; }
+            else if (lrSignal.includes('Super Sell')) { convictionMod -= 0.08; }
+        }
+
+        // ZAP prospect quality (rookies / year 2)
+        if (player.zap_score && !player.zap_stale) {
+            if (player.zap_score >= 80) { convictionMod += 0.10; tags.push('Elite Prospect'); }
+            else if (player.zap_score >= 60) { convictionMod += 0.05; tags.push('ZAP ↑'); }
+            else if (player.zap_score < 15) { convictionMod -= 0.06; }
+        }
+
+        // AI confidence from writeups
+        if (player.writeups?.length) {
+            const bestConfidence = Math.max(...player.writeups.map(wr => wr.ai_confidence || 0));
+            if (bestConfidence >= 8) { convictionMod += 0.03; }
+            else if (bestConfidence <= 3) { convictionMod -= 0.03; }
+        }
+
+        // 30-day trend (momentum)
+        if (player.fc_trend_30_day) {
+            const trendPct = player.fc_trend_30_day / (fcValue || 3000);
+            if (trendPct > 0.15) { convictionMod += 0.04; tags.push('Trending ↑'); }
+            else if (trendPct < -0.15) { convictionMod -= 0.03; }
+        }
+
+        // ── 5. DYNASTY LONGEVITY ──
+        // Young players get a dynasty premium, aging vets get discounted
+        let ageMod = 0;
+        if (player.years_exp != null) {
+            if (player.years_exp === 0) { ageMod = 0.04; } // rookie premium
+            else if (player.years_exp === 1) { ageMod = 0.02; } // year 2 still ascending
+            else if (player.years_exp >= 8) { ageMod = -0.06; } // aging vet
+            else if (player.years_exp >= 6) { ageMod = -0.03; } // entering decline window
+        }
+
+        // ── 6. POSITIONAL NEED ──
+        const needs = calculatePositionalNeed(teamId);
+        const posNeed = needs[player.position || ''] || 0;
+        if (posNeed >= 0.5) tags.push('Need');
+
+        // Diminishing returns: penalize positions where you're already deep beyond starters
+        const team = activeTeams.find(t => t.id === teamId);
+        let depthPenalty = 0;
+        if (team && player.position) {
+            const pos = player.position;
+            let posCount = 0;
+            team.players.forEach(p => { if (p.position === pos) posCount++; });
+            picks.filter(p => p.teamId === teamId && p.playerPosition === pos).forEach(() => posCount++);
+            const startReq = Math.ceil(effectiveSlots[pos as keyof typeof effectiveSlots] || 0);
+            const excess = posCount - startReq;
+            // Each player beyond starters applies increasing penalty
+            // 1 over: -12%, 2 over: -24%, 3+ over: -36%, capped at -50%
+            if (excess >= 1) {
+                depthPenalty = Math.min(0.50, excess * 0.12);
+            }
+        }
+
+        // ── COMBINE ──
+        const adjustedScore = baseScore * (1 + marketMod + convictionMod + ageMod);
+        // Need: boost for high need, penalty for over-stocked
+        const needMultiplier = posNeed > 0
+            ? 1 + (posNeed * 0.25)  // up to +25% for positions of need
+            : 1 - depthPenalty;      // up to -50% for over-stocked positions
+        const finalScore = adjustedScore * needMultiplier;
+
+        return { score: finalScore, tags };
+    };
+
+    // Active scoring function based on selected algorithm
+    const activeScorePlayer = scoringAlgorithm === 'v2' ? scorePlayerV2 : scorePlayer;
+
     const simulatePick = (teamId: number): { player: Player; reason: string } | null => {
         if (availablePlayers.length === 0) return null;
 
@@ -679,7 +824,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         const scoredPlayers = availablePlayers.map(p => {
             const value = p.fc_value || 0;
             const posNeed = needs[p.position || ''] || 0;
-            const { score, tags } = scorePlayer(p, teamId);
+            const { score, tags } = activeScorePlayer(p, teamId);
             return { player: p, score, value, posNeed, tags };
         });
 
@@ -1063,6 +1208,25 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         {opt.label}
                                     </button>
                                 ))}
+                            </div>
+                        )}
+                        {/* Algorithm Version Toggle */}
+                        {draftStarted && !isDraftComplete && (
+                            <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
+                                <button
+                                    onClick={() => setScoringAlgorithm('v1')}
+                                    title="V1: FC value spine + signals"
+                                    className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${scoringAlgorithm === 'v1' ? 'bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                                >
+                                    V1
+                                </button>
+                                <button
+                                    onClick={() => setScoringAlgorithm('v2')}
+                                    title="V2: Late Round rank spine + market/conviction signals"
+                                    className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${scoringAlgorithm === 'v2' ? 'bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                                >
+                                    V2
+                                </button>
                             </div>
                         )}
                     </div>
@@ -1516,56 +1680,172 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             })()}
                             {isUserPick && (
                                 <div className="space-y-3">
-                                    <div className="text-base sm:text-lg text-indigo-600 dark:text-indigo-400 font-semibold">
-                                        Your pick! Select a player below{isLive ? '.' : ' or evaluate trades.'}
-                                    </div>
                                     {(() => {
                                         const needs = calculatePositionalNeed(userTeamId!);
-                                        const top5 = availablePlayers
+                                        const userTeam = activeTeams.find(t => t.id === userTeamId);
+
+                                        // Count current roster + drafted at each position
+                                        const rosterCounts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+                                        userTeam?.players.forEach(p => { if (p.position && p.position in rosterCounts) rosterCounts[p.position]++; });
+                                        picks.filter(p => p.teamId === userTeamId && p.playerPosition).forEach(p => { if (p.playerPosition && p.playerPosition in rosterCounts) rosterCounts[p.playerPosition]++; });
+
+                                        const startReqs: Record<string, number> = {
+                                            QB: Math.ceil(effectiveSlots.QB),
+                                            RB: Math.ceil(effectiveSlots.RB),
+                                            WR: Math.ceil(effectiveSlots.WR),
+                                            TE: Math.ceil(effectiveSlots.TE),
+                                        };
+
+                                        // Score all available players
+                                        const scored = availablePlayers
                                             .map(p => {
                                                 const value = p.fc_value || 0;
                                                 const posNeed = needs[p.position || ''] || 0;
-                                                const { score, tags } = scorePlayer(p, userTeamId!);
+                                                const { score, tags } = activeScorePlayer(p, userTeamId!);
                                                 return { player: p, score, value, posNeed, tags };
                                             })
-                                            .sort((a, b) => b.score - a.score)
-                                            .slice(0, 5);
+                                            .sort((a, b) => b.score - a.score);
+
+                                        const top = scored[0];
+                                        const alternatives = scored.slice(1, 5);
+
+                                        if (!top) return <div className="text-sm text-zinc-500">No players available.</div>;
+
+                                        // Generate the "fills" context
+                                        const pos = top.player.position || '';
+                                        const currentCount = rosterCounts[pos] || 0;
+                                        const slotLabel = `${pos}${currentCount + 1}`;
+                                        const startReq = startReqs[pos] || 0;
+                                        const isStarterSlot = currentCount < startReq;
+
+                                        // Generate scarcity context
+                                        const topPlayersAtPos = availablePlayers.filter(p => p.position === pos && (p.fc_value || 0) > (top.value * 0.6)).length;
+
+                                        // Count teams ahead that need this position
+                                        const teamsAheadNeedingPos = (() => {
+                                            let count = 0;
+                                            for (let i = currentPickIndex + 1; i < picks.length && i < currentPickIndex + 12; i++) {
+                                                const pick = picks[i];
+                                                if (pick.playerId) continue;
+                                                if (pick.teamId === userTeamId) break;
+                                                const teamNeeds = calculatePositionalNeed(pick.teamId);
+                                                if ((teamNeeds[pos] || 0) >= 0.3) count++;
+                                            }
+                                            return count;
+                                        })();
+
+                                        // Build the "edge" sentence
+                                        let edge = '';
+                                        if (topPlayersAtPos <= 2 && teamsAheadNeedingPos >= 2) {
+                                            edge = `Only ${topPlayersAtPos} comparable ${pos}s left and ${teamsAheadNeedingPos} teams ahead need ${pos}. High urgency.`;
+                                        } else if (topPlayersAtPos <= 3) {
+                                            edge = `${pos} supply is thin — ${topPlayersAtPos} quality options remain at this level.`;
+                                        } else if (isStarterSlot) {
+                                            edge = `Fills a starting slot. You need ${startReq - currentCount} more ${pos}${startReq - currentCount > 1 ? 's' : ''} for your lineup.`;
+                                        } else if (top.tags.includes('Elite Prospect') || top.tags.includes('ZAP ↑')) {
+                                            edge = `Best prospect available by a wide margin. Value pick regardless of positional need.`;
+                                        } else if (top.posNeed < 0.15) {
+                                            edge = `Luxury pick — you're set at ${pos}. Taking best value on the board.`;
+                                        } else {
+                                            edge = `Strong value relative to board. ${teamsAheadNeedingPos > 0 ? `${teamsAheadNeedingPos} team${teamsAheadNeedingPos > 1 ? 's' : ''} ahead also eyeing ${pos}.` : ''}`;
+                                        }
+
+                                        // Alt reasoning
+                                        const getAltReason = (c: typeof top) => {
+                                            const p = c.player.position || '';
+                                            const altCount = rosterCounts[p] || 0;
+                                            const altIsStarter = altCount < (startReqs[p] || 0);
+                                            if (c.tags.includes('Elite Prospect')) return 'Elite prospect talent';
+                                            if (c.tags.includes('Need') && altIsStarter) return `Fills ${p}${altCount + 1} starter hole`;
+                                            if (c.tags.includes('ZAP ↑')) return 'High ZAP upside';
+                                            if (c.tags.includes('Dynasty Buy')) return 'Market undervalues';
+                                            if (c.tags.includes('Redraft ↑')) return 'Win-now production';
+                                            if (c.posNeed < 0.1) return 'Luxury / BPA';
+                                            return 'Good value';
+                                        };
+
                                         return (
-                                            <div className="flex flex-col sm:flex-row gap-2 justify-center mt-2 flex-wrap">
-                                                {top5.map((c, i) => (
-                                                    <button
-                                                        key={c.player.id}
-                                                        onClick={() => setSelectedDraftPlayer(c.player)}
-                                                        className={`text-left px-3 py-2 rounded-lg border-2 transition-colors ${
-                                                            i === 0
-                                                                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30'
-                                                                : 'border-zinc-200 dark:border-zinc-700 hover:border-indigo-300'
-                                                        }`}
-                                                    >
-                                                        <div className="text-xs text-zinc-400">#{i + 1}</div>
-                                                        <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">
-                                                            {c.player.full_name} <span className="text-zinc-400">{c.player.position}</span>
-                                                        </div>
-                                                        {c.tags.length > 0 && (
-                                                            <div className="flex gap-1 mt-0.5 flex-wrap">
-                                                                {c.tags.map(tag => (
-                                                                    <span key={tag} className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
-                                                                        tag === 'Elite Prospect' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' :
-                                                                        tag === 'ZAP ↑' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                                                                        tag === 'Dynasty Buy' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' :
-                                                                        tag === 'Redraft ↑' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' :
-                                                                        tag === 'Need' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' :
-                                                                        'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-                                                                    }`}>{tag}</span>
-                                                                ))}
+                                            <>
+                                                {/* Primary recommendation */}
+                                                <div className="bg-indigo-50 dark:bg-indigo-950/30 border-2 border-indigo-200 dark:border-indigo-800 rounded-xl p-4">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="flex-1">
+                                                            <div className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-1">🎯 Recommended</div>
+                                                            <div className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                                                                {top.player.full_name}
+                                                                <span className={`ml-2 text-sm font-medium ${pos === 'QB' ? 'text-green-600' : pos === 'RB' ? 'text-blue-600' : pos === 'WR' ? 'text-red-600' : 'text-orange-600'}`}>{pos}</span>
                                                             </div>
-                                                        )}
-                                                        <div className="text-[10px] text-zinc-500 mt-0.5">
-                                                            Value: {c.value} | Score: {c.score.toFixed(0)}
+                                                            <div className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
+                                                                <span className="font-medium">Fills:</span> {slotLabel} {isStarterSlot ? '(starter)' : '(depth)'} — you have {currentCount} {pos}{currentCount !== 1 ? 's' : ''}
+                                                            </div>
+                                                            <div className="text-sm text-zinc-600 dark:text-zinc-400 mt-0.5">
+                                                                <span className="font-medium">Edge:</span> {edge}
+                                                            </div>
+                                                            {top.tags.length > 0 && (
+                                                                <div className="flex gap-1 mt-2 flex-wrap">
+                                                                    {top.tags.map(tag => (
+                                                                        <span key={tag} className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                                                                            tag === 'Elite Prospect' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' :
+                                                                            tag === 'ZAP ↑' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                                                            tag === 'Dynasty Buy' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' :
+                                                                            tag === 'Redraft ↑' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' :
+                                                                            tag === 'Need' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' :
+                                                                            'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
+                                                                        }`}>{tag}</span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    </button>
-                                                ))}
-                                            </div>
+                                                        <div className="flex flex-col gap-2 flex-shrink-0">
+                                                            <button
+                                                                onClick={() => { makePick(top.player.id); }}
+                                                                className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:scale-95 transition-all"
+                                                            >
+                                                                Draft
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setSelectedDraftPlayer(top.player)}
+                                                                className="px-4 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-white dark:bg-zinc-800 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
+                                                            >
+                                                                Info
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Alternatives */}
+                                                <div className="mt-3">
+                                                    <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-2">Alternatives</div>
+                                                    <div className="space-y-1">
+                                                        {alternatives.map((c, i) => (
+                                                            <div key={c.player.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                                                                <div className="flex items-center gap-3 min-w-0">
+                                                                    <span className="text-[10px] text-zinc-400 font-mono w-4">#{i + 2}</span>
+                                                                    <div className="min-w-0">
+                                                                        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{c.player.full_name}</span>
+                                                                        <span className={`ml-1.5 text-xs ${c.player.position === 'QB' ? 'text-green-600' : c.player.position === 'RB' ? 'text-blue-600' : c.player.position === 'WR' ? 'text-red-600' : 'text-orange-600'}`}>{c.player.position}</span>
+                                                                        <span className="ml-2 text-xs text-zinc-400">— {getAltReason(c)}</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                                    <button
+                                                                        onClick={() => { makePick(c.player.id); }}
+                                                                        className="px-2 py-1 text-xs font-bold text-white bg-green-600 rounded hover:bg-green-700 active:scale-95 transition-all"
+                                                                    >
+                                                                        ✓
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setSelectedDraftPlayer(c.player)}
+                                                                        className="px-2 py-1 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded"
+                                                                    >
+                                                                        Info
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </>
                                         );
                                     })()}
                                     <button
@@ -1583,7 +1863,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                     {(() => {
                                         const needs = calculatePositionalNeed(currentPick.teamId);
                                         const top3 = availablePlayers
-                                            .map(p => { const { score, tags } = scorePlayer(p, currentPick.teamId); return { player: p, score, value: p.fc_value || 0, posNeed: needs[p.position || ''] || 0, tags }; })
+                                            .map(p => { const { score, tags } = activeScorePlayer(p, currentPick.teamId); return { player: p, score, value: p.fc_value || 0, posNeed: needs[p.position || ''] || 0, tags }; })
                                             .sort((a, b) => b.score - a.score)
                                             .slice(0, 3);
                                         return (
@@ -1893,8 +2173,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                     );
                 })()}
 
-                {/* Position Scarcity (collapsed when it's your pick to reduce noise) */}
-                {draftStarted && !isDraftComplete && !isUserPick && (
+                {/* Position Scarcity (always visible during draft) */}
+                {draftStarted && !isDraftComplete && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 mb-6">
                         <PositionScarcityChart
                             players={availablePlayers}
@@ -1960,6 +2240,48 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 <ColumnPicker columns={MOCK_DRAFT_COLUMNS} visibleCols={visibleColumns} columnOrder={columnOrder} onToggle={toggleCol} onReorder={reorder} groups={MD_GROUPS} />
                             </div>
                         </div>
+                        {/* Tier Mode Toggle + Legend */}
+                        <div className="flex items-center gap-3 px-4 py-1.5 border-b border-zinc-100 dark:border-zinc-800 text-[9px] text-zinc-400 flex-wrap">
+                            <div className="flex items-center gap-1">
+                                {(['dynasty', 'zap', 'redraft', 'off'] as const).map(mode => (
+                                    <button
+                                        key={mode}
+                                        onClick={() => setDraftTierMode(mode)}
+                                        className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors ${draftTierMode === mode
+                                            ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
+                                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                                        }`}
+                                    >
+                                        {mode === 'dynasty' ? 'Dynasty' : mode === 'zap' ? 'ZAP' : mode === 'redraft' ? 'Redraft' : 'Off'}
+                                    </button>
+                                ))}
+                            </div>
+                            {draftTierMode === 'dynasty' && (
+                                <>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-green-100 dark:bg-green-900/25 border border-green-200 dark:border-green-800" />T1-3 Elite</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-blue-100 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800" />T4-6 Solid</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-purple-100 dark:bg-purple-900/15 border border-purple-200 dark:border-purple-800" />T7-9 Depth</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-amber-100 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800" />T10+ Dart</span>
+                                </>
+                            )}
+                            {draftTierMode === 'zap' && (
+                                <>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-fuchsia-100 dark:bg-fuchsia-900/25 border border-fuchsia-200 dark:border-fuchsia-800" />Legendary</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-green-100 dark:bg-green-900/25 border border-green-200 dark:border-green-800" />Elite</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-blue-100 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800" />Starter</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-amber-100 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800" />Flex</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-pink-100 dark:bg-pink-900/15 border border-pink-200 dark:border-pink-800" />Bench</span>
+                                </>
+                            )}
+                            {draftTierMode === 'redraft' && (
+                                <>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-green-100 dark:bg-green-900/25 border border-green-200 dark:border-green-800" />T1-5 Elite</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-blue-100 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800" />T6-10 Solid</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-purple-100 dark:bg-purple-900/15 border border-purple-200 dark:border-purple-800" />T11-15 Depth</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-2.5 rounded-sm bg-amber-100 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-800" />T16+</span>
+                                </>
+                            )}
+                        </div>
                         <div className="overflow-x-auto max-h-96 overflow-y-auto -mx-4 sm:mx-0">
                             <table className="min-w-full divide-y divide-zinc-200 dark:divide-zinc-800">
                                 <thead className="bg-zinc-50 dark:bg-zinc-950/50 sticky top-0">
@@ -1996,7 +2318,43 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         .slice(0, 50)
                                         .map(player => (
                                         <React.Fragment key={player.id}>
-                                        <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-800 ${watchList.has(player.id) ? 'bg-amber-50/50 dark:bg-amber-950/10' : ''}`}>
+                                        <tr className={`hover:bg-zinc-50 dark:hover:bg-zinc-800 border-l-4 ${
+                                            player.position === 'QB' ? 'border-l-green-400 dark:border-l-green-500' :
+                                            player.position === 'RB' ? 'border-l-blue-400 dark:border-l-blue-500' :
+                                            player.position === 'WR' ? 'border-l-red-400 dark:border-l-red-500' :
+                                            player.position === 'TE' ? 'border-l-orange-400 dark:border-l-orange-500' :
+                                            'border-l-zinc-300 dark:border-l-zinc-600'
+                                        } ${(() => {
+                                            if (draftTierMode === 'off') return '';
+                                            if (draftTierMode === 'dynasty') {
+                                                const tier = sf ? player.rank_sf_tier : player.rank_1qb_tier;
+                                                if (!tier) return '';
+                                                if (tier <= 3) return 'bg-green-100/60 dark:bg-green-900/25';
+                                                if (tier <= 6) return 'bg-blue-100/50 dark:bg-blue-900/20';
+                                                if (tier <= 9) return 'bg-purple-100/40 dark:bg-purple-900/15';
+                                                if (tier <= 12) return 'bg-amber-100/40 dark:bg-amber-900/15';
+                                                return '';
+                                            }
+                                            if (draftTierMode === 'zap') {
+                                                const c = (player.zap_category || '').toLowerCase();
+                                                if (c.includes('legendary')) return 'bg-fuchsia-100/60 dark:bg-fuchsia-900/25';
+                                                if (c.includes('elite')) return 'bg-green-100/60 dark:bg-green-900/25';
+                                                if (c.includes('starter')) return 'bg-blue-100/50 dark:bg-blue-900/20';
+                                                if (c.includes('flex')) return 'bg-amber-100/40 dark:bg-amber-900/15';
+                                                if (c.includes('bench')) return 'bg-pink-100/40 dark:bg-pink-900/15';
+                                                return '';
+                                            }
+                                            if (draftTierMode === 'redraft') {
+                                                const tier = player.redraft_rank_tier;
+                                                if (!tier) return '';
+                                                if (tier <= 5) return 'bg-green-100/60 dark:bg-green-900/25';
+                                                if (tier <= 10) return 'bg-blue-100/50 dark:bg-blue-900/20';
+                                                if (tier <= 15) return 'bg-purple-100/40 dark:bg-purple-900/15';
+                                                if (tier <= 20) return 'bg-amber-100/40 dark:bg-amber-900/15';
+                                                return '';
+                                            }
+                                            return '';
+                                        })()} ${watchList.has(player.id) ? 'ring-2 ring-inset ring-amber-300 dark:ring-amber-700' : ''}`}>
                                             <td className="px-1 sm:px-2 py-2 sm:py-3 text-center sticky left-0 z-10 bg-white dark:bg-zinc-900">
                                                 <button onClick={() => toggleWatchList(player.id)} className={`p-1 rounded transition-colors ${watchList.has(player.id) ? 'text-amber-500 hover:text-amber-600' : 'text-zinc-300 dark:text-zinc-600 hover:text-amber-400'}`}>
                                                     <Star size={14} fill={watchList.has(player.id) ? 'currentColor' : 'none'} />
