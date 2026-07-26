@@ -44,6 +44,7 @@ interface Player {
     redraft_rank_overall?: number | null;
     redraft_rank_pos?: number | null;
     redraft_rank_tier?: number | null;
+    redraft_auction_value?: number | null;
     droppedByTeam?: string;
 }
 
@@ -96,6 +97,7 @@ const MOCK_DRAFT_COLUMNS: ColumnDef[] = [
     { key: 'position', label: 'Position', defaultOn: true, group: 'core' },
     { key: 'team', label: 'Team', defaultOn: true, group: 'core' },
     { key: 'market_value', label: 'Market Value', defaultOn: true, group: 'core' },
+    { key: 'auction_value', label: 'Auction $', defaultOn: true, group: 'core' },
     { key: 'fc_rank', label: 'FC Overall', defaultOn: true, group: 'fc' },
     { key: 'fc_pos_rank', label: 'FC Pos Rank', defaultOn: true, group: 'fc' },
     { key: 'combined_value', label: 'Combined', defaultOn: false, group: 'fc' },
@@ -941,6 +943,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         position: { className: `${coreTh} text-left`, sortKey: 'position', label: 'Pos' },
         team: { className: `${coreTh} text-left`, sortKey: 'team', label: 'Team' },
         market_value: { className: `${coreTh} text-right`, sortKey: 'fc_value', label: 'Value' },
+        auction_value: { className: `${coreTh} text-right`, sortKey: 'redraft_auction_value', label: 'Auction $' },
         fc_rank: { className: fcTh, sortKey: sf ? 'fc_rank_sf' : 'fc_rank_1qb', label: 'FC Rank' },
         fc_pos_rank: { className: fcTh, sortKey: sf ? 'fc_position_rank_sf' : 'fc_position_rank_1qb', label: 'FC Pos' },
         combined_value: { className: `${fcTh}`, sortKey: 'fc_combined_value', label: 'Combined' },
@@ -978,6 +981,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             case 'position': return <td key={key} className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">{player.position}</td>;
             case 'team': return <td key={key} className="px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">{player.team || '—'}</td>;
             case 'market_value': return <td key={key} className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-right text-zinc-900 dark:text-zinc-100">{player.fc_value?.toFixed(0) || '—'}</td>;
+            case 'auction_value': return <td key={key} className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-right font-mono text-green-700 dark:text-green-400">{player.redraft_auction_value ? `$${player.redraft_auction_value}` : '—'}</td>;
             case 'fc_rank': return <td key={key} className={fcTd}>{(sf ? player.fc_rank_sf : player.fc_rank_1qb) || '—'}</td>;
             case 'fc_pos_rank': return <td key={key} className={fcTd}>{player.position}{(sf ? player.fc_position_rank_sf : player.fc_position_rank_1qb) || '—'}</td>;
             case 'combined_value': return <td key={key} className={`${fcTd}`}>{player.fc_combined_value?.toFixed(0) || '—'}</td>;

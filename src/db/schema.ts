@@ -105,6 +105,7 @@ export const playerValues = pgTable("player_values", {
     redraft_rank_overall: integer("redraft_rank_overall"),
     redraft_rank_pos: integer("redraft_rank_pos"),
     redraft_rank_tier: integer("redraft_rank_tier"),
+    redraft_auction_value: integer("redraft_auction_value"), // Auction value out of $200 budget
 
     // When VFF rankings were last uploaded (per format)
     rank_1qb_updated_at: timestamp("rank_1qb_updated_at"),

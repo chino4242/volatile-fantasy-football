@@ -117,8 +117,9 @@ export default function AdminPage() {
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
                 <h2 className="text-xl font-semibold mb-4 text-white hover:text-blue-400 transition-colors">Upload Custom Rankings</h2>
                 <p className="text-sm text-zinc-400 mb-6">
-                    Upload an Excel (.xlsx) file containing your custom rankings.
-                    The file must contain a sheet named "Rankings and Tiers" with columns "Player", "Overall", "Positional Rank", and "Tier".
+                    Upload a CSV or Excel (.xlsx) file containing your rankings.
+                    CSV files should have columns: "Player", "Overall", "Pos Rank" (or "Positional Rank"), and "Tier".
+                    Redraft files can also include an "Auction" column for auction values.
                 </p>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -156,11 +157,11 @@ export default function AdminPage() {
                     </div>
 
                     <div>
-                        <label htmlFor="file-upload" className="block text-sm font-medium text-zinc-300 mb-2">Excel Spreadsheet File</label>
+                        <label htmlFor="file-upload" className="block text-sm font-medium text-zinc-300 mb-2">Rankings File</label>
                         <input
                             id="file-upload"
                             type="file"
-                            accept=".xlsx, .xls"
+                            accept=".csv, .xlsx, .xls"
                             onChange={handleFileChange}
                             className="block w-full text-sm text-zinc-400
                 file:mr-4 file:py-2.5 file:px-4

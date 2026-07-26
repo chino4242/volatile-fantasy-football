@@ -5,6 +5,33 @@ import { players, playerValues, rankingsHistory } from '@/db/schema';
 import { eq, isNotNull } from 'drizzle-orm';
 import { cleanseName } from '@/lib/nameUtils';
 
+function parseCSVLine(line: string): string[] {
+    const fields: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (const char of line) {
+        if (char === '"') { inQuotes = !inQuotes; }
+        else if (char === ',' && !inQuotes) { fields.push(current.trim()); current = ''; }
+        else { current += char; }
+    }
+    fields.push(current.trim());
+    return fields;
+}
+
+function parseCSV(text: string): Record<string, any>[] {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return [];
+    // Strip BOM if present
+    const headerLine = lines[0].replace(/^\uFEFF/, '');
+    const headers = parseCSVLine(headerLine);
+    return lines.slice(1).map(line => {
+        const values = parseCSVLine(line);
+        const row: Record<string, any> = {};
+        headers.forEach((h, i) => { row[h] = values[i] ?? null; });
+        return row;
+    });
+}
+
 export async function POST(request: Request) {
     try {
         const formData = await request.formData();
@@ -15,27 +42,44 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Missing file or category' }, { status: 400 });
         }
 
-        const buffer = await file.arrayBuffer();
-        const workbook = read(buffer);
+        // ── Parse file (CSV or XLSX) ──
+        let rawData: Record<string, any>[];
+        const fileName = file.name.toLowerCase();
 
-        const sheetName = 'Rankings and Tiers';
-        if (!workbook.Sheets[sheetName]) {
-            return NextResponse.json({
-                error: `Sheet "${sheetName}" not found. Rankings must be on a sheet exactly named "${sheetName}".`
-            }, { status: 400 });
+        if (fileName.endsWith('.csv')) {
+            const text = await file.text();
+            rawData = parseCSV(text);
+        } else {
+            // XLSX path
+            const buffer = await file.arrayBuffer();
+            const workbook = read(buffer);
+            const sheetName = 'Rankings and Tiers';
+            if (!workbook.Sheets[sheetName]) {
+                // Try first sheet as fallback
+                const firstSheet = workbook.SheetNames[0];
+                if (!firstSheet) return NextResponse.json({ error: 'No sheets found in workbook' }, { status: 400 });
+                rawData = utils.sheet_to_json(workbook.Sheets[firstSheet], { defval: null }) as Record<string, any>[];
+            } else {
+                rawData = utils.sheet_to_json(workbook.Sheets[sheetName], { defval: null }) as Record<string, any>[];
+            }
         }
-
-        const worksheet = workbook.Sheets[sheetName];
-        // Skip hidden headers, get raw JSON
-        const rawData = utils.sheet_to_json(worksheet, { defval: null });
 
         if (!rawData || rawData.length === 0) {
-            return NextResponse.json({ error: 'No data found in sheet. Check that the sheet has data rows.' }, { status: 400 });
+            return NextResponse.json({ error: 'No data found in file.' }, { status: 400 });
         }
 
-        // Log first row keys for debugging
-        const firstRowKeys = Object.keys(rawData[0] as object);
-        console.log('Spreadsheet columns detected:', firstRowKeys);
+        // Log detected columns
+        const firstRowKeys = Object.keys(rawData[0]);
+        console.log('Upload columns detected:', firstRowKeys);
+
+        // ── Normalize column names ──
+        // Handle variants: "Pos Rank" / "Positional Rank", "Auction (Out of $200)" / "Auction Value"
+        const getCol = (row: any, ...names: string[]) => {
+            for (const name of names) {
+                if (row[name] !== undefined && row[name] !== null) return row[name];
+            }
+            return null;
+        };
 
         // Load all players to build lookup map
         const allPlayers = await db.select({ sleeper_id: players.sleeper_id, full_name: players.full_name }).from(players);
@@ -68,7 +112,6 @@ export async function POST(request: Request) {
         }).from(playerValues).where(isNotNull(rankCol));
 
         if (existingRanks.length > 0) {
-            // Use the stored updated_at as recorded_at, or fall back to now
             const snapshotDate = existingRanks[0].updated_at || new Date();
             const historyRows = existingRanks.map(r => ({
                 sleeper_id: r.sleeper_id,
@@ -79,7 +122,6 @@ export async function POST(request: Request) {
                 recorded_at: snapshotDate,
             }));
 
-            // Insert in batches of 500
             for (let i = 0; i < historyRows.length; i += 500) {
                 await db.insert(rankingsHistory).values(historyRows.slice(i, i + 500));
             }
@@ -91,11 +133,12 @@ export async function POST(request: Request) {
         const updatePromises = [];
         const unmatchedNames: string[] = [];
 
-        for (const row of rawData as any[]) {
-            const playerName = row['Player'] || row['Name'];
-            const overallStr = row['Overall'];
-            const positionalRankStr = row['Positional Rank'] || row['Pos Rank'];
-            const tierStr = row['Tier'];
+        for (const row of rawData) {
+            const playerName = getCol(row, 'Player', 'Name');
+            const overallStr = getCol(row, 'Overall', 'Rank');
+            const positionalRankStr = getCol(row, 'Positional Rank', 'Pos Rank', 'Position Rank');
+            const tierStr = getCol(row, 'Tier');
+            const auctionStr = getCol(row, 'Auction (Out of $200)', 'Auction Value', 'Auction');
 
             if (!playerName || overallStr === undefined || overallStr === null) continue;
 
@@ -114,8 +157,16 @@ export async function POST(request: Request) {
                 if (match) posRank = parseInt(match[0], 10);
             }
 
-            const overall = parseInt(overallStr, 10);
-            const tier = tierStr ? parseInt(tierStr, 10) : null;
+            const overall = parseInt(String(overallStr), 10);
+            const tier = tierStr ? parseInt(String(tierStr), 10) : null;
+
+            // Parse auction value: strip "$", spaces, and parse as integer
+            let auctionValue: number | null = null;
+            if (auctionStr) {
+                const cleaned = String(auctionStr).replace(/[$\s,]/g, '');
+                const parsed = parseInt(cleaned, 10);
+                if (!isNaN(parsed)) auctionValue = parsed;
+            }
 
             const updateData: any = { updated_at: now };
 
@@ -134,9 +185,9 @@ export async function POST(request: Request) {
                 updateData.redraft_rank_tier = tier;
                 updateData.redraft_rank_updated_at = now;
                 if (posRank !== null) updateData.redraft_rank_pos = posRank;
+                if (auctionValue !== null) updateData.redraft_auction_value = auctionValue;
             }
 
-            // Queue up the drizzle update query
             updatePromises.push(
                 db.update(playerValues)
                     .set(updateData)
@@ -144,8 +195,6 @@ export async function POST(request: Request) {
             );
         }
 
-        // Execute all updates. 
-        // For ~400 players, Promise.all easily works within serverless limits.
         await Promise.all(updatePromises);
 
         return NextResponse.json({
