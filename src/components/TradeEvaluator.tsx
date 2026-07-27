@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Search, ArrowRightLeft, X } from 'lucide-react';
+import { Search, ArrowRightLeft, X, Save } from 'lucide-react';
 
 interface Player {
     sleeper_id: string;
@@ -21,15 +21,24 @@ interface Props {
     rosterToOwnerMap: Map<number, string>;
     currentRosterId: number;
     scoringFormat: '1qb' | 'sf';
+    leagueId?: string;
+    platform?: 'sleeper' | 'fleaflicker';
+    keeperCount?: number;
 }
 
-export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwnershipMap, rosterToOwnerMap, currentRosterId, scoringFormat }: Props) {
+export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwnershipMap, rosterToOwnerMap, currentRosterId, scoringFormat, leagueId, platform, keeperCount }: Props) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
     const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
     const [myAssets, setMyAssets] = useState<Set<string>>(new Set());
     const [theirAssets, setTheirAssets] = useState<Set<string>>(new Set());
     const [redraftWeight, setRedraftWeight] = useState(0);
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [mode, setMode] = useState<'acquire' | 'trade-away'>('acquire');
+    const [tradeAwayPlayer, setTradeAwayPlayer] = useState<Player | null>(null);
+    const [tradeAwaySearch, setTradeAwaySearch] = useState('');
+    const [tradeAwayPackage, setTradeAwayPackage] = useState<Set<string>>(new Set());
 
     const sf = scoringFormat === 'sf';
 
@@ -103,7 +112,127 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
         setMyAssets(new Set());
         setTheirAssets(new Set());
         setSearch('');
+        setSaved(false);
+        setTradeAwayPlayer(null);
+        setTradeAwaySearch('');
+        setTradeAwayPackage(new Set());
     };
+
+    const saveDeal = async () => {
+        if (!leagueId || !platform || !selectedPlayer || myAssets.size === 0) return;
+        setSaving(true);
+        try {
+            const targetOwnerId = playerOwnershipMap.get(selectedPlayer.sleeper_id);
+            const targetTeamName = targetOwnerId ? rosterToOwnerMap.get(targetOwnerId) : undefined;
+            const theirAssetIds = [selectedPlayer.sleeper_id, ...Array.from(theirAssets)];
+            
+            await fetch('/api/trade-scenarios', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    league_id: leagueId,
+                    platform,
+                    my_assets: Array.from(myAssets),
+                    their_assets: theirAssetIds,
+                    target_team_name: targetTeamName,
+                    target_team_id: targetOwnerId?.toString(),
+                    my_value: myTotal,
+                    their_value: theirTotal,
+                }),
+            });
+            setSaved(true);
+        } catch (err) {
+            console.error('Failed to save trade:', err);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // Trade Away suggestions: find what the package could acquire
+    const tradeSuggestions = useMemo(() => {
+        if (tradeAwayPackage.size === 0) return [];
+        
+        // Calculate total package value
+        const packagePlayers = myPlayers.filter(p => tradeAwayPackage.has(p.sleeper_id));
+        const packageValue = packagePlayers.reduce((sum, p) => sum + getEffectiveValue(p), 0);
+        if (packageValue === 0) return [];
+
+        // Consolidation tax: multiple pieces for one star costs a premium
+        // "Three dimes don't equal a quarter"
+        const playerCount = packagePlayers.filter(p => p.position !== 'PICK').length;
+        const pickCount = packagePlayers.filter(p => p.position === 'PICK').length;
+        const totalPieces = playerCount + pickCount;
+
+        let consolidationTax = 0;
+        if (totalPieces === 2) consolidationTax = pickCount >= 1 ? 0.10 : 0.15;
+        else if (totalPieces === 3) consolidationTax = pickCount >= 2 ? 0.15 : pickCount >= 1 ? 0.22 : 0.30;
+        else if (totalPieces >= 4) consolidationTax = pickCount >= 2 ? 0.25 : 0.40;
+
+        // What you can realistically target = package value minus the tax
+        const effectiveValue = Math.round(packageValue * (1 - consolidationTax));
+        
+        // Tolerance around the effective value
+        const tolerance = effectiveValue < 2000 ? 0.35 : effectiveValue < 5000 ? 0.20 : 0.15;
+        const minRange = 500;
+        const minValue = Math.max(0, effectiveValue * (1 - tolerance) - minRange);
+        const maxValue = effectiveValue * (1 + tolerance) + minRange;
+
+        // Group all league players by team
+        const teamRosters = new Map<number, Player[]>();
+        allLeaguePlayers.forEach(p => {
+            const ownerId = playerOwnershipMap.get(p.sleeper_id);
+            if (ownerId && ownerId !== currentRosterId) {
+                if (!teamRosters.has(ownerId)) teamRosters.set(ownerId, []);
+                teamRosters.get(ownerId)!.push(p);
+            }
+        });
+
+        const suggestions: { teamId: number; teamName: string; targets: { player: Player; value: number; diff: number; isPick: boolean }[] }[] = [];
+
+        teamRosters.forEach((roster, teamId) => {
+            const teamName = rosterToOwnerMap.get(teamId) || `Team ${teamId}`;
+
+            // Find players AND picks on this team worth the effective value range
+            const targets = roster
+                .filter(p => {
+                    const v = getEffectiveValue(p);
+                    return v >= minValue && v <= maxValue;
+                })
+                .map(p => ({ player: p, value: getEffectiveValue(p), diff: getEffectiveValue(p) - effectiveValue, isPick: p.position === 'PICK' }))
+                .sort((a, b) => {
+                    // Picks first (since user wants capital), then by closest value
+                    if (a.isPick && !b.isPick) return -1;
+                    if (!a.isPick && b.isPick) return 1;
+                    return Math.abs(a.diff) - Math.abs(b.diff);
+                })
+                .slice(0, 4);
+
+            // Keeper viability check — only for player targets (picks don't need keeper slots)
+            const playerTargets = targets.filter(t => !t.isPick);
+            if (keeperCount && keeperCount > 0 && playerTargets.length > 0 && targets.every(t => !t.isPick) === false) {
+                const theirValues = roster.filter(p => p.position !== 'PICK').map(p => getEffectiveValue(p)).sort((a, b) => b - a);
+                const keeperCutoff = theirValues[keeperCount - 1] || 0;
+                const bestInPackage = Math.max(...packagePlayers.map(p => getEffectiveValue(p)));
+                // Only filter if ALL targets are players and our best piece doesn't make their keepers
+                if (playerTargets.length === targets.length && bestInPackage < keeperCutoff) return;
+            }
+
+            if (targets.length > 0) {
+                suggestions.push({ teamId, teamName, targets });
+            }
+        });
+
+        return suggestions
+            .sort((a, b) => Math.abs(a.targets[0].diff) - Math.abs(b.targets[0].diff))
+            .slice(0, 6);
+    }, [tradeAwayPackage, myPlayers, allLeaguePlayers, playerOwnershipMap, currentRosterId, rosterToOwnerMap, redraftWeight, keeperCount]);
+
+    // Filter my players for the trade-away search
+    const tradeAwayResults = useMemo(() => {
+        if (tradeAwaySearch.length < 1) return myPlayers.sort((a, b) => getEffectiveValue(b) - getEffectiveValue(a)).slice(0, 20);
+        const q = tradeAwaySearch.toLowerCase();
+        return myPlayers.filter(p => p.full_name.toLowerCase().includes(q)).sort((a, b) => getEffectiveValue(b) - getEffectiveValue(a));
+    }, [tradeAwaySearch, myPlayers, redraftWeight]);
 
     if (!open) {
         return (
@@ -135,8 +264,138 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
                     className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-purple-500 via-zinc-400 to-amber-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-indigo-500" />
             </div>
 
-            {/* Search for target */}
-            {!selectedPlayer && (
+            {/* Mode Tabs */}
+            <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-lg">
+                <button
+                    onClick={() => { setMode('acquire'); resetTrade(); }}
+                    className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-colors ${mode === 'acquire' ? 'bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-700'}`}
+                >
+                    Acquire Player
+                </button>
+                <button
+                    onClick={() => { setMode('trade-away'); resetTrade(); }}
+                    className={`flex-1 text-xs font-medium py-1.5 rounded-md transition-colors ${mode === 'trade-away' ? 'bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-700'}`}
+                >
+                    Trade Away
+                </button>
+            </div>
+
+            {/* Trade Away Mode */}
+            {mode === 'trade-away' && (
+                <div className="space-y-3">
+                    {/* Package builder */}
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="text-[10px] font-bold text-zinc-500 uppercase">Your Package</div>
+                            {tradeAwayPackage.size > 0 && (
+                                <div className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                                    Total: {myPlayers.filter(p => tradeAwayPackage.has(p.sleeper_id)).reduce((sum, p) => sum + getEffectiveValue(p), 0).toLocaleString()}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Selected package chips */}
+                        {tradeAwayPackage.size > 0 && (
+                            <div className="flex flex-wrap gap-1 mb-2">
+                                {myPlayers.filter(p => tradeAwayPackage.has(p.sleeper_id)).map(p => (
+                                    <button key={p.sleeper_id} onClick={() => { const next = new Set(tradeAwayPackage); next.delete(p.sleeper_id); setTradeAwayPackage(next); }}
+                                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 rounded-lg">
+                                        {p.full_name} <span className="text-red-400">×</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Search + roster list */}
+                        <div className="relative mb-2">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                            <input type="text" placeholder="Search your roster..." value={tradeAwaySearch} onChange={e => setTradeAwaySearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:border-indigo-500 outline-none" autoFocus />
+                        </div>
+                        <div className="max-h-36 overflow-y-auto space-y-0.5">
+                            {tradeAwayResults.filter(p => !tradeAwayPackage.has(p.sleeper_id)).map(p => (
+                                <button key={p.sleeper_id} onClick={() => { const next = new Set(tradeAwayPackage); next.add(p.sleeper_id); setTradeAwayPackage(next); }}
+                                    className="w-full text-left px-3 py-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition flex justify-between items-center">
+                                    <div>
+                                        <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{p.full_name}</span>
+                                        <span className="text-[10px] text-zinc-500 ml-2">{p.position} · {p.team || 'FA'}</span>
+                                    </div>
+                                    <span className="text-[10px] font-mono text-zinc-500">{getEffectiveValue(p).toLocaleString()}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Suggestions */}
+                    {tradeAwayPackage.size > 0 && (
+                        <div className="border-t border-zinc-200 dark:border-zinc-700 pt-3">
+                            {/* Package summary with consolidation info */}
+                            {(() => {
+                                const pkgPlayers = myPlayers.filter(p => tradeAwayPackage.has(p.sleeper_id));
+                                const pkgValue = pkgPlayers.reduce((sum, p) => sum + getEffectiveValue(p), 0);
+                                const pCount = pkgPlayers.filter(p => p.position !== 'PICK').length;
+                                const pkCount = pkgPlayers.filter(p => p.position === 'PICK').length;
+                                const total = pCount + pkCount;
+                                let tax = 0;
+                                if (total === 2) tax = pkCount >= 1 ? 0.10 : 0.15;
+                                else if (total === 3) tax = pkCount >= 2 ? 0.15 : pkCount >= 1 ? 0.22 : 0.30;
+                                else if (total >= 4) tax = pkCount >= 2 ? 0.25 : 0.40;
+                                const effective = Math.round(pkgValue * (1 - tax));
+                                return total > 1 ? (
+                                    <div className="text-[10px] text-zinc-500 mb-2 bg-amber-50 dark:bg-amber-950/20 px-2 py-1.5 rounded border border-amber-200 dark:border-amber-800">
+                                        <span className="font-medium text-amber-700 dark:text-amber-400">{total}-for-1 consolidation tax: -{Math.round(tax * 100)}%</span>
+                                        <span className="ml-2">Package: {pkgValue.toLocaleString()} → Realistic target: ~{effective.toLocaleString()}</span>
+                                    </div>
+                                ) : null;
+                            })()}
+                            {tradeSuggestions.length === 0 ? (
+                                <p className="text-xs text-zinc-500 text-center py-3">No realistic targets found for this package value{keeperCount ? ' (filtered by keeper viability)' : ''}.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">You could target</div>
+                                    {tradeSuggestions.map(suggestion => (
+                                        <div key={suggestion.teamId} className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                                            <div className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800/50">
+                                                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{suggestion.teamName}</span>
+                                            </div>
+                                            <div className="px-3 py-1.5 space-y-1">
+                                                {suggestion.targets.map((t, i) => (
+                                                    <button
+                                                        key={i}
+                                                        onClick={() => {
+                                                            setMode('acquire');
+                                                            setSelectedPlayer(t.player);
+                                                            setMyAssets(new Set(tradeAwayPackage));
+                                                            setTheirAssets(new Set());
+                                                            setTradeAwayPackage(new Set());
+                                                        }}
+                                                        className="w-full text-left px-2 py-1.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-between"
+                                                    >
+                                                        <div className="text-xs">
+                                                            <span className={`font-medium ${t.isPick ? 'text-cyan-700 dark:text-cyan-400' : 'text-zinc-900 dark:text-zinc-100'}`}>{t.player.full_name}</span>
+                                                            {!t.isPick && <span className="text-zinc-400 ml-1">{t.player.position}</span>}
+                                                            {t.isPick && <span className="ml-1 text-[9px] bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 px-1 rounded">PICK</span>}
+                                                        </div>
+                                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                                            <span className="text-[10px] font-mono text-zinc-500">{t.value.toLocaleString()}</span>
+                                                            <span className={`text-[9px] font-bold ${Math.abs(t.diff) / (t.value || 1) <= 0.1 ? 'text-green-500' : t.diff > 0 ? 'text-green-600' : 'text-amber-500'}`}>
+                                                                {t.diff >= 0 ? '+' : ''}{Math.round((t.diff / (t.value || 1)) * 100)}%
+                                                            </span>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Search for target (Acquire mode) */}
+            {mode === 'acquire' && !selectedPlayer && (
                 <div>
                     <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -266,6 +525,22 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
                             {Math.abs(diffPct) <= 10 && diff !== 0 && ' · Fair Trade ✓'}
                         </div>
                     </div>
+
+                    {/* Save Deal */}
+                    {leagueId && platform && myAssets.size > 0 && (
+                        <button
+                            onClick={saveDeal}
+                            disabled={saving || saved}
+                            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+                                saved
+                                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800'
+                                    : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.98]'
+                            } disabled:opacity-50`}
+                        >
+                            <Save size={14} />
+                            {saved ? 'Saved ✓' : saving ? 'Saving...' : 'Save Deal'}
+                        </button>
+                    )}
                 </div>
             )}
         </div>

@@ -675,150 +675,6 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         return { score, tags };
     };
 
-    // ── Algorithm V2: Late Round rank as spine ──────────────────────────────────
-    const [scoringAlgorithm, setScoringAlgorithm] = useState<'v1' | 'v2'>('v2');
-
-    const scorePlayerV2 = (player: Player, teamId: number): { score: number; tags: string[] } => {
-        const tags: string[] = [];
-
-        // ── 1. SPINE: Late Round rank → base score ──
-        // Convert LR rank to a score: rank 1 = 6000, rank 50 = 2500, rank 100 = 1000
-        // Falls back to VFF dynasty rank, then FC value
-        const lr = customRankingsMap?.[player.id];
-        const lrEntry = lr?.find((r: any) => r.source?.toLowerCase().includes('late round'));
-        const lrRank = lrEntry?.rank;
-        const lrTier = lrEntry?.tier;
-        const lrMarketScore = lrEntry?.marketScore || (lrEntry?.notes ? (() => { const m = lrEntry.notes!.match(/Market Score:\s*([\d.]+)/); return m ? parseFloat(m[1]) : null; })() : null);
-        const lrSignal = lrEntry?.signal;
-
-        const dynRank = sf ? player.rank_sf_overall : player.rank_1qb_overall;
-        const fcValue = player.fc_value || 0;
-
-        let baseScore: number;
-        let spineSource: 'lr' | 'vff' | 'fc';
-
-        if (lrRank) {
-            // LR rank → exponential decay curve: rank 1 ≈ 6000, rank 10 ≈ 4500, rank 50 ≈ 2500, rank 100 ≈ 1200
-            baseScore = Math.round(6000 * Math.pow(0.983, lrRank - 1));
-            spineSource = 'lr';
-        } else if (dynRank) {
-            // VFF dynasty rank fallback — similar curve but slightly discounted (less conviction)
-            baseScore = Math.round(5500 * Math.pow(0.984, dynRank - 1)) * 0.9;
-            spineSource = 'vff';
-        } else {
-            // FC value as last resort (already a score-like number)
-            baseScore = fcValue;
-            spineSource = 'fc';
-        }
-
-        // ── 2. FORMAT ADJUSTMENT ──
-        // In 1QB leagues, QBs are overvalued by market; in SF they're correctly priced
-        const slots = rosterSlots || { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
-        if (player.position === 'QB' && slots.QB <= 1) {
-            baseScore *= 0.6;
-        } else if (player.position === 'TE') {
-            baseScore *= slots.TE >= 2 ? 0.95 : 0.88;
-        }
-
-        // ── 3. MARKET CONFIRMATION ──
-        // If FC value significantly disagrees with our base, split the difference
-        let marketMod = 0;
-        if (spineSource === 'lr' && fcValue > 0) {
-            const fcImpliedRatio = fcValue / baseScore;
-            if (fcImpliedRatio > 1.4) {
-                // Market values them much higher — boost slightly (market might know something)
-                marketMod = 0.08;
-            } else if (fcImpliedRatio < 0.6) {
-                // Market values them much lower — slight concern
-                marketMod = -0.05;
-            }
-        }
-
-        // ── 4. CONVICTION SIGNALS ──
-        let convictionMod = 0;
-
-        // Late Round Market Score (strongest conviction signal)
-        if (lrMarketScore) {
-            if (lrMarketScore >= 80) { convictionMod += 0.12; tags.push('Strong Value'); }
-            else if (lrMarketScore >= 70) { convictionMod += 0.06; }
-            else if (lrMarketScore < 40) { convictionMod -= 0.06; }
-        }
-
-        // Late Round Signal
-        if (lrSignal) {
-            if (lrSignal.includes('Super Buy')) { convictionMod += 0.08; tags.push('Super Buy'); }
-            else if (lrSignal === 'Buy') { convictionMod += 0.04; tags.push('Buy'); }
-            else if (lrSignal === 'Sell') { convictionMod -= 0.04; }
-            else if (lrSignal.includes('Super Sell')) { convictionMod -= 0.08; }
-        }
-
-        // ZAP prospect quality (rookies / year 2)
-        if (player.zap_score && !player.zap_stale) {
-            if (player.zap_score >= 80) { convictionMod += 0.10; tags.push('Elite Prospect'); }
-            else if (player.zap_score >= 60) { convictionMod += 0.05; tags.push('ZAP ↑'); }
-            else if (player.zap_score < 15) { convictionMod -= 0.06; }
-        }
-
-        // AI confidence from writeups
-        if (player.writeups?.length) {
-            const bestConfidence = Math.max(...player.writeups.map(wr => wr.ai_confidence || 0));
-            if (bestConfidence >= 8) { convictionMod += 0.03; }
-            else if (bestConfidence <= 3) { convictionMod -= 0.03; }
-        }
-
-        // 30-day trend (momentum)
-        if (player.fc_trend_30_day) {
-            const trendPct = player.fc_trend_30_day / (fcValue || 3000);
-            if (trendPct > 0.15) { convictionMod += 0.04; tags.push('Trending ↑'); }
-            else if (trendPct < -0.15) { convictionMod -= 0.03; }
-        }
-
-        // ── 5. DYNASTY LONGEVITY ──
-        // Young players get a dynasty premium, aging vets get discounted
-        let ageMod = 0;
-        if (player.years_exp != null) {
-            if (player.years_exp === 0) { ageMod = 0.04; } // rookie premium
-            else if (player.years_exp === 1) { ageMod = 0.02; } // year 2 still ascending
-            else if (player.years_exp >= 8) { ageMod = -0.06; } // aging vet
-            else if (player.years_exp >= 6) { ageMod = -0.03; } // entering decline window
-        }
-
-        // ── 6. POSITIONAL NEED ──
-        const needs = calculatePositionalNeed(teamId);
-        const posNeed = needs[player.position || ''] || 0;
-        if (posNeed >= 0.5) tags.push('Need');
-
-        // Diminishing returns: penalize positions where you're already deep beyond starters
-        const team = activeTeams.find(t => t.id === teamId);
-        let depthPenalty = 0;
-        if (team && player.position) {
-            const pos = player.position;
-            let posCount = 0;
-            team.players.forEach(p => { if (p.position === pos) posCount++; });
-            picks.filter(p => p.teamId === teamId && p.playerPosition === pos).forEach(() => posCount++);
-            const startReq = Math.round(effectiveSlots[pos as keyof typeof effectiveSlots] || 0);
-            const excess = posCount - startReq;
-            // Each player beyond starters applies increasing penalty
-            // 1 over: -12%, 2 over: -24%, 3+ over: -36%, capped at -50%
-            if (excess >= 1) {
-                depthPenalty = Math.min(0.50, excess * 0.12);
-            }
-        }
-
-        // ── COMBINE ──
-        const adjustedScore = baseScore * (1 + marketMod + convictionMod + ageMod);
-        // Need: boost for high need, penalty for over-stocked
-        const needMultiplier = posNeed > 0
-            ? 1 + (posNeed * 0.25)  // up to +25% for positions of need
-            : 1 - depthPenalty;      // up to -50% for over-stocked positions
-        const finalScore = adjustedScore * needMultiplier;
-
-        return { score: finalScore, tags };
-    };
-
-    // Active scoring function based on selected algorithm
-    const activeScorePlayer = scoringAlgorithm === 'v2' ? scorePlayerV2 : scorePlayer;
-
     const simulatePick = (teamId: number): { player: Player; reason: string } | null => {
         if (availablePlayers.length === 0) return null;
 
@@ -826,7 +682,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         const scoredPlayers = availablePlayers.map(p => {
             const value = p.fc_value || 0;
             const posNeed = needs[p.position || ''] || 0;
-            const { score, tags } = activeScorePlayer(p, teamId);
+            const { score, tags } = scorePlayer(p, teamId);
             return { player: p, score, value, posNeed, tags };
         });
 
@@ -1212,25 +1068,6 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         {opt.label}
                                     </button>
                                 ))}
-                            </div>
-                        )}
-                        {/* Algorithm Version Toggle */}
-                        {draftStarted && !isDraftComplete && (
-                            <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
-                                <button
-                                    onClick={() => setScoringAlgorithm('v1')}
-                                    title="V1: FC value spine + signals"
-                                    className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${scoringAlgorithm === 'v1' ? 'bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
-                                >
-                                    V1
-                                </button>
-                                <button
-                                    onClick={() => setScoringAlgorithm('v2')}
-                                    title="V2: Late Round rank spine + market/conviction signals"
-                                    className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${scoringAlgorithm === 'v2' ? 'bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
-                                >
-                                    V2
-                                </button>
                             </div>
                         )}
                     </div>
@@ -1705,7 +1542,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                             .map(p => {
                                                 const value = p.fc_value || 0;
                                                 const posNeed = needs[p.position || ''] || 0;
-                                                const { score, tags } = activeScorePlayer(p, userTeamId!);
+                                                const { score, tags } = scorePlayer(p, userTeamId!);
                                                 return { player: p, score, value, posNeed, tags };
                                             })
                                             .sort((a, b) => b.score - a.score);
@@ -1867,7 +1704,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                     {(() => {
                                         const needs = calculatePositionalNeed(currentPick.teamId);
                                         const top3 = availablePlayers
-                                            .map(p => { const { score, tags } = activeScorePlayer(p, currentPick.teamId); return { player: p, score, value: p.fc_value || 0, posNeed: needs[p.position || ''] || 0, tags }; })
+                                            .map(p => { const { score, tags } = scorePlayer(p, currentPick.teamId); return { player: p, score, value: p.fc_value || 0, posNeed: needs[p.position || ''] || 0, tags }; })
                                             .sort((a, b) => b.score - a.score)
                                             .slice(0, 3);
                                         return (

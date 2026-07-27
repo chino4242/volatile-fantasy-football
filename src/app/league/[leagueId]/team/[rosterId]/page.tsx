@@ -10,6 +10,7 @@ import TeamRosterView from "./TeamRosterView";
 import { TeamRosterComposition } from "./TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
 import TeamHealthDashboard from "@/components/TeamHealthDashboard";
+import { SavedTrades } from "@/components/SavedTrades";
 
 export const dynamic = 'force-dynamic';
 
@@ -81,6 +82,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
             redraft_rank_overall: playerValues.redraft_rank_overall,
             redraft_rank_pos: playerValues.redraft_rank_pos,
             redraft_rank_tier: playerValues.redraft_rank_tier,
+            redraft_auction_value: playerValues.redraft_auction_value,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -111,6 +113,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
             redraft_rank_overall: playerValues.redraft_rank_overall,
             redraft_rank_pos: playerValues.redraft_rank_pos,
             redraft_rank_tier: playerValues.redraft_rank_tier,
+            redraft_auction_value: playerValues.redraft_auction_value,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -225,6 +228,9 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                                 rosterToOwnerMap={rosterToOwnerMap}
                                 currentRosterId={Number(rosterId)}
                                 scoringFormat={format}
+                                leagueId={leagueId}
+                                platform="sleeper"
+                                keeperCount={keeperCount}
                             />
                         </div>
                     </div>
@@ -293,6 +299,12 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                     rankingSources={activeSources}
                     keeperCount={keeperCount}
                     rankingsVintage={rankingsVintage}
+                />
+
+                <SavedTrades
+                    leagueId={leagueId}
+                    platform="sleeper"
+                    playerMap={new Map([...allAssetsWithWriteups, ...allLeaguePlayers].map((p: any) => [p.sleeper_id, { sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, fc_value: p.fc_value }]))}
                 />
             </div>
         </div>

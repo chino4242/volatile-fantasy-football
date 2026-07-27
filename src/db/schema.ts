@@ -423,3 +423,25 @@ export const userSignals = pgTable("user_signals", {
         userLeagueIdx: index("idx_user_signals_user_league").on(table.user_id, table.league_id),
     };
 });
+
+// Trade Scenarios — saved trade proposals for workshopping
+export const tradeScenarios = pgTable("trade_scenarios", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: text("user_id").notNull(), // supabase auth user ID
+    league_id: text("league_id").notNull(), // sleeper or fleaflicker league ID
+    platform: text("platform").notNull(), // 'sleeper' | 'fleaflicker'
+    status: text("status").notNull().default('exploring'), // exploring | ready | sent | accepted | rejected
+    my_assets: text("my_assets").notNull(), // JSON array of sleeper_ids
+    their_assets: text("their_assets").notNull(), // JSON array of sleeper_ids (includes target player)
+    target_team_name: text("target_team_name"), // display name of the trade partner
+    target_team_id: text("target_team_id"), // roster_id or team_id
+    my_value_at_save: integer("my_value_at_save"),
+    their_value_at_save: integer("their_value_at_save"),
+    notes: text("notes"),
+    created_at: timestamp("created_at").defaultNow(),
+    updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => {
+    return {
+        userLeagueIdx: index("idx_trade_scenarios_user_league").on(table.user_id, table.league_id),
+    };
+});

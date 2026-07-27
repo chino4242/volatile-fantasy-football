@@ -9,6 +9,7 @@ import { TeamRosterTable } from "@/app/league/[leagueId]/team/[rosterId]/TeamRos
 import { TeamRosterComposition } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
 import TeamHealthDashboard from "@/components/TeamHealthDashboard";
+import { SavedTrades } from "@/components/SavedTrades";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +111,7 @@ export default async function FleaflickerTeamPage({
                 redraft_rank_overall: valueData?.redraft_rank_overall || null,
                 redraft_rank_pos: valueData?.redraft_rank_pos || null,
                 redraft_rank_tier: valueData?.redraft_rank_tier || null,
+                redraft_auction_value: valueData?.redraft_auction_value || null,
             };
         })
         .filter((p): p is NonNullable<typeof p> => p !== null);
@@ -152,6 +154,7 @@ export default async function FleaflickerTeamPage({
             redraft_rank_overall: null,
             redraft_rank_pos: null,
             redraft_rank_tier: null,
+            redraft_auction_value: null,
         };
     });
 
@@ -228,16 +231,18 @@ export default async function FleaflickerTeamPage({
             redraft_rank_overall: playerValues.redraft_rank_overall,
             redraft_rank_pos: playerValues.redraft_rank_pos,
             redraft_rank_tier: playerValues.redraft_rank_tier,
+            redraft_auction_value: playerValues.redraft_auction_value,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
         .where(inArray(players.sleeper_id, allLeaguePlayerIds));
 
-    // Create ownership map
+    // Create ownership map (use allPlayers for lookup so all teams' players are included)
+    const allPlayersNameMap = new Map(allPlayers.map(p => [normalizeName(p.full_name), p]));
     const playerOwnershipMap = new Map<string, number>();
     fleaflickerData.rosters.forEach(r => {
         r.players.forEach(p => {
-            const dbPlayer = nameToPlayerMap.get(normalizeName(p.full_name));
+            const dbPlayer = allPlayersNameMap.get(normalizeName(p.full_name));
             if (dbPlayer) {
                 playerOwnershipMap.set(dbPlayer.sleeper_id, r.id);
             }
@@ -261,6 +266,9 @@ export default async function FleaflickerTeamPage({
                                 rosterToOwnerMap={rosterToOwnerMap}
                                 currentRosterId={Number(teamId)}
                                 scoringFormat={format}
+                                leagueId={leagueId}
+                                platform="fleaflicker"
+                                keeperCount={keeperCount}
                             />
                         </div>
                     </div>
@@ -318,6 +326,12 @@ export default async function FleaflickerTeamPage({
                     rankingSources={activeSources}
                     keeperCount={keeperCount}
                     rankingsVintage={rankingsVintage}
+                />
+
+                <SavedTrades
+                    leagueId={leagueId}
+                    platform="fleaflicker"
+                    playerMap={new Map([...allAssetsWithWriteups, ...allLeagueValues].map((p: any) => [p.sleeper_id, { sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, fc_value: p.fc_value }]))}
                 />
             </div>
         </div>
