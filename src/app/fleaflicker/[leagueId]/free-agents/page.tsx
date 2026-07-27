@@ -1,8 +1,9 @@
 import { db } from "@/db";
 import { players, playerValues, leagues, prospectData, prospectWriteups } from "@/db/schema";
-import { getFleaflickerLeague } from "@/lib/fleaflicker";
+import { getFleaflickerLeague, getFleaflickerRosterSlots } from "@/lib/fleaflicker";
 import { desc, eq, and, not, like, inArray, sql } from "drizzle-orm";
 import { FreeAgentTable } from "@/components/FreeAgentTable";
+import { FaabTargets } from "@/components/FaabTargets";
 import Link from "next/link";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 
@@ -12,9 +13,9 @@ interface PageProps {
     params: Promise<{ leagueId: string }>;
 }
 
-export default async function FleaflickerFreeAgentsPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string }> }) {
+export default async function FleaflickerFreeAgentsPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string; team?: string }> }) {
     const { leagueId } = await params;
-    const { format: formatParam } = await searchParams;
+    const { format: formatParam, team: teamParam } = await searchParams;
     let format: '1qb' | 'sf' | undefined = (formatParam === 'sf' || formatParam === '1qb') ? formatParam : undefined;
     if (!format) {
         const leagueData = await db.select({ scoring_format: leagues.scoring_format }).from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
@@ -62,6 +63,7 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                 redraft_rank_overall: playerValues.redraft_rank_overall,
                 redraft_rank_pos: playerValues.redraft_rank_pos,
                 redraft_rank_tier: playerValues.redraft_rank_tier,
+                redraft_auction_value: playerValues.redraft_auction_value,
             })
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -102,14 +104,33 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
 
         const rankingsVintage = formatVintage(await getRankingsVintage(format));
 
+        // Fetch user's roster for FAAB recommendations (if team param provided)
+        let myRoster: { full_name: string; position: string | null; fc_value: number | null; redraft_rank_overall: number | null; redraft_auction_value: number | null }[] = [];
+        let rosterSlots: { QB: number; RB: number; WR: number; TE: number; FLEX: number } | undefined;
+        if (teamParam) {
+            const teamId = parseInt(teamParam);
+            const userRoster = fleaflickerData.rosters.find(r => r.id === teamId);
+            if (userRoster) {
+                // Match roster players to DB for redraft ranks
+                const normalizeName2 = normalizeName;
+                myRoster = userRoster.players.map(p => {
+                    const dbMatch = dbPlayers.find(db => normalizeName2(db.full_name || '') === normalizeName2(p.full_name));
+                    return {
+                        full_name: p.full_name,
+                        position: dbMatch?.position || null,
+                        fc_value: dbMatch?.fc_value || null,
+                        redraft_rank_overall: dbMatch?.redraft_rank_overall || null,
+                        redraft_auction_value: null,
+                    };
+                });
+                rosterSlots = await getFleaflickerRosterSlots(leagueId);
+            }
+        }
+
         return (
             <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8">
                 <div className="max-w-4xl mx-auto">
                     <div className="mb-6 sm:mb-8">
-                        <Link href={`/fleaflicker/${leagueId}`} className="text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 mb-4 inline-block">
-                            ← Back to League
-                        </Link>
-
                         <div className="flex items-center gap-4 sm:gap-6 bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                             <div className="min-w-0">
                                 <h1 className="text-xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-50 truncate">Top Free Agents</h1>
@@ -117,6 +138,15 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                             </div>
                         </div>
                     </div>
+
+                    {/* FAAB Targets (personalized recommendations) */}
+                    {myRoster.length > 0 && (
+                        <FaabTargets
+                            freeAgents={freeAgentsWithWriteups as any[]}
+                            myRoster={myRoster}
+                            rosterSlots={rosterSlots}
+                        />
+                    )}
 
                     {/* Position Value Summary */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">

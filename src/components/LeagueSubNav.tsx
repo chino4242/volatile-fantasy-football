@@ -65,9 +65,17 @@ export function LeagueSubNav({ leagueId, leagueName, platform, teams }: LeagueSu
         ? teams.find(t => String(t.id) === currentTeamId)
         : null;
 
+    // Build free-agents link with team context if on a team page
+    const freeAgentsQs = (() => {
+        const params = new URLSearchParams(queryString);
+        if (currentTeamId) params.set('team', currentTeamId);
+        const str = params.toString();
+        return str ? `?${str}` : '';
+    })();
+
     const tabs = [
         { key: 'dashboard', label: 'Dashboard', href: `${basePath}${qs}` },
-        { key: 'free-agents', label: 'Free Agents', href: `${basePath}/free-agents${qs}` },
+        { key: 'free-agents', label: 'Free Agents', href: `${basePath}/free-agents${freeAgentsQs}` },
         { key: 'mock-draft', label: 'Mock Draft', href: `${basePath}/mock-draft${qs}` },
         { key: 'live-draft', label: 'Live Draft', href: `${basePath}/live-draft${qs}`, muted: true },
     ];

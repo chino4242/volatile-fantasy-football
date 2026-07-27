@@ -10,6 +10,7 @@ import { TeamRosterComposition } from "@/app/league/[leagueId]/team/[rosterId]/T
 import TradeEvaluator from "@/components/TradeEvaluator";
 import TeamHealthDashboard from "@/components/TeamHealthDashboard";
 import { SavedTrades } from "@/components/SavedTrades";
+import { KeeperDecisionTool } from "@/components/KeeperDecisionTool";
 
 export const dynamic = "force-dynamic";
 
@@ -350,6 +351,15 @@ export default async function FleaflickerTeamPage({
                     }))}
                     format={format}
                 />
+
+                {keeperCount && keeperCount > 0 && (
+                    <KeeperDecisionTool
+                        players={allAssetsWithWriteups as any[]}
+                        scoringFormat={format}
+                        keeperCount={keeperCount}
+                        leagueId={leagueId}
+                    />
+                )}
 
                 <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                     <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} customRankingsMap={rankingsMap} />
