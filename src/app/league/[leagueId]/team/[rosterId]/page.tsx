@@ -127,6 +127,44 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
         });
     });
 
+    // Add other teams' picks to allLeaguePlayers and ownership map
+    const otherTeamsPicks = allPicks
+        .filter(pick => pick.currentOwner !== Number(rosterId))
+        .map(pick => {
+            const pickId = getPickFantasyCalcId(pick.season, pick.round);
+            const pickData = playerMap.get(pickId);
+            const ownerName = rosterToOwnerMap.get(pick.currentOwner) || '';
+            const uniqueId = `${pickId}_${pick.currentOwner}`;
+            playerOwnershipMap.set(uniqueId, pick.currentOwner);
+            return {
+                sleeper_id: uniqueId,
+                full_name: `${pick.season} Round ${pick.round} (${ownerName})`,
+                position: 'PICK',
+                team: null,
+                fc_value: pickData?.fc_value || 0,
+                fc_rank: null,
+                fc_rank_sf: null,
+                fc_rank_1qb: null,
+                fc_position_rank_sf: null,
+                fc_position_rank_1qb: null,
+                fc_combined_value: null,
+                fc_trade_frequency: null,
+                fc_trend_30_day: null,
+                rank_1qb_overall: null,
+                rank_1qb_pos: null,
+                rank_1qb_tier: null,
+                rank_sf_overall: null,
+                rank_sf_pos: null,
+                rank_sf_tier: null,
+                redraft_rank_overall: null,
+                redraft_rank_pos: null,
+                redraft_rank_tier: null,
+                redraft_auction_value: null,
+            };
+        })
+        .filter(p => p.fc_value > 0);
+    const allLeaguePlayersWithPicks = [...allLeaguePlayers, ...otherTeamsPicks];
+
     const playerMap = new Map(dbPlayers.map(p => [p.sleeper_id, p]));
 
     // 5. Enrich players
@@ -223,7 +261,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                         <div className="flex items-center gap-3">
                             <TradeEvaluator
                                 myPlayers={allAssetsWithWriteups as any[]}
-                                allLeaguePlayers={allLeaguePlayers as any[]}
+                                allLeaguePlayers={allLeaguePlayersWithPicks as any[]}
                                 playerOwnershipMap={playerOwnershipMap}
                                 rosterToOwnerMap={rosterToOwnerMap}
                                 currentRosterId={Number(rosterId)}
@@ -304,7 +342,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                 <SavedTrades
                     leagueId={leagueId}
                     platform="sleeper"
-                    playerMap={new Map([...allAssetsWithWriteups, ...allLeaguePlayers].map((p: any) => [p.sleeper_id, { sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, fc_value: p.fc_value }]))}
+                    playerMap={new Map([...allAssetsWithWriteups, ...allLeaguePlayersWithPicks].map((p: any) => [p.sleeper_id, { sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, fc_value: p.fc_value }]))}
                 />
             </div>
         </div>

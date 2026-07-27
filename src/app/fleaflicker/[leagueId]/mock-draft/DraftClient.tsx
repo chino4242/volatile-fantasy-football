@@ -1689,6 +1689,89 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                             </>
                                         );
                                     })()}
+                                    {/* Trade This Pick suggestions */}
+                                    {(() => {
+                                        if (!currentPick || !userTeamId) return null;
+                                        const pickRound = currentPick.round;
+                                        const pickSlot = currentPick.pick;
+                                        // Estimate pick value from best available player
+                                        const pickValue = availablePlayers[0]?.fc_value || 3000;
+
+                                        // Find teams picking later that might want to trade up
+                                        const laterTeams = new Set<number>();
+                                        for (let i = currentPickIndex + 1; i < picks.length && laterTeams.size < 8; i++) {
+                                            if (picks[i].teamId !== userTeamId && !picks[i].playerId) {
+                                                laterTeams.add(picks[i].teamId);
+                                            }
+                                        }
+
+                                        // For each later team, find what they could offer
+                                        const tradeOffers: { teamId: number; teamName: string; offer: string; offerValue: number; diff: number }[] = [];
+                                        laterTeams.forEach(teamId => {
+                                            const team = teams.find(t => t.id === teamId);
+                                            if (!team) return;
+                                            // Their next pick
+                                            const theirNextPick = picks.find((p, i) => i > currentPickIndex && p.teamId === teamId && !p.playerId);
+                                            if (!theirNextPick) return;
+
+                                            // A team trading up typically offers their pick + a player/pick sweetener
+                                            // Look for a player on their roster that + their pick ≈ our pick value
+                                            const theirPickValue = Math.round(pickValue * 0.7); // later pick is worth less
+                                            const sweetenerNeeded = pickValue - theirPickValue;
+
+                                            // Find their best player near the sweetener value
+                                            const sweetener = team.players
+                                                .filter(p => p.position !== 'PICK' && (p.fc_value || 0) >= sweetenerNeeded * 0.5 && (p.fc_value || 0) <= sweetenerNeeded * 2)
+                                                .sort((a, b) => Math.abs((a.fc_value || 0) - sweetenerNeeded) - Math.abs((b.fc_value || 0) - sweetenerNeeded))[0];
+
+                                            if (sweetener) {
+                                                const offerValue = theirPickValue + (sweetener.fc_value || 0);
+                                                tradeOffers.push({
+                                                    teamId,
+                                                    teamName: team.name,
+                                                    offer: `${theirNextPick.round}.${String(theirNextPick.pick).padStart(2, '0')} + ${sweetener.full_name}`,
+                                                    offerValue,
+                                                    diff: offerValue - pickValue,
+                                                });
+                                            } else {
+                                                // Just show the pick swap
+                                                tradeOffers.push({
+                                                    teamId,
+                                                    teamName: team.name,
+                                                    offer: `${theirNextPick.round}.${String(theirNextPick.pick).padStart(2, '0')} + sweetener`,
+                                                    offerValue: theirPickValue,
+                                                    diff: theirPickValue - pickValue,
+                                                });
+                                            }
+                                        });
+
+                                        const topOffers = tradeOffers
+                                            .filter(o => o.offerValue >= pickValue * 0.8)
+                                            .sort((a, b) => b.offerValue - a.offerValue)
+                                            .slice(0, 3);
+
+                                        if (topOffers.length === 0) return null;
+
+                                        return (
+                                            <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                                <div className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase mb-2">💰 Trade Back Options</div>
+                                                <div className="space-y-1.5">
+                                                    {topOffers.map((offer, i) => (
+                                                        <div key={i} className="flex items-center justify-between text-xs">
+                                                            <div className="min-w-0">
+                                                                <span className="font-medium text-zinc-900 dark:text-zinc-100">{offer.teamName}</span>
+                                                                <span className="text-zinc-500 ml-1">offers {offer.offer}</span>
+                                                            </div>
+                                                            <span className={`text-[10px] font-mono font-bold flex-shrink-0 ml-2 ${offer.diff >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                                                                {offer.offerValue.toLocaleString()}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="text-[9px] text-amber-600 dark:text-amber-400 mt-1.5">Your pick value: ~{pickValue.toLocaleString()} (based on BPA)</div>
+                                            </div>
+                                        );
+                                    })()}
                                     <button
                                         onClick={() => setShowTradeModal(true)}
                                         className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors"

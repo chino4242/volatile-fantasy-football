@@ -237,6 +237,11 @@ export default async function FleaflickerTeamPage({
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
         .where(inArray(players.sleeper_id, allLeaguePlayerIds));
 
+    // Create roster-to-owner name map
+    const rosterToOwnerMap = new Map(
+        fleaflickerData.rosters.map(r => [r.id, r.name])
+    );
+
     // Create ownership map (use allPlayers for lookup so all teams' players are included)
     const allPlayersNameMap = new Map(allPlayers.map(p => [normalizeName(p.full_name), p]));
     const playerOwnershipMap = new Map<string, number>();
@@ -249,9 +254,45 @@ export default async function FleaflickerTeamPage({
         });
     });
 
-    const rosterToOwnerMap = new Map(
-        fleaflickerData.rosters.map(r => [r.id, r.name])
-    );
+    // Add other teams' picks to allLeagueValues and ownership map
+    const otherTeamsPicks: any[] = [];
+    for (const r of fleaflickerData.rosters) {
+        if (r.id === parseInt(teamId)) continue; // skip current team's picks (already in myPlayers)
+        for (const pick of r.draftPicks) {
+            const pickId = getPickFantasyCalcId(pick.season.toString(), pick.round);
+            const pickValue = values.find(v => v.sleeper_id === pickId);
+            const fcVal = pickValue ? (format === 'sf' ? pickValue.fc_value_sf : pickValue.fc_value_1qb) : null;
+            if (!fcVal) continue;
+            const ownerName = rosterToOwnerMap.get(r.id) || '';
+            otherTeamsPicks.push({
+                sleeper_id: `${pickId}_${r.id}`,
+                full_name: `${pick.season} Round ${pick.round}${pick.slot ? `.${String(pick.slot).padStart(2, '0')}` : ''} (${ownerName})`,
+                position: 'PICK',
+                team: null,
+                fc_value: fcVal,
+                fc_rank: null,
+                fc_rank_sf: null,
+                fc_rank_1qb: null,
+                fc_position_rank_sf: null,
+                fc_position_rank_1qb: null,
+                fc_combined_value: null,
+                fc_trade_frequency: null,
+                fc_trend_30_day: null,
+                rank_1qb_overall: null,
+                rank_1qb_pos: null,
+                rank_1qb_tier: null,
+                rank_sf_overall: null,
+                rank_sf_pos: null,
+                rank_sf_tier: null,
+                redraft_rank_overall: null,
+                redraft_rank_pos: null,
+                redraft_rank_tier: null,
+                redraft_auction_value: null,
+            });
+            playerOwnershipMap.set(`${pickId}_${r.id}`, r.id);
+        }
+    }
+    const allLeagueValuesWithPicks = [...allLeagueValues, ...otherTeamsPicks];
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 p-4 md:p-8">
@@ -261,7 +302,7 @@ export default async function FleaflickerTeamPage({
                         <div className="flex items-center gap-3">
                             <TradeEvaluator
                                 myPlayers={allAssetsWithWriteups as any[]}
-                                allLeaguePlayers={allLeagueValues as any[]}
+                                allLeaguePlayers={allLeagueValuesWithPicks as any[]}
                                 playerOwnershipMap={playerOwnershipMap}
                                 rosterToOwnerMap={rosterToOwnerMap}
                                 currentRosterId={Number(teamId)}
@@ -331,7 +372,7 @@ export default async function FleaflickerTeamPage({
                 <SavedTrades
                     leagueId={leagueId}
                     platform="fleaflicker"
-                    playerMap={new Map([...allAssetsWithWriteups, ...allLeagueValues].map((p: any) => [p.sleeper_id, { sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, fc_value: p.fc_value }]))}
+                    playerMap={new Map([...allAssetsWithWriteups, ...allLeagueValuesWithPicks].map((p: any) => [p.sleeper_id, { sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, fc_value: p.fc_value }]))}
                 />
             </div>
         </div>
