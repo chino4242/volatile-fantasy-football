@@ -47,7 +47,7 @@ export function SavedTrades({ leagueId, platform, playerMap }: SavedTradesProps)
 
     useEffect(() => {
         fetch(`/api/trade-scenarios?league_id=${leagueId}`)
-            .then(r => r.json())
+            .then(r => { if (!r.ok) return { scenarios: [] }; return r.json(); })
             .then(data => setScenarios(data.scenarios || []))
             .catch(() => setScenarios([]))
             .finally(() => setLoading(false));

@@ -76,7 +76,7 @@ export function ColumnPicker({ columns, visibleCols, columnOrder, onToggle, onRe
             >
                 <Settings2 className="w-3.5 h-3.5" />
                 Columns
-                <span className="ml-0.5 text-[10px] bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 rounded-full px-1.5 py-0.5 font-semibold">
+                <span className="ml-0.5 text-[10px] bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 rounded-full px-1.5 py-0.5 font-semibold" suppressHydrationWarning>
                     {visibleCols.size}
                 </span>
             </button>

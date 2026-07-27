@@ -214,9 +214,8 @@ export function PositionScarcityChart({
                                     </div>
                                     {/* Bar */}
                                     <div className="flex-1 flex h-7 sm:h-7 rounded overflow-hidden bg-zinc-100 dark:bg-zinc-800 gap-px">
-                                        {segments.map((seg) => {
+                                        {segments.filter(seg => (seg.value / data.maxTotal) * 100 >= 0.3).map((seg) => {
                                             const widthPct = (seg.value / data.maxTotal) * 100;
-                                            if (widthPct < 0.3) return null;
                                             const bg = view === 'dynasty' ? seg.dynastyBucket.bg : view === 'redraft' ? seg.redraftBucket.bg : seg.zapBucket.bg;
                                             return (
                                                 <div
