@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Save, Target, Users, ClipboardList, StickyNote, ChevronDown, Check, X } from 'lucide-react';
+import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 
 // --- Types ---
 
@@ -101,7 +102,7 @@ export function DraftPlanClient({
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [activeSection, setActiveSection] = useState<'keepers' | 'suggestions' | 'picks' | 'notes'>('keepers');
+    const [activeSection, setActiveSection] = useState<'keepers' | 'board' | 'notes'>('board');
 
     // Derive active team from selection
     const activeTeam = allTeams.find(t => t.id === selectedTeamId) || null;
@@ -255,8 +256,7 @@ export function DraftPlanClient({
             <div className="flex gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
                 {[
                     { key: 'keepers' as const, label: 'Keepers', icon: Users },
-                    { key: 'suggestions' as const, label: 'Suggestions', icon: Target },
-                    { key: 'picks' as const, label: 'Pick Plan', icon: ClipboardList },
+                    { key: 'board' as const, label: 'Draft Board', icon: ClipboardList },
                     { key: 'notes' as const, label: 'Notes', icon: StickyNote },
                 ].map(({ key, label, icon: Icon }) => (
                     <button
@@ -317,25 +317,18 @@ export function DraftPlanClient({
                         )}
                     </div>
                 )}
-                {activeSection === 'suggestions' && (
-                    <DraftSuggestionsSection
+                {activeSection === 'board' && (
+                    <DraftBoardSection
                         activeTeam={activeTeam}
                         keeperIds={keeperIds}
                         freeAgents={freeAgents}
                         picks={picks}
+                        setPicks={setPicks}
                         format={format}
                         numTeams={allTeams.length}
                         allTeams={allTeams}
                         keeperCount={keeperCount}
                         customRankingsMap={customRankingsMap}
-                        posColor={posColor}
-                    />
-                )}
-                {activeSection === 'picks' && (
-                    <PickPlanSection
-                        picks={picks}
-                        setPicks={setPicks}
-                        freeAgents={freeAgents}
                         posColor={posColor}
                     />
                 )}
@@ -347,13 +340,14 @@ export function DraftPlanClient({
     );
 }
 
-// --- Draft Suggestions Section ---
+// --- Draft Board Section (combined picks + suggestions) ---
 
-function DraftSuggestionsSection({
+function DraftBoardSection({
     activeTeam,
     keeperIds,
     freeAgents,
     picks,
+    setPicks,
     format,
     numTeams,
     allTeams,
@@ -365,6 +359,7 @@ function DraftSuggestionsSection({
     keeperIds: string[];
     freeAgents: Player[];
     picks: PickPlanEntry[];
+    setPicks: (picks: PickPlanEntry[]) => void;
     format: '1qb' | 'sf';
     numTeams: number;
     allTeams: TeamData[];
@@ -537,7 +532,7 @@ function DraftSuggestionsSection({
     // Run the simulation
     const remainingPool = [...draftPool];
     const draftedByPos: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
-    const pickSuggestions: (typeof picks[number] & { suggestion: string; targetPos: string })[] = [];
+    const pickSuggestions: (typeof picks[number] & { suggestion: string; targetPos: string; best: { player: Player; score: number } | null; runnerUp: { player: Player; score: number } | null })[] = [];
 
     // For each of our picks, simulate all picks before it, then pick for us
     let lastOverall = 0;
@@ -603,7 +598,7 @@ function DraftSuggestionsSection({
             suggestion = 'Slim pickings — take best available';
         }
 
-        pickSuggestions.push({ ...pick, suggestion, targetPos });
+        pickSuggestions.push({ ...pick, suggestion, targetPos, best: best ? { player: best.player, score: best.score } : null, runnerUp: runnerUp && runnerUp.player ? { player: runnerUp.player, score: runnerUp.score } : null });
     }
 
     // Best available from draft pool (top 5 per position)
@@ -626,137 +621,134 @@ function DraftSuggestionsSection({
         scarcity[pos] = { top5Avg, top15Avg, dropoff };
     });
 
+    // Allow user to select a player for a pick
+    const selectPlayerForPick = (pickIdx: number, player: Player) => {
+        const newPicks = [...picks];
+        newPicks[pickIdx] = { ...newPicks[pickIdx], targetPlayer: player.full_name, targetPosition: player.position };
+        setPicks(newPicks);
+    };
+
+    const clearPick = (pickIdx: number) => {
+        const newPicks = [...picks];
+        newPicks[pickIdx] = { ...newPicks[pickIdx], targetPlayer: null, targetPosition: null };
+        setPicks(newPicks);
+    };
+
     return (
         <div className="p-4 sm:p-6 space-y-6">
             {/* Roster Snapshot */}
             <div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 mb-3">Roster After Keepers</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2">Roster After Keepers</h2>
+                <div className="grid grid-cols-4 gap-2">
                     {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => {
                         const have = keptCounts[pos];
                         const want = idealStarters[pos];
                         const isFull = have >= want;
                         return (
-                            <div key={pos} className={`rounded-lg p-3 border ${
-                                isFull
-                                    ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20'
-                                    : have === 0
-                                        ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20'
-                                        : 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20'
+                            <div key={pos} className={`rounded-lg p-2 text-center border ${
+                                isFull ? 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/10'
+                                : have === 0 ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/10'
+                                : 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/10'
                             }`}>
-                                <div className="flex items-center justify-between">
-                                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${posColor(pos)}`}>{pos}</span>
-                                    <span className="text-xs font-mono text-zinc-500">{have}/{want}</span>
-                                </div>
-                                <div className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mt-1">
-                                    {keptValues[pos].toLocaleString()}
-                                </div>
-                                <div className="text-[10px] text-zinc-500 mt-0.5">
-                                    {isFull ? '✓ Set' : have === 0 ? '⚠ Empty' : `Need ${want - have} more`}
-                                </div>
+                                <span className={`text-xs font-bold ${posColor(pos)} px-1 rounded`}>{pos}</span>
+                                <div className="text-sm font-mono font-bold text-zinc-900 dark:text-zinc-100 mt-0.5">{have}/{want}</div>
                             </div>
                         );
                     })}
                 </div>
             </div>
 
-            {/* Positional Needs */}
-            {needs.length > 0 && (
-                <div>
-                    <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 mb-3">Draft Priorities</h2>
-                    <div className="space-y-2">
-                        {needs.map((need, idx) => (
-                            <div key={need.pos} className="flex items-center gap-3 p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/50">
-                                <span className={`text-sm font-bold w-6 h-6 flex items-center justify-center rounded-full ${
-                                    need.urgency === 'high' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-                                    : need.urgency === 'medium' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
-                                    : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400'
-                                }`}>
-                                    {idx + 1}
-                                </span>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${posColor(need.pos)}`}>{need.pos}</span>
-                                        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                                            {need.gap > 0 ? `Draft ${need.gap}` : 'Upgrade target'}
-                                        </span>
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                            need.urgency === 'high' ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
-                                            : need.urgency === 'medium' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
-                                            : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400'
-                                        }`}>
-                                            {need.urgency}
-                                        </span>
-                                    </div>
-                                    <div className="text-xs text-zinc-500 mt-0.5">{need.reason}</div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+            {/* Position Scarcity Chart (same as mock/live draft) */}
+            <PositionScarcityChart
+                players={draftPool}
+                format={format}
+                onPlayerClick={() => {}}
+                customRankingsMap={customRankingsMap}
+                title="Draft Pool Scarcity"
+                defaultCollapsed={false}
+            />
 
-            {/* Scarcity Alert */}
+            {/* Draft Board - each pick with suggestion */}
             <div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 mb-3">Position Scarcity</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => {
-                        const s = scarcity[pos];
-                        const isScarce = s.dropoff > 40;
+                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Your Picks</h2>
+                <div className="space-y-3">
+                    {pickSuggestions.map((pick, idx) => {
+                        const userSelection = picks[idx]?.targetPlayer;
+                        const hasOverride = !!userSelection;
+
                         return (
-                            <div key={pos} className="rounded-lg p-3 bg-zinc-50 dark:bg-zinc-800/50">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                    <span className={`text-[10px] font-bold px-1 py-0.5 rounded ${posColor(pos)}`}>{pos}</span>
-                                    {isScarce && <span className="text-[9px] font-bold text-red-500">SCARCE</span>}
+                            <div key={idx} className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                                {/* Pick row */}
+                                <div className="flex items-center gap-3 px-3 py-2.5">
+                                    <span className="text-xs font-bold text-zinc-400 w-10 flex-shrink-0">
+                                        {pick.round}.{String(pick.slot).padStart(2, '0')}
+                                    </span>
+
+                                    {hasOverride ? (
+                                        <>
+                                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${posColor(picks[idx].targetPosition)}`}>
+                                                {picks[idx].targetPosition}
+                                            </span>
+                                            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 flex-1 truncate">
+                                                {userSelection}
+                                            </span>
+                                            <button onClick={() => clearPick(idx)} className="text-zinc-400 hover:text-zinc-600 p-1">
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${posColor(pick.targetPos === 'BPA' ? null : pick.targetPos)}`}>
+                                                {pick.targetPos}
+                                            </span>
+                                            <span className="text-sm text-zinc-600 dark:text-zinc-400 flex-1 truncate italic">
+                                                {pick.suggestion}
+                                            </span>
+                                        </>
+                                    )}
                                 </div>
-                                <div className="text-xs text-zinc-500">
-                                    Top 5 avg: <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">{Math.round(s.top5Avg).toLocaleString()}</span>
-                                </div>
-                                <div className="text-xs text-zinc-500">
-                                    Top 15 avg: <span className="font-mono text-zinc-600 dark:text-zinc-400">{Math.round(s.top15Avg).toLocaleString()}</span>
-                                </div>
-                                <div className={`text-[10px] font-medium mt-1 ${s.dropoff > 40 ? 'text-red-500' : s.dropoff > 25 ? 'text-amber-500' : 'text-green-600'}`}>
-                                    {Math.round(s.dropoff)}% value drop
-                                </div>
+
+                                {/* Suggestion underneath with accept button */}
+                                {!hasOverride && pick.best && (
+                                    <div className="px-3 pb-2.5 border-t border-zinc-100 dark:border-zinc-800 pt-2">
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => selectPlayerForPick(idx, pick.best!.player)}
+                                                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-medium transition-colors"
+                                            >
+                                                <Check className="w-3 h-3" />
+                                                Draft {pick.best.player.full_name}
+                                            </button>
+                                            {pick.runnerUp && (
+                                                <button
+                                                    onClick={() => selectPlayerForPick(idx, pick.runnerUp!.player)}
+                                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 text-xs font-medium transition-colors"
+                                                >
+                                                    or {pick.runnerUp.player.full_name} ({pick.runnerUp.player.position})
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         );
                     })}
                 </div>
             </div>
 
-            {/* Round-by-Round Strategy */}
-            {pickSuggestions.length > 0 && (
-                <div>
-                    <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 mb-3">Pick-by-Pick Strategy</h2>
-                    <div className="space-y-2">
-                        {pickSuggestions.map((pick, idx) => (
-                            <div key={idx} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700">
-                                <span className="text-xs font-bold text-zinc-400 w-12 flex-shrink-0">
-                                    {pick.round}.{String(pick.slot).padStart(2, '0')}
-                                </span>
-                                <span className={`text-xs font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${posColor(pick.targetPos === 'BPA' ? null : pick.targetPos)}`}>
-                                    {pick.targetPos}
-                                </span>
-                                <span className="text-sm text-zinc-700 dark:text-zinc-300 truncate">{pick.suggestion}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Best Available by Position */}
+            {/* Top Targets by Position */}
             <div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 mb-3">Top Targets by Position</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Top Targets</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => (
                         <div key={pos} className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-                            <div className={`px-3 py-1.5 text-xs font-bold ${posColor(pos)}`}>{pos} Targets</div>
+                            <div className={`px-2 py-1 text-[10px] font-bold ${posColor(pos)}`}>{pos}</div>
                             <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                {bestByPosition[pos].map((p, i) => (
-                                    <div key={p.id} className="flex items-center gap-2 px-3 py-2">
-                                        <span className="text-[10px] font-mono text-zinc-400 w-4">{i + 1}</span>
-                                        <span className="text-sm text-zinc-900 dark:text-zinc-100 flex-1 truncate">{p.full_name}</span>
-                                        <span className="text-xs font-mono text-zinc-500 tabular-nums">{(p.fc_value || 0).toLocaleString()}</span>
+                                {bestByPosition[pos].slice(0, 3).map((p, i) => (
+                                    <div key={p.id} className="flex items-center gap-1.5 px-2 py-1.5">
+                                        <span className="text-[10px] font-mono text-zinc-400">{i + 1}</span>
+                                        <span className="text-xs text-zinc-900 dark:text-zinc-100 flex-1 truncate">{p.full_name}</span>
+                                        <span className="text-[10px] font-mono text-zinc-500">{(p.fc_value || 0).toLocaleString()}</span>
                                     </div>
                                 ))}
                             </div>
@@ -764,180 +756,6 @@ function DraftSuggestionsSection({
                     ))}
                 </div>
             </div>
-        </div>
-    );
-}
-
-// --- Pick Plan Section ---
-
-function PickPlanSection({
-    picks,
-    setPicks,
-    freeAgents,
-    posColor,
-}: {
-    picks: PickPlanEntry[];
-    setPicks: (picks: PickPlanEntry[]) => void;
-    freeAgents: Player[];
-    posColor: (pos: string | null) => string;
-}) {
-    const [expandedPick, setExpandedPick] = useState<number | null>(null);
-    const [searchQuery, setSearchQuery] = useState('');
-
-    const updatePick = (idx: number, updates: Partial<PickPlanEntry>) => {
-        const newPicks = [...picks];
-        newPicks[idx] = { ...newPicks[idx], ...updates };
-        setPicks(newPicks);
-    };
-
-    const filteredPlayers = searchQuery.length >= 2
-        ? freeAgents
-            .filter(p => p.full_name.toLowerCase().includes(searchQuery.toLowerCase()))
-            .slice(0, 10)
-        : [];
-
-    const positionOptions = ['QB', 'RB', 'WR', 'TE', 'BPA'];
-
-    return (
-        <div className="p-4 sm:p-6">
-            <div className="mb-4">
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Pick-by-Pick Plan</h2>
-                <p className="text-sm text-zinc-500 mt-0.5">
-                    Assign a position target or specific player to each pick
-                </p>
-            </div>
-
-            {picks.length === 0 ? (
-                <div className="text-center py-8 text-zinc-400">
-                    <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p>No draft picks found for your team.</p>
-                    <p className="text-xs mt-1">Make sure you&apos;re viewing your team&apos;s page.</p>
-                </div>
-            ) : (
-                <div className="space-y-2">
-                    {picks.map((pick, idx) => (
-                        <div key={idx} className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-                            {/* Pick header */}
-                            <button
-                                onClick={() => setExpandedPick(expandedPick === idx ? null : idx)}
-                                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors text-left"
-                            >
-                                <span className="text-xs font-bold text-zinc-400 w-12">
-                                    {pick.round}.{String(pick.slot).padStart(2, '0')}
-                                </span>
-                                {pick.targetPosition && (
-                                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${posColor(pick.targetPosition === 'BPA' ? null : pick.targetPosition)}`}>
-                                        {pick.targetPosition}
-                                    </span>
-                                )}
-                                {pick.targetPlayer && (
-                                    <span className="text-sm text-zinc-700 dark:text-zinc-300 truncate">
-                                        {pick.targetPlayer}
-                                    </span>
-                                )}
-                                {!pick.targetPosition && !pick.targetPlayer && (
-                                    <span className="text-sm text-zinc-400 italic">No target set</span>
-                                )}
-                                <ChevronDown className={`w-4 h-4 ml-auto text-zinc-400 transition-transform ${expandedPick === idx ? 'rotate-180' : ''}`} />
-                            </button>
-
-                            {/* Expanded detail */}
-                            {expandedPick === idx && (
-                                <div className="px-3 pb-3 border-t border-zinc-100 dark:border-zinc-800 pt-3 space-y-3">
-                                    {/* Position target buttons */}
-                                    <div>
-                                        <label className="text-xs font-medium text-zinc-500 mb-1.5 block">Position Target</label>
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {positionOptions.map(pos => (
-                                                <button
-                                                    key={pos}
-                                                    onClick={() => updatePick(idx, { targetPosition: pick.targetPosition === pos ? null : pos })}
-                                                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                                                        pick.targetPosition === pos
-                                                            ? 'bg-indigo-600 text-white'
-                                                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                                                    }`}
-                                                >
-                                                    {pos}
-                                                </button>
-                                            ))}
-                                            {pick.targetPosition && (
-                                                <button
-                                                    onClick={() => updatePick(idx, { targetPosition: null })}
-                                                    className="px-2 py-1 rounded text-xs text-zinc-400 hover:text-zinc-600"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Player target search */}
-                                    <div>
-                                        <label className="text-xs font-medium text-zinc-500 mb-1.5 block">Target Player</label>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                placeholder="Search players..."
-                                                value={searchQuery}
-                                                onChange={(e) => setSearchQuery(e.target.value)}
-                                                onFocus={() => setSearchQuery(pick.targetPlayer || '')}
-                                                className="w-full px-3 py-1.5 text-sm rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
-                                            />
-                                            {filteredPlayers.length > 0 && (
-                                                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
-                                                    {filteredPlayers.map(p => (
-                                                        <button
-                                                            key={p.id}
-                                                            onClick={() => {
-                                                                updatePick(idx, { targetPlayer: p.full_name, targetPosition: p.position });
-                                                                setSearchQuery('');
-                                                            }}
-                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 text-sm"
-                                                        >
-                                                            <span className={`text-xs font-bold px-1 py-0.5 rounded ${posColor(p.position)}`}>
-                                                                {p.position}
-                                                            </span>
-                                                            <span className="text-zinc-900 dark:text-zinc-100">{p.full_name}</span>
-                                                            <span className="ml-auto text-xs text-zinc-400 tabular-nums">
-                                                                {(p.fc_value || 0).toLocaleString()}
-                                                            </span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                        {pick.targetPlayer && (
-                                            <div className="mt-1.5 flex items-center gap-2">
-                                                <span className="text-xs text-zinc-500">Target:</span>
-                                                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{pick.targetPlayer}</span>
-                                                <button
-                                                    onClick={() => updatePick(idx, { targetPlayer: null })}
-                                                    className="text-zinc-400 hover:text-zinc-600"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Pick notes */}
-                                    <div>
-                                        <label className="text-xs font-medium text-zinc-500 mb-1.5 block">Notes</label>
-                                        <input
-                                            type="text"
-                                            placeholder="e.g. Reach if top RB gone..."
-                                            value={pick.notes}
-                                            onChange={(e) => updatePick(idx, { notes: e.target.value })}
-                                            className="w-full px-3 py-1.5 text-sm rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            )}
         </div>
     );
 }
