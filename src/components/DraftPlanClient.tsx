@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Save, Target, Users, ClipboardList, StickyNote, ChevronDown, Check, X } from 'lucide-react';
+import { Save, Target, Users, ClipboardList, StickyNote, ChevronDown, Check, X, Star } from 'lucide-react';
 import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 
 // --- Types ---
@@ -103,6 +103,23 @@ export function DraftPlanClient({
     const [saved, setSaved] = useState(false);
     const [loading, setLoading] = useState(true);
     const [activeSection, setActiveSection] = useState<'keepers' | 'board' | 'notes'>('board');
+
+    // Watchlist: starred players you're tracking availability for
+    const [watchlist, setWatchlist] = useState<string[]>(() => {
+        if (typeof window === 'undefined') return [];
+        try {
+            const saved = localStorage.getItem(`vff_draft_watchlist_${leagueId}`);
+            return saved ? JSON.parse(saved) : [];
+        } catch { return []; }
+    });
+
+    const toggleWatchlist = (playerId: string) => {
+        const next = watchlist.includes(playerId)
+            ? watchlist.filter(id => id !== playerId)
+            : [...watchlist, playerId];
+        setWatchlist(next);
+        try { localStorage.setItem(`vff_draft_watchlist_${leagueId}`, JSON.stringify(next)); } catch {}
+    };
 
     // Derive active team from selection
     const activeTeam = allTeams.find(t => t.id === selectedTeamId) || null;
@@ -329,6 +346,8 @@ export function DraftPlanClient({
                         allTeams={allTeams}
                         keeperCount={keeperCount}
                         customRankingsMap={customRankingsMap}
+                        watchlist={watchlist}
+                        toggleWatchlist={toggleWatchlist}
                         posColor={posColor}
                     />
                 )}
@@ -353,6 +372,8 @@ function DraftBoardSection({
     allTeams,
     keeperCount,
     customRankingsMap,
+    watchlist,
+    toggleWatchlist,
     posColor,
 }: {
     activeTeam: TeamData | null;
@@ -365,6 +386,8 @@ function DraftBoardSection({
     allTeams: TeamData[];
     keeperCount?: number;
     customRankingsMap?: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]>;
+    watchlist: string[];
+    toggleWatchlist: (playerId: string) => void;
     posColor: (pos: string | null) => string;
 }) {
     if (!activeTeam) {
@@ -696,6 +719,65 @@ function DraftBoardSection({
                 defaultCollapsed={false}
             />
 
+            {/* Watchlist: starred players with availability across all picks */}
+            {watchlist.length > 0 && (
+                <div>
+                    <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                        Watchlist
+                    </h2>
+                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className="border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+                                        <th className="text-left px-2 py-1.5 font-medium text-zinc-500 w-8"></th>
+                                        <th className="text-left px-2 py-1.5 font-medium text-zinc-500">Player</th>
+                                        {picks.slice(0, keeperCount || picks.length).map((p, i) => (
+                                            <th key={i} className="text-center px-1.5 py-1.5 font-medium text-zinc-400 whitespace-nowrap">
+                                                {p.round}.{String(p.slot).padStart(2, '0')}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {watchlist.map(playerId => {
+                                        const player = draftPool.find(p => p.id === playerId);
+                                        if (!player) return null;
+                                        return (
+                                            <tr key={playerId} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0">
+                                                <td className="px-2 py-1.5">
+                                                    <button onClick={() => toggleWatchlist(playerId)} className="p-0.5">
+                                                        <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                                                    </button>
+                                                </td>
+                                                <td className="px-2 py-1.5 whitespace-nowrap">
+                                                    <span className={`text-[9px] font-bold px-1 py-0.5 rounded mr-1 ${posColor(player.position)}`}>{player.position}</span>
+                                                    <span className="font-medium text-zinc-900 dark:text-zinc-100">{player.full_name}</span>
+                                                </td>
+                                                {picks.slice(0, keeperCount || picks.length).map((pick, i) => {
+                                                    const pickOverall = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
+                                                    const avail = getAvailability(player, pickOverall);
+                                                    return (
+                                                        <td key={i} className="text-center px-1.5 py-1.5">
+                                                            <span className={`text-[10px] font-bold px-1 py-0.5 rounded ${
+                                                                avail >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                                                : avail >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                                                : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                                                            }`}>{avail}%</span>
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Draft Board - each pick with suggestion */}
             <div>
                 <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Your Picks</h2>
@@ -725,6 +807,18 @@ function DraftBoardSection({
                                             <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 flex-1 truncate">
                                                 {userSelection}
                                             </span>
+                                            {(() => {
+                                                const selectedPlayer = draftPool.find(p => p.full_name === userSelection);
+                                                if (!selectedPlayer) return null;
+                                                const avail = getAvailability(selectedPlayer, pickOverall);
+                                                return (
+                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                                        avail >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                                        : avail >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                                                    }`}>{avail}%</span>
+                                                );
+                                            })()}
                                         </>
                                     ) : (
                                         <>
@@ -734,6 +828,16 @@ function DraftBoardSection({
                                             <span className="text-sm text-zinc-600 dark:text-zinc-400 flex-1 truncate italic">
                                                 {pick.suggestion}
                                             </span>
+                                            {pick.best && (() => {
+                                                const avail = getAvailability(pick.best!.player, pickOverall);
+                                                return (
+                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                                        avail >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                                        : avail >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                                                    }`}>{avail}%</span>
+                                                );
+                                            })()}
                                         </>
                                     )}
                                     <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
@@ -797,6 +901,12 @@ function DraftBoardSection({
                                                                 }}
                                                                 className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 text-sm border-b border-zinc-100 dark:border-zinc-800 last:border-0"
                                                             >
+                                                                <button
+                                                                    onClick={(e) => { e.stopPropagation(); toggleWatchlist(p.id); }}
+                                                                    className="flex-shrink-0 p-0.5"
+                                                                >
+                                                                    <Star className={`w-3.5 h-3.5 ${watchlist.includes(p.id) ? 'fill-amber-400 text-amber-400' : 'text-zinc-300 dark:text-zinc-600'}`} />
+                                                                </button>
                                                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${posColor(p.position)}`}>
                                                                     {p.position}
                                                                 </span>
