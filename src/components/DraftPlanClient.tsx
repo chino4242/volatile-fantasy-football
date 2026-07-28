@@ -626,6 +626,7 @@ function DraftBoardSection({
         const newPicks = [...picks];
         newPicks[pickIdx] = { ...newPicks[pickIdx], targetPlayer: player.full_name, targetPosition: player.position };
         setPicks(newPicks);
+        setExpandedPickIdx(null);
     };
 
     const clearPick = (pickIdx: number) => {
@@ -633,6 +634,33 @@ function DraftBoardSection({
         newPicks[pickIdx] = { ...newPicks[pickIdx], targetPlayer: null, targetPosition: null };
         setPicks(newPicks);
     };
+
+    // Expanded pick state for search
+    const [expandedPickIdx, setExpandedPickIdx] = useState<number | null>(null);
+    const [pickSearchQuery, setPickSearchQuery] = useState('');
+
+    // Calculate availability % for a player at a given pick
+    const getAvailability = (player: Player, pickOverall: number): number => {
+        // Find player's rank in the draft pool (sorted by value)
+        const playerRank = draftPool.findIndex(p => p.id === player.id) + 1;
+        if (playerRank === 0) return 0; // not in pool
+
+        // Picks before this one = overall - 1
+        const picksBefore = Math.max(0, pickOverall - 1);
+
+        if (picksBefore === 0) return 100; // first pick, always available
+        if (playerRank <= picksBefore * 0.5) return 5; // almost certainly gone
+        if (playerRank <= picksBefore) return Math.round(20 + (playerRank / picksBefore - 0.5) * 60);
+        if (playerRank <= picksBefore * 1.5) return Math.round(60 + ((playerRank - picksBefore) / (picksBefore * 0.5)) * 25);
+        return Math.min(95, Math.round(75 + (playerRank - picksBefore * 1.5) / numTeams * 5));
+    };
+
+    // Search results for the expanded pick
+    const searchResults = pickSearchQuery.length >= 2
+        ? draftPool
+            .filter(p => p.full_name.toLowerCase().includes(pickSearchQuery.toLowerCase()))
+            .slice(0, 12)
+        : [];
 
     return (
         <div className="p-4 sm:p-6 space-y-6">
@@ -675,11 +703,16 @@ function DraftBoardSection({
                     {pickSuggestions.map((pick, idx) => {
                         const userSelection = picks[idx]?.targetPlayer;
                         const hasOverride = !!userSelection;
+                        const isExpanded = expandedPickIdx === idx;
+                        const pickOverall = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
 
                         return (
                             <div key={idx} className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-                                {/* Pick row */}
-                                <div className="flex items-center gap-3 px-3 py-2.5">
+                                {/* Pick row - clickable to expand */}
+                                <button
+                                    onClick={() => setExpandedPickIdx(isExpanded ? null : idx)}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors text-left"
+                                >
                                     <span className="text-xs font-bold text-zinc-400 w-10 flex-shrink-0">
                                         {pick.round}.{String(pick.slot).padStart(2, '0')}
                                     </span>
@@ -692,9 +725,6 @@ function DraftBoardSection({
                                             <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 flex-1 truncate">
                                                 {userSelection}
                                             </span>
-                                            <button onClick={() => clearPick(idx)} className="text-zinc-400 hover:text-zinc-600 p-1">
-                                                <X className="w-3.5 h-3.5" />
-                                            </button>
                                         </>
                                     ) : (
                                         <>
@@ -706,26 +736,85 @@ function DraftBoardSection({
                                             </span>
                                         </>
                                     )}
-                                </div>
+                                    <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
+                                </button>
 
-                                {/* Suggestion underneath with accept button */}
-                                {!hasOverride && pick.best && (
-                                    <div className="px-3 pb-2.5 border-t border-zinc-100 dark:border-zinc-800 pt-2">
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={() => selectPlayerForPick(idx, pick.best!.player)}
-                                                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-medium transition-colors"
-                                            >
-                                                <Check className="w-3 h-3" />
-                                                Draft {pick.best.player.full_name}
-                                            </button>
+                                {/* Expanded: suggestions + search */}
+                                {isExpanded && (
+                                    <div className="border-t border-zinc-100 dark:border-zinc-800 px-3 py-3 space-y-3">
+                                        {/* Quick suggestions */}
+                                        <div className="flex flex-wrap gap-2">
+                                            {pick.best && (
+                                                <button
+                                                    onClick={() => selectPlayerForPick(idx, pick.best!.player)}
+                                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-medium transition-colors"
+                                                >
+                                                    <Check className="w-3 h-3" />
+                                                    {pick.best.player.full_name}
+                                                    <span className="text-[10px] opacity-70">({pick.best.player.position})</span>
+                                                </button>
+                                            )}
                                             {pick.runnerUp && (
                                                 <button
                                                     onClick={() => selectPlayerForPick(idx, pick.runnerUp!.player)}
-                                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 text-xs font-medium transition-colors"
+                                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 text-xs font-medium transition-colors"
                                                 >
-                                                    or {pick.runnerUp.player.full_name} ({pick.runnerUp.player.position})
+                                                    {pick.runnerUp.player.full_name}
+                                                    <span className="text-[10px] opacity-70">({pick.runnerUp.player.position})</span>
                                                 </button>
+                                            )}
+                                            {hasOverride && (
+                                                <button
+                                                    onClick={() => clearPick(idx)}
+                                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-red-50 dark:bg-red-900/20 hover:bg-red-100 text-red-600 dark:text-red-400 text-xs font-medium transition-colors"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                    Clear selection
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Player search */}
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                placeholder="Search draft pool..."
+                                                value={pickSearchQuery}
+                                                onChange={(e) => setPickSearchQuery(e.target.value)}
+                                                className="w-full px-3 py-2 text-sm rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400"
+                                                autoFocus
+                                            />
+                                            {searchResults.length > 0 && (
+                                                <div className="mt-1 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg max-h-64 overflow-y-auto">
+                                                    {searchResults.map(p => {
+                                                        const availability = getAvailability(p, pickOverall);
+                                                        return (
+                                                            <button
+                                                                key={p.id}
+                                                                onClick={() => {
+                                                                    selectPlayerForPick(idx, p);
+                                                                    setPickSearchQuery('');
+                                                                }}
+                                                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 text-sm border-b border-zinc-100 dark:border-zinc-800 last:border-0"
+                                                            >
+                                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${posColor(p.position)}`}>
+                                                                    {p.position}
+                                                                </span>
+                                                                <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">{p.full_name}</span>
+                                                                <span className="text-xs font-mono text-zinc-500 tabular-nums">
+                                                                    {(p.fc_value || 0).toLocaleString()}
+                                                                </span>
+                                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                                                    availability >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                                                    : availability >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                                                    : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                                                                }`}>
+                                                                    {availability}%
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
                                             )}
                                         </div>
                                     </div>
