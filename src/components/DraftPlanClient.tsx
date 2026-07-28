@@ -19,6 +19,12 @@ interface Player {
     rank_sf_tier?: number | null;
     rank_1qb_tier?: number | null;
     zap_category?: string | null;
+    zap_score?: number | null;
+    zap_stale?: boolean;
+    fc_rank_sf?: number | null;
+    fc_rank_1qb?: number | null;
+    rank_sf_overall?: number | null;
+    rank_1qb_overall?: number | null;
 }
 
 interface DraftPick {
@@ -62,6 +68,7 @@ interface DraftPlanClientProps {
     allTeams: TeamData[];
     freeAgents: Player[];
     keeperCount?: number;
+    customRankingsMap?: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]>;
 }
 
 // --- Component ---
@@ -74,6 +81,7 @@ export function DraftPlanClient({
     allTeams,
     freeAgents,
     keeperCount,
+    customRankingsMap,
 }: DraftPlanClientProps) {
     // State
     const [selectedTeamId, setSelectedTeamId] = useState<number | null>(() => {
@@ -319,6 +327,7 @@ export function DraftPlanClient({
                         numTeams={allTeams.length}
                         allTeams={allTeams}
                         keeperCount={keeperCount}
+                        customRankingsMap={customRankingsMap}
                         posColor={posColor}
                     />
                 )}
@@ -349,6 +358,7 @@ function DraftSuggestionsSection({
     numTeams,
     allTeams,
     keeperCount,
+    customRankingsMap,
     posColor,
 }: {
     activeTeam: TeamData | null;
@@ -359,6 +369,7 @@ function DraftSuggestionsSection({
     numTeams: number;
     allTeams: TeamData[];
     keeperCount?: number;
+    customRankingsMap?: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]>;
     posColor: (pos: string | null) => string;
 }) {
     if (!activeTeam) {
@@ -422,46 +433,96 @@ function DraftSuggestionsSection({
         return urgencyOrder[a.urgency] - urgencyOrder[b.urgency] || b.gap - a.gap;
     });
 
-    // === SIMULATE DRAFT USING MOCK DRAFT LOGIC ===
-    // Score a player for our team
-    // Key insight: need must be strong enough to override pure value when you have a gap
-    // But position supply matters: if QB supply is deep, you can wait
+    // === SIMULATE DRAFT USING DRAFT GUIDE STRATEGY ===
+    // Primary: Market Score (Late Round guide) + Redraft auction value (production)
+    // Base: Composite of auction value (redraft) + dynasty value (long-term)
     const scoreForUs = (player: Player, currentCounts: Record<string, number>) => {
-        let value = player.fc_value || 0;
         const pos = player.position || '';
+        const dynValue = player.fc_value || 0;
 
-        // Positional need calculation
+        // --- BASE: Composite value ---
+        // In keeper leagues, the high-auction players are kept — available pool is mostly
+        // rookies and rising players with low/no auction values. Dynasty value is the
+        // primary signal for who's worth drafting; auction/redraft layers on top as a 
+        // production floor indicator.
+        const auctionValue = player.redraft_auction_value || 0;
+        const normalizedAuction = auctionValue * 250; // $30 → 7500, $15 → 3750, $5 → 1250
+
+        // If player has auction value, blend it in (production floor).
+        // Otherwise just use dynasty value (most rookies/prospects).
+        let baseValue: number;
+        if (auctionValue >= 10) {
+            // Proven producer with real auction value: blend 40% auction + 60% dynasty
+            baseValue = (normalizedAuction * 0.40) + (dynValue * 0.60);
+        } else if (auctionValue > 0) {
+            // Low auction (bench/dart throw): mostly dynasty, slight production floor
+            baseValue = (normalizedAuction * 0.20) + (dynValue * 0.80);
+        } else {
+            // No auction data (rookies, deep prospects): pure dynasty
+            baseValue = dynValue;
+        }
+
+        // Position discount: in 1QB, QBs are replaceable — discount their composite
+        if (pos === 'QB' && !sf) baseValue *= 0.5;
+
+        // --- PRIMARY: Market Score boost (Late Round guide's core signal) ---
+        // Market Score 70+ = undervalued (target), 50 = fair, <40 = overvalued (avoid)
+        const lr = customRankingsMap?.[player.id];
+        const lrEntry = lr?.find(r => r.source?.toLowerCase().includes('late round'));
+        const marketScore = lrEntry?.marketScore ?? null;
+
+        let marketMultiplier = 1.0;
+        if (marketScore !== null) {
+            if (marketScore >= 80) marketMultiplier = 1.25;       // Strong buy
+            else if (marketScore >= 70) marketMultiplier = 1.15;  // Buy signal
+            else if (marketScore >= 60) marketMultiplier = 1.05;  // Slight value
+            else if (marketScore <= 35) marketMultiplier = 0.75;  // Overvalued — avoid
+            else if (marketScore <= 45) marketMultiplier = 0.85;  // Slight fade
+        }
+
+        // Apply market score
+        const adjustedValue = baseValue * marketMultiplier;
+
+        // --- ZAP prospect boost (for rookies/year 2 players) ---
+        let zapBoost = 0;
+        if (player.zap_score && !player.zap_stale) {
+            if (player.zap_score >= 80) zapBoost = 0.12;
+            else if (player.zap_score >= 60) zapBoost = 0.06;
+            else if (player.zap_score < 15) zapBoost = -0.06;
+        } else if (player.zap_category) {
+            const cat = player.zap_category.toLowerCase();
+            if (cat.includes('elite')) zapBoost = 0.10;
+            else if (cat.includes('starter')) zapBoost = 0.05;
+            else if (cat.includes('dart')) zapBoost = -0.04;
+        }
+
+        const valueWithProspect = adjustedValue * (1 + zapBoost);
+
+        // --- Positional need ---
+        // Value always leads. Need is only a PENALTY for overstocked positions,
+        // never a boost that causes a reach. You fill needs by natural value flow.
         const have = currentCounts[pos] || 0;
         const want = idealStarters[pos] || 0;
-        const gap = Math.max(0, want - have);
 
-        // Need multiplier: boosts positions you need
-        let needMultiplier = 1.0;
-        if (gap >= 2) {
-            needMultiplier = 1.6;
-        } else if (gap === 1) {
-            needMultiplier = 1.3;
-        } else if (have >= want + 2) {
-            needMultiplier = 0.3; // way overstocked
+        // Position roster caps (you'd never roster more than this)
+        const rosterCaps: Record<string, number> = sf
+            ? { QB: 3, RB: 7, WR: 8, TE: 3 }
+            : { QB: 2, RB: 7, WR: 8, TE: 2 };
+        const maxAtPos = rosterCaps[pos] || 5;
+
+        let needMultiplier = 1.0; // default: no boost, no penalty
+        if (have >= maxAtPos) {
+            needMultiplier = 0.0; // hard cap — never draft beyond roster cap
+        } else if (have >= want + 3) {
+            needMultiplier = 0.5; // deeply overstocked
+        } else if (have >= want + 1) {
+            needMultiplier = 0.75; // over target but roster can hold more
         } else if (have >= want) {
-            needMultiplier = 0.55; // already set — strong penalty for depth
+            needMultiplier = 0.85; // at target — very slight discount
         }
+        // If below target (gap > 0): no boost, just 1.0 — value does the talking
 
-        // Position market adjustment
-        // In 1QB: QB supply is always deep — you can wait for one later
-        // Don't overpay for QB when RB/WR value drops faster
-        if (pos === 'QB' && !sf) {
-            if (gap <= 0) {
-                value *= 0.3; // QB depth in 1QB is nearly worthless
-            } else {
-                value *= 0.7; // Even when you need one, supply is deep — don't reach
-            }
-        } else if (pos === 'QB' && sf) {
-            if (gap <= 0) value *= 0.5;
-            // In SF, QB need is real — no discount when you need one
-        }
-
-        const score = value * needMultiplier;
+        const score = valueWithProspect * needMultiplier;
         return score;
     };
 

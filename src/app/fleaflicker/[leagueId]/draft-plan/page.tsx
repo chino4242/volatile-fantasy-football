@@ -1,5 +1,5 @@
 import { db } from '@/db';
-import { players, playerValues, leagues } from '@/db/schema';
+import { players, playerValues, leagues, customRankings, rankingSources } from '@/db/schema';
 import { getFleaflickerLeague } from '@/lib/fleaflicker';
 import { eq, desc, inArray } from 'drizzle-orm';
 import { DraftPlanClient } from '@/components/DraftPlanClient';
@@ -59,11 +59,43 @@ export default async function FleaflickerDraftPlanPage({
                 redraft_auction_value: playerValues.redraft_auction_value,
                 rank_sf_tier: playerValues.rank_sf_tier,
                 rank_1qb_tier: playerValues.rank_1qb_tier,
+                fc_rank_sf: playerValues.fc_rank_sf,
+                fc_rank_1qb: playerValues.fc_rank_1qb,
+                rank_sf_overall: playerValues.rank_sf_overall,
+                rank_1qb_overall: playerValues.rank_1qb_overall,
             })
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
             .where(inArray(players.position, ['QB', 'RB', 'WR', 'TE']))
             .orderBy(desc(valueCol));
+
+        // Fetch custom rankings (Late Round market scores, etc.)
+        const customRankingsData = await db
+            .select({
+                sleeper_id: customRankings.sleeper_id,
+                rank: customRankings.rank,
+                notes: customRankings.notes,
+                signal: customRankings.signal,
+                source_display_name: rankingSources.display_name,
+            })
+            .from(customRankings)
+            .innerJoin(rankingSources, eq(customRankings.source_id, rankingSources.id))
+            .where(eq(rankingSources.is_active, true));
+
+        const customRankingsMap: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]> = {};
+        for (const r of customRankingsData) {
+            if (!r.sleeper_id) continue;
+            if (!customRankingsMap[r.sleeper_id]) customRankingsMap[r.sleeper_id] = [];
+            let marketScore: number | null = null;
+            let tier: number | null = null;
+            if (r.notes) {
+                const msMatch = r.notes.match(/Market Score:\s*([\d.]+)/);
+                if (msMatch) marketScore = parseFloat(msMatch[1]);
+                const tierMatch = r.notes.match(/Tier\s+(\d+)/);
+                if (tierMatch) tier = parseInt(tierMatch[1]);
+            }
+            customRankingsMap[r.sleeper_id].push({ rank: r.rank, signal: r.signal, notes: r.notes, source: r.source_display_name, marketScore, tier });
+        }
 
         // Build name-to-player map for matching
         const playerByName = new Map(allPlayersData.map(p => [normalizeName(p.full_name), p]));
@@ -118,6 +150,7 @@ export default async function FleaflickerDraftPlanPage({
                         allTeams={allTeams}
                         freeAgents={freeAgents}
                         keeperCount={keeperCount}
+                        customRankingsMap={customRankingsMap}
                     />
                 </div>
             </div>
