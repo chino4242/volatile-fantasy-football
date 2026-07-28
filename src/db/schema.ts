@@ -445,3 +445,22 @@ export const tradeScenarios = pgTable("trade_scenarios", {
         userLeagueIdx: index("idx_trade_scenarios_user_league").on(table.user_id, table.league_id),
     };
 });
+
+// Draft Plans — persistent draft strategy notebook
+export const draftPlans = pgTable("draft_plans", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: text("user_id").notNull(),
+    league_id: text("league_id").notNull(),
+    platform: text("platform").notNull(), // 'sleeper' | 'fleaflicker'
+    keeper_ids: text("keeper_ids").notNull().default('[]'), // JSON array of sleeper_ids
+    roster_targets: text("roster_targets").notNull().default('{}'), // JSON: { QB: 1, RB: 3, WR: 4, TE: 1, BPA: 1 }
+    picks: text("picks").notNull().default('[]'), // JSON array of pick plan entries
+    tier_source: text("tier_source").notNull().default('dynasty'), // dynasty | redraft | zap
+    notes: text("notes"),
+    created_at: timestamp("created_at").defaultNow(),
+    updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => {
+    return {
+        userLeagueIdx: index("idx_draft_plans_user_league").on(table.user_id, table.league_id),
+    };
+});
