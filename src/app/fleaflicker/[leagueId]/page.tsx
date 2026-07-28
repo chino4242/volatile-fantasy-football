@@ -1,11 +1,13 @@
 import { getFleaflickerLeague } from "@/lib/fleaflicker";
 import { db } from "@/db";
-import { players, playerValues, leagues } from "@/db/schema";
-import { inArray, eq } from "drizzle-orm";
+import { players, playerValues, leagues, valueSnapshots } from "@/db/schema";
+import { inArray, eq, desc } from "drizzle-orm";
 import { getPickFantasyCalcId } from "@/lib/sleeper";
 import { LeagueTable } from "@/components/LeagueTable";
 import TradeFinderCard from "@/components/TradeFinderCard";
 import { RefreshButton } from "@/components/RefreshButton";
+import PowerRankings from "@/components/PowerRankings";
+import TradeHistory from "@/components/TradeHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -165,6 +167,134 @@ export default async function FleaflickerLeaguePage({
 
         teams.sort((a, b) => b.totalValue - a.totalValue);
 
+        // --- Power Rankings: build trend data from value_snapshots ---
+        let powerRankingsData: { teamId: string | number; teamName: string; currentValue: number; values: number[]; change: number }[] = [];
+        try {
+            // Get the last 8 distinct snapshot dates
+            const snapshotDates = await db
+                .selectDistinct({ snapshot_date: valueSnapshots.snapshot_date })
+                .from(valueSnapshots)
+                .orderBy(desc(valueSnapshots.snapshot_date))
+                .limit(8);
+
+            if (snapshotDates.length > 0) {
+                const dates = snapshotDates.map(d => d.snapshot_date).reverse(); // oldest first
+                const allPlayerSleeperIds = Array.from(nameToPlayerMap.values()).map(p => p.sleeper_id);
+
+                // Fetch all snapshot values for our players in these dates
+                const snapshots = await db
+                    .select({
+                        sleeper_id: valueSnapshots.sleeper_id,
+                        snapshot_date: valueSnapshots.snapshot_date,
+                        fc_value_sf: valueSnapshots.fc_value_sf,
+                        fc_value_1qb: valueSnapshots.fc_value_1qb,
+                    })
+                    .from(valueSnapshots)
+                    .where(inArray(valueSnapshots.sleeper_id, allPlayerSleeperIds));
+
+                // Build a map: sleeper_id -> date_string -> value
+                const snapshotMap = new Map<string, Map<string, number>>();
+                snapshots.forEach(s => {
+                    if (!s.sleeper_id) return;
+                    const dateKey = s.snapshot_date.toISOString();
+                    if (!snapshotMap.has(s.sleeper_id)) snapshotMap.set(s.sleeper_id, new Map());
+                    const val = (format === 'sf' ? s.fc_value_sf : s.fc_value_1qb) || 0;
+                    snapshotMap.get(s.sleeper_id)!.set(dateKey, val);
+                });
+
+                // For each team, sum player values at each snapshot date
+                powerRankingsData = fleaflickerData.rosters.map(roster => {
+                    const teamPlayerIds: string[] = [];
+                    roster.players.forEach(p => {
+                        const dbPlayer = nameToPlayerMap.get(normalizeName(p.full_name));
+                        if (dbPlayer) teamPlayerIds.push(dbPlayer.sleeper_id);
+                    });
+
+                    const values = dates.map(date => {
+                        const dateKey = date.toISOString();
+                        let total = 0;
+                        teamPlayerIds.forEach(id => {
+                            const playerSnaps = snapshotMap.get(id);
+                            if (playerSnaps?.has(dateKey)) {
+                                total += playerSnaps.get(dateKey)!;
+                            }
+                        });
+                        return total;
+                    });
+
+                    const currentValue = teams.find(t => t.id === roster.id)?.totalValue || 0;
+                    const change = values.length >= 2 ? values[values.length - 1] - values[0] : 0;
+
+                    return {
+                        teamId: roster.id,
+                        teamName: roster.owners[0]?.display_name || roster.name,
+                        currentValue,
+                        values,
+                        change,
+                    };
+                });
+            }
+        } catch (e) {
+            console.error('Failed to build power rankings data:', e);
+        }
+
+        // --- Trade History: fetch completed trades from Fleaflicker API ---
+        let tradeHistoryData: { id: string; timestamp: string; sides: [any, any] }[] = [];
+        try {
+            const tradeRes = await fetch(
+                `https://www.fleaflicker.com/api/FetchTrades?sport=NFL&league_id=${leagueId}&filter=TRADES_COMPLETED`,
+                { next: { revalidate: 300 } }
+            );
+            if (tradeRes.ok) {
+                const tradeJson = await tradeRes.json();
+                const rawTrades = tradeJson.trades || [];
+
+                tradeHistoryData = rawTrades.slice(0, 20).map((trade: any, idx: number) => {
+                    const sides = (trade.teams || []).map((team: any) => {
+                        const playersObtained = (team.playersObtained || []).map((p: any) => {
+                            const name = p.proPlayer?.nameFull || 'Unknown';
+                            const position = p.proPlayer?.position || null;
+                            const dbPlayer = nameToPlayerMap.get(normalizeName(name));
+                            const value = dbPlayer ? (valueMap.get(dbPlayer.sleeper_id) || 0) : null;
+                            return { name, position, value };
+                        });
+
+                        const picksObtained = (team.picksObtained || []).map((pick: any) => {
+                            const season = pick.season || '';
+                            const round = pick.slot?.round || 0;
+                            const label = `${season} Round ${round}`;
+                            const pickId = getPickFantasyCalcId(season.toString(), round);
+                            const value = valueMap.get(pickId) || null;
+                            return { label, value };
+                        });
+
+                        const totalValue = [...playersObtained, ...picksObtained].reduce(
+                            (sum: number, item: any) => sum + (item.value || 0), 0
+                        );
+
+                        return {
+                            teamName: team.team?.name || 'Unknown',
+                            playersObtained,
+                            picksObtained,
+                            totalValue,
+                        };
+                    });
+
+                    const timestamp = trade.approvedOn?.formatted
+                        ? new Date(trade.approvedOn.formatted).toISOString()
+                        : new Date().toISOString();
+
+                    return {
+                        id: `trade-${idx}`,
+                        timestamp,
+                        sides: sides.length >= 2 ? [sides[0], sides[1]] : [sides[0] || { teamName: 'Unknown', playersObtained: [], picksObtained: [], totalValue: 0 }, sides[1] || { teamName: 'Unknown', playersObtained: [], picksObtained: [], totalValue: 0 }],
+                    };
+                });
+            }
+        } catch (e) {
+            console.error('Failed to fetch trade history:', e);
+        }
+
         return (
             <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
                 <div className="max-w-7xl mx-auto">
@@ -195,6 +325,9 @@ export default async function FleaflickerLeaguePage({
                         }))}
                         format={format}
                     />
+
+                    {powerRankingsData.length > 0 && <PowerRankings teams={powerRankingsData} />}
+                    {tradeHistoryData.length > 0 && <TradeHistory trades={tradeHistoryData} />}
                 </div>
             </div>
         );
