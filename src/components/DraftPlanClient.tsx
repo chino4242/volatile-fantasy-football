@@ -402,18 +402,24 @@ function DraftBoardSection({
     const sf = format === 'sf';
 
     // === BUILD THE REAL DRAFT POOL ===
-    // Simulate keeper cuts: other teams keep their top N, dropped players enter the pool
+    // Simulate keeper cuts: all teams (including yours) keep top N, dropped players enter the pool
     const droppedPlayers: Player[] = [];
     if (keeperCount && keeperCount > 0) {
         allTeams.forEach(team => {
-            if (team.id === activeTeam.id) return; // skip our team
-            const sorted = [...team.players].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
-            const dropped = sorted.slice(keeperCount);
-            droppedPlayers.push(...dropped);
+            if (team.id === activeTeam.id) {
+                // Your team: players NOT in keeperIds get dropped to the pool
+                const dropped = team.players.filter(p => !keeperIds.includes(p.id));
+                droppedPlayers.push(...dropped);
+            } else {
+                // Other teams: drop their lowest-value players beyond keeper count
+                const sorted = [...team.players].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                const dropped = sorted.slice(keeperCount);
+                droppedPlayers.push(...dropped);
+            }
         });
     }
 
-    // Draft pool = free agents + dropped players from other teams, sorted by value
+    // Draft pool = free agents + dropped players from all teams, sorted by value
     const draftPool = [...freeAgents, ...droppedPlayers]
         .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
 
