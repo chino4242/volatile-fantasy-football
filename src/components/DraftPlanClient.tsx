@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Save, Target, Users, ClipboardList, StickyNote, ChevronDown, Check, X, Star } from 'lucide-react';
 import { PositionScarcityChart } from '@/components/PositionScarcityChart';
+import { analyzeLeaguePostDraft, type TeamAnalysis } from '@/lib/post-draft-analysis';
 
 // --- Types ---
 
@@ -105,10 +106,11 @@ export function DraftPlanClient({
     const [activeSection, setActiveSection] = useState<'keepers' | 'board' | 'notes'>('board');
 
     // Watchlist: starred players you're tracking availability for
+    // Uses same localStorage key as mock draft so they share the list
     const [watchlist, setWatchlist] = useState<string[]>(() => {
         if (typeof window === 'undefined') return [];
         try {
-            const saved = localStorage.getItem(`vff_draft_watchlist_${leagueId}`);
+            const saved = localStorage.getItem(`vff_watchlist_${leagueId}`);
             return saved ? JSON.parse(saved) : [];
         } catch { return []; }
     });
@@ -118,7 +120,7 @@ export function DraftPlanClient({
             ? watchlist.filter(id => id !== playerId)
             : [...watchlist, playerId];
         setWatchlist(next);
-        try { localStorage.setItem(`vff_draft_watchlist_${leagueId}`, JSON.stringify(next)); } catch {}
+        try { localStorage.setItem(`vff_watchlist_${leagueId}`, JSON.stringify(next)); } catch {}
     };
 
     // Derive active team from selection
@@ -424,7 +426,12 @@ function DraftBoardSection({
         .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
 
     // === ANALYZE KEPT ROSTER ===
-    const keptPlayers = activeTeam.players.filter(p => keeperIds.includes(p.id));
+    // Build a lookup from all available players (team + pool) to resolve keeper IDs
+    const allPlayersById = new Map<string, Player>();
+    activeTeam.players.forEach(p => allPlayersById.set(p.id, p));
+    freeAgents.forEach(p => allPlayersById.set(p.id, p));
+
+    const keptPlayers = keeperIds.map(id => allPlayersById.get(id)).filter(Boolean) as Player[];
     const keptCounts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
     const keptValues: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
     keptPlayers.forEach(p => {
@@ -691,16 +698,52 @@ function DraftBoardSection({
             .slice(0, 12)
         : [];
 
+    // Evaluation: analyze the planned roster as if the draft happened
+    const [evaluation, setEvaluation] = useState<TeamAnalysis | null>(null);
+
+    const evaluatePlan = () => {
+        // Build the planned roster: keepers + selected/suggested picks
+        const plannedPlayers: Player[] = [...keptPlayers];
+
+        picks.forEach((pick, idx) => {
+            if (pick.targetPlayer) {
+                // User selected a player
+                const player = draftPool.find(p => p.full_name === pick.targetPlayer);
+                if (player) plannedPlayers.push(player);
+            } else if (pickSuggestions[idx]?.best?.player) {
+                // Use the system suggestion
+                plannedPlayers.push(pickSuggestions[idx].best!.player);
+            }
+        });
+
+        // Build comparison teams (other teams keep their top N)
+        const compTeams = allTeams
+            .filter(t => t.id !== activeTeam!.id)
+            .map(t => {
+                const kept = [...t.players].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)).slice(0, keeperCount || 10);
+                return { id: t.id, name: t.name, players: kept };
+            });
+
+        // Our team with planned roster
+        const ourTeam = { id: activeTeam!.id, name: activeTeam!.name || 'My Team', players: plannedPlayers };
+
+        // Run analysis
+        const results = analyzeLeaguePostDraft([ourTeam, ...compTeams], customRankingsMap);
+        const myResult = results.find(r => r.teamId === activeTeam!.id) || null;
+        setEvaluation(myResult);
+    };
+
     return (
         <div className="p-4 sm:p-6 space-y-6">
             {/* Roster Snapshot */}
             <div>
-                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2">Roster After Keepers</h2>
+                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2">Keepers by Position</h2>
                 <div className="grid grid-cols-4 gap-2">
                     {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => {
                         const have = keptCounts[pos];
                         const want = idealStarters[pos];
                         const isFull = have >= want;
+                        const need = Math.max(0, want - have);
                         return (
                             <div key={pos} className={`rounded-lg p-2 text-center border ${
                                 isFull ? 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/10'
@@ -708,7 +751,12 @@ function DraftBoardSection({
                                 : 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/10'
                             }`}>
                                 <span className={`text-xs font-bold ${posColor(pos)} px-1 rounded`}>{pos}</span>
-                                <div className="text-sm font-mono font-bold text-zinc-900 dark:text-zinc-100 mt-0.5">{have}/{want}</div>
+                                <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mt-0.5">
+                                    {have > 0 ? `${have} kept` : '—'}
+                                </div>
+                                <div className="text-[10px] text-zinc-500">
+                                    {isFull ? '✓ Set' : need > 0 ? `Draft ${need}` : ''}
+                                </div>
                             </div>
                         );
                     })}
@@ -961,11 +1009,98 @@ function DraftBoardSection({
                     ))}
                 </div>
             </div>
+            {/* Evaluate Draft Plan */}
+            <div>
+                <button
+                    onClick={evaluatePlan}
+                    className="w-full py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm transition-colors"
+                >
+                    Evaluate Draft Plan
+                </button>
+
+                {evaluation && (
+                    <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                        {/* Overall Grade */}
+                        <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Draft Grade</h3>
+                                <p className="text-xs text-zinc-500 mt-0.5">Rank #{evaluation.powerRank} of {allTeams.length} teams</p>
+                            </div>
+                            <div className={`text-3xl font-bold ${
+                                evaluation.overallGrade.startsWith('A') ? 'text-green-600 dark:text-green-400'
+                                : evaluation.overallGrade.startsWith('B') ? 'text-blue-600 dark:text-blue-400'
+                                : evaluation.overallGrade.startsWith('C') ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-red-600 dark:text-red-400'
+                            }`}>
+                                {evaluation.overallGrade}
+                            </div>
+                        </div>
+
+                        {/* Position Grades */}
+                        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                {evaluation.positionGrades.map(pg => (
+                                    <div key={pg.position} className="text-center">
+                                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${posColor(pg.position)}`}>{pg.position}</span>
+                                        <div className={`text-lg font-bold mt-1 ${
+                                            pg.grade.startsWith('A') ? 'text-green-600 dark:text-green-400'
+                                            : pg.grade.startsWith('B') ? 'text-blue-600 dark:text-blue-400'
+                                            : pg.grade.startsWith('C') ? 'text-amber-600 dark:text-amber-400'
+                                            : 'text-red-600 dark:text-red-400'
+                                        }`}>{pg.grade}</div>
+                                        <div className="text-[10px] text-zinc-500 mt-0.5">{pg.tierBreakdown}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Summary */}
+                        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800">
+                            <p className="text-sm text-zinc-700 dark:text-zinc-300">{evaluation.summary}</p>
+                        </div>
+
+                        {/* Strengths & Weaknesses */}
+                        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {evaluation.strengths.length > 0 && (
+                                <div>
+                                    <h4 className="text-xs font-semibold text-green-600 dark:text-green-400 uppercase mb-1.5">Strengths</h4>
+                                    <ul className="space-y-1">
+                                        {evaluation.strengths.map((s, i) => (
+                                            <li key={i} className="text-xs text-zinc-600 dark:text-zinc-400 flex items-start gap-1.5">
+                                                <span className="text-green-500 mt-0.5">+</span> {s}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                            {evaluation.weaknesses.length > 0 && (
+                                <div>
+                                    <h4 className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase mb-1.5">Weaknesses</h4>
+                                    <ul className="space-y-1">
+                                        {evaluation.weaknesses.map((w, i) => (
+                                            <li key={i} className="text-xs text-zinc-600 dark:text-zinc-400 flex items-start gap-1.5">
+                                                <span className="text-red-500 mt-0.5">−</span> {w}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Market Score */}
+                        {evaluation.marketScoreAvg !== null && (
+                            <div className="px-4 pb-4 flex items-center gap-3 text-xs text-zinc-500">
+                                <span>Avg Market Score: <span className={`font-bold ${evaluation.marketScoreAvg >= 65 ? 'text-green-600' : evaluation.marketScoreAvg >= 50 ? 'text-zinc-700 dark:text-zinc-300' : 'text-red-500'}`}>{evaluation.marketScoreAvg.toFixed(1)}</span></span>
+                                <span>·</span>
+                                <span>Elite players (T1-5): <span className="font-bold text-zinc-700 dark:text-zinc-300">{evaluation.eliteCount}</span></span>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
-
-// --- Notes Section ---
 
 function NotesSection({
     notes,

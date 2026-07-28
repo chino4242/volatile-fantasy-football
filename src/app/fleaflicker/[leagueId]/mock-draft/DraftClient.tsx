@@ -127,6 +127,30 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         }
     }, [userId, leagueId]);
 
+    // Load saved draft plan (keepers + pick targets)
+    interface DraftPlanData {
+        keeper_ids: string[];
+        picks: { pickNumber: number; round: number; slot: number; targetPosition: string | null; targetPlayer: string | null; notes: string }[];
+    }
+    const [draftPlan, setDraftPlan] = useState<DraftPlanData | null>(null);
+
+    useEffect(() => {
+        fetch(`/api/draft-plans?league_id=${leagueId}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.plan) {
+                    const plan: DraftPlanData = {
+                        keeper_ids: JSON.parse(data.plan.keeper_ids || '[]'),
+                        picks: JSON.parse(data.plan.picks || '[]'),
+                    };
+                    if (plan.keeper_ids.length > 0 || plan.picks.length > 0) {
+                        setDraftPlan(plan);
+                    }
+                }
+            })
+            .catch(() => {});
+    }, [leagueId]);
+
     // Generate draft order from current year picks
     // Derive rounds from team draft picks, fallback to default
     // Cap at total roster spots to avoid drafting more players than can fit
@@ -248,12 +272,17 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         if (userTeamId && keeperCount && keeperCount > 0 && !keepersConfirmed) {
             const userTeam = activeTeams.find(t => t.id === userTeamId);
             if (userTeam && selectedKeepers.size === 0) {
-                const sortedPlayers = [...userTeam.players].sort((a,b) => (b.fc_value || 0) - (a.fc_value || 0));
-                const topKeepers = sortedPlayers.slice(0, keeperCount).map(p => p.id);
-                setSelectedKeepers(new Set(topKeepers));
+                // Use draft plan keepers if available, otherwise default to top N by value
+                if (draftPlan && draftPlan.keeper_ids.length > 0) {
+                    setSelectedKeepers(new Set(draftPlan.keeper_ids));
+                } else {
+                    const sortedPlayers = [...userTeam.players].sort((a,b) => (b.fc_value || 0) - (a.fc_value || 0));
+                    const topKeepers = sortedPlayers.slice(0, keeperCount).map(p => p.id);
+                    setSelectedKeepers(new Set(topKeepers));
+                }
             }
         }
-    }, [userTeamId, keeperCount, keepersConfirmed, activeTeams]); // run when team selected or count changes
+    }, [userTeamId, keeperCount, keepersConfirmed, activeTeams, draftPlan]); // run when team selected or count changes
 
     const handleConfirmKeepers = () => {
         if (!keeperCount) return;
@@ -1607,6 +1636,35 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
                                         return (
                                             <>
+                                                {/* Draft Plan suggestion */}
+                                                {draftPlan && draftPlan.picks.length > 0 && (() => {
+                                                    // Find the plan's suggestion for this pick based on round/pick
+                                                    const currentPick = picks[currentPickIndex];
+                                                    const planPick = draftPlan.picks.find(pp =>
+                                                        pp.round === currentPick?.round && pp.slot === currentPick?.pick
+                                                    ) || draftPlan.picks[picks.filter(p => p.teamId === userTeamId && p.playerId && picks.indexOf(p) < currentPickIndex).length];
+
+                                                    if (!planPick?.targetPlayer) return null;
+
+                                                    const isAvailable = availablePlayers.some(p =>
+                                                        p.full_name === planPick.targetPlayer
+                                                    );
+
+                                                    return (
+                                                        <div className={`mb-3 px-3 py-2 rounded-lg border ${isAvailable ? 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20' : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30 opacity-60'}`}>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase">📋 Your Plan</span>
+                                                                <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{planPick.targetPlayer}</span>
+                                                                {planPick.targetPosition && (
+                                                                    <span className="text-[10px] text-zinc-500">({planPick.targetPosition})</span>
+                                                                )}
+                                                                {!isAvailable && <span className="text-[10px] text-red-500 font-medium ml-auto">Unavailable</span>}
+                                                            </div>
+                                                            {planPick.notes && <div className="text-[10px] text-zinc-500 mt-0.5">{planPick.notes}</div>}
+                                                        </div>
+                                                    );
+                                                })()}
+
                                                 {/* Primary recommendation */}
                                                 <div className="bg-indigo-50 dark:bg-indigo-950/30 border-2 border-indigo-200 dark:border-indigo-800 rounded-xl p-4">
                                                     <div className="flex items-start justify-between gap-3">
