@@ -50,6 +50,7 @@ export function LeagueSubNav({ leagueId, leagueName, platform, teams }: LeagueSu
         const relative = pathname.replace(basePath, '');
         if (relative === '' || relative === '/') return 'dashboard';
         if (relative.startsWith('/free-agents')) return 'free-agents';
+        if (relative.startsWith('/draft-plan')) return 'draft-plan';
         if (relative.startsWith('/mock-draft')) return 'mock-draft';
         if (relative.startsWith('/live-draft')) return 'live-draft';
         if (relative.startsWith('/team')) return 'team';
@@ -76,6 +77,7 @@ export function LeagueSubNav({ leagueId, leagueName, platform, teams }: LeagueSu
     const tabs = [
         { key: 'dashboard', label: 'Dashboard', href: `${basePath}${qs}` },
         { key: 'free-agents', label: 'Free Agents', href: `${basePath}/free-agents${freeAgentsQs}` },
+        { key: 'draft-plan', label: 'Draft Plan', href: `${basePath}/draft-plan${qs}` },
         { key: 'mock-draft', label: 'Mock Draft', href: `${basePath}/mock-draft${qs}` },
         { key: 'live-draft', label: 'Live Draft', href: `${basePath}/live-draft${qs}`, muted: true },
     ];
