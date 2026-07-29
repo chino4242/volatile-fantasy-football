@@ -131,25 +131,47 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     interface DraftPlanData {
         keeper_ids: string[];
         picks: { pickNumber: number; round: number; slot: number; targetPosition: string | null; targetPlayer: string | null; notes: string }[];
+        name?: string;
     }
     const [draftPlan, setDraftPlan] = useState<DraftPlanData | null>(null);
+    const [availablePlans, setAvailablePlans] = useState<{ id: string; name: string }[]>([]);
 
     useEffect(() => {
         fetch(`/api/draft-plans?league_id=${leagueId}`)
             .then(r => r.ok ? r.json() : null)
             .then(data => {
-                if (data?.plan) {
-                    const plan: DraftPlanData = {
-                        keeper_ids: JSON.parse(data.plan.keeper_ids || '[]'),
-                        picks: JSON.parse(data.plan.picks || '[]'),
-                    };
-                    if (plan.keeper_ids.length > 0 || plan.picks.length > 0) {
-                        setDraftPlan(plan);
+                if (data?.plans && Array.isArray(data.plans)) {
+                    setAvailablePlans(data.plans.map((p: any) => ({ id: p.id, name: p.name })));
+                    // Auto-load the most recent plan
+                    if (data.plans.length > 0) {
+                        const plan = data.plans[0];
+                        setDraftPlan({
+                            keeper_ids: JSON.parse(plan.keeper_ids || '[]'),
+                            picks: JSON.parse(plan.picks || '[]'),
+                            name: plan.name,
+                        });
                     }
                 }
             })
             .catch(() => {});
     }, [leagueId]);
+
+    // Allow switching plans
+    const loadPlanById = async (planId: string) => {
+        try {
+            const res = await fetch(`/api/draft-plans?league_id=${leagueId}`);
+            if (!res.ok) return;
+            const { plans } = await res.json();
+            const plan = plans?.find((p: any) => p.id === planId);
+            if (plan) {
+                setDraftPlan({
+                    keeper_ids: JSON.parse(plan.keeper_ids || '[]'),
+                    picks: JSON.parse(plan.picks || '[]'),
+                    name: plan.name,
+                });
+            }
+        } catch {}
+    };
 
     // Generate draft order from current year picks
     // Derive rounds from team draft picks, fallback to default
@@ -523,8 +545,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     leagueId, userId, platform, mode,
+                    planId: availablePlans.find(p => p.name === draftPlan?.name)?.id || null,
                     draftData: {
                         userTeamName: myTeam?.name || '',
+                        planName: draftPlan?.name || null,
                         grade,
                         picks: picks.filter(p => p.playerName).map(p => ({ round: p.round, pick: p.pick, teamName: p.teamName, playerName: p.playerName, playerPosition: p.playerPosition, playerValue: p.playerValue || 0 })),
                     },
@@ -1352,6 +1376,25 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                         <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
                             Draft Setup — {teams.find(t => t.id === userTeamId)?.name}
                         </h2>
+
+                        {/* Plan Selector */}
+                        {availablePlans.length > 0 && (
+                            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400">📋 Draft Plan:</span>
+                                    <select
+                                        value={availablePlans.find(p => p.name === draftPlan?.name)?.id || ''}
+                                        onChange={(e) => loadPlanById(e.target.value)}
+                                        className="text-xs bg-white dark:bg-zinc-800 border border-amber-200 dark:border-amber-700 rounded px-2 py-1 text-zinc-900 dark:text-zinc-100"
+                                    >
+                                        {availablePlans.map(p => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                    {draftPlan && <span className="text-[10px] text-amber-600 dark:text-amber-400">Active — keepers + pick targets loaded</span>}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Draft Slot Selector */}
                         <div className="mb-6">

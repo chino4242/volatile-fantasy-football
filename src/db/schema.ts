@@ -340,6 +340,7 @@ export const draftHistory = pgTable("draft_history", {
     user_id: text("user_id").notNull(), // sleeper or fleaflicker username
     platform: text("platform").notNull(), // 'sleeper' or 'fleaflicker'
     mode: text("mode").notNull(), // 'mock' or 'live'
+    plan_id: uuid("plan_id").references(() => draftPlans.id, { onDelete: "set null" }), // which draft plan was used
     draft_data: jsonb("draft_data").notNull(), // full picks, grades, teams
     created_at: timestamp("created_at").defaultNow(),
 }, (table) => {
@@ -451,6 +452,7 @@ export const draftPlans = pgTable("draft_plans", {
     id: uuid("id").primaryKey().defaultRandom(),
     user_id: text("user_id").notNull(),
     league_id: text("league_id").notNull(),
+    name: text("name").notNull().default('Draft Plan 1'), // user-facing name
     platform: text("platform").notNull(), // 'sleeper' | 'fleaflicker'
     keeper_ids: text("keeper_ids").notNull().default('[]'), // JSON array of sleeper_ids
     roster_targets: text("roster_targets").notNull().default('{}'), // JSON: { QB: 1, RB: 3, WR: 4, TE: 1, BPA: 1 }

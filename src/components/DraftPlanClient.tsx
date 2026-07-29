@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Save, Target, Users, ClipboardList, StickyNote, ChevronDown, Check, X, Star } from 'lucide-react';
 import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 import { analyzeLeaguePostDraft, type TeamAnalysis } from '@/lib/post-draft-analysis';
+import { useAuth } from '@/hooks/useUser';
 
 // --- Types ---
 
@@ -75,6 +76,17 @@ interface DraftPlanClientProps {
 
 // --- Component ---
 
+interface SavedPlan {
+    id: string;
+    name: string;
+    keeper_ids: string;
+    roster_targets: string;
+    picks: string;
+    tier_source: string;
+    notes: string | null;
+    updated_at: string;
+}
+
 export function DraftPlanClient({
     leagueId,
     platform,
@@ -85,6 +97,16 @@ export function DraftPlanClient({
     keeperCount,
     customRankingsMap,
 }: DraftPlanClientProps) {
+    // Auth — get user identifier for API calls
+    const { sleeperUsername, fleaflickerUsername } = useAuth();
+    const userId = sleeperUsername || fleaflickerUsername || 'anonymous';
+
+    // Plan management state
+    const [plans, setPlans] = useState<SavedPlan[]>([]);
+    const [activePlanId, setActivePlanId] = useState<string | null>(null);
+    const [planName, setPlanName] = useState('Draft Plan 1');
+    const [plansLoading, setPlansLoading] = useState(true);
+
     // State
     const [selectedTeamId, setSelectedTeamId] = useState<number | null>(() => {
         if (typeof window === 'undefined') return myTeam?.id ?? null;
@@ -103,7 +125,7 @@ export function DraftPlanClient({
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [activeSection, setActiveSection] = useState<'keepers' | 'board' | 'notes'>('board');
+    const [activeSection, setActiveSection] = useState<'keepers' | 'board' | 'results' | 'notes'>('board');
 
     // Watchlist: starred players you're tracking availability for
     // Uses same localStorage key as mock draft so they share the list
@@ -135,28 +157,78 @@ export function DraftPlanClient({
         setKeeperIds([]);
     };
 
-    // Load existing plan (picks are NOT loaded — always computed fresh from draft board)
+    // Load all plans for this league
     useEffect(() => {
-        async function loadPlan() {
+        async function loadPlans() {
             try {
-                const res = await fetch(`/api/draft-plans?league_id=${leagueId}`);
+                const res = await fetch(`/api/draft-plans?league_id=${leagueId}&user_id=${userId}`);
                 if (res.ok) {
-                    const { plan } = await res.json();
-                    if (plan) {
-                        setKeeperIds(JSON.parse(plan.keeper_ids || '[]'));
-                        setRosterTargets(JSON.parse(plan.roster_targets || '{}'));
-                        setTierSource(plan.tier_source || 'dynasty');
-                        setNotes(plan.notes || '');
+                    const { plans: loadedPlans } = await res.json();
+                    if (Array.isArray(loadedPlans) && loadedPlans.length > 0) {
+                        setPlans(loadedPlans);
+                        // Auto-select the most recently updated plan
+                        const mostRecent = loadedPlans[0];
+                        loadPlanData(mostRecent);
                     }
                 }
             } catch (e) {
-                console.error('Failed to load draft plan:', e);
+                console.error('Failed to load draft plans:', e);
             } finally {
+                setPlansLoading(false);
                 setLoading(false);
             }
         }
-        loadPlan();
-    }, [leagueId]);
+        loadPlans();
+    }, [leagueId, userId]);
+
+    // Load a specific plan's data into the editor
+    const loadPlanData = (plan: SavedPlan) => {
+        setActivePlanId(plan.id);
+        setPlanName(plan.name);
+        setKeeperIds(JSON.parse(plan.keeper_ids || '[]'));
+        setRosterTargets(JSON.parse(plan.roster_targets || '{}'));
+        setTierSource((plan.tier_source as any) || 'dynasty');
+        setNotes(plan.notes || '');
+    };
+
+    // Create a new plan
+    const createNewPlan = async () => {
+        const name = `Draft Plan ${plans.length + 1}`;
+        try {
+            const res = await fetch('/api/draft-plans', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+                body: JSON.stringify({ league_id: leagueId, platform, name }),
+            });
+            if (res.ok) {
+                const { plan } = await res.json();
+                setPlans(prev => [plan, ...prev]);
+                loadPlanData(plan);
+                // Don't reset picks — draft board slots don't change between plans
+                // Only keepers and targets differ (handled by loadPlanData)
+            }
+        } catch (e) {
+            console.error('Failed to create plan:', e);
+        }
+    };
+
+    // Delete a plan
+    const deletePlan = async (planId: string) => {
+        try {
+            const res = await fetch(`/api/draft-plans?id=${planId}&user_id=${userId}`, { method: 'DELETE' });
+            if (res.ok) {
+                setPlans(prev => prev.filter(p => p.id !== planId));
+                if (activePlanId === planId) {
+                    setActivePlanId(null);
+                    setPlanName('');
+                    setKeeperIds([]);
+                    setNotes('');
+                }
+            }
+        } catch (e) {
+            console.error('Failed to delete plan:', e);
+        }
+    };
 
     // Initialize picks from team's draft picks
     // In a keeper league: you keep N, draft N → open spots = keeperCount
@@ -188,29 +260,57 @@ export function DraftPlanClient({
     const savePlan = useCallback(async () => {
         setSaving(true);
         try {
-            const res = await fetch('/api/draft-plans', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    league_id: leagueId,
-                    platform,
-                    keeper_ids: keeperIds,
-                    roster_targets: rosterTargets,
-                    picks,
-                    tier_source: tierSource,
-                    notes,
-                }),
-            });
-            if (res.ok) {
-                setSaved(true);
-                setTimeout(() => setSaved(false), 2000);
+            if (activePlanId) {
+                // Update existing plan
+                const res = await fetch('/api/draft-plans', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+                    body: JSON.stringify({
+                        id: activePlanId,
+                        name: planName,
+                        keeper_ids: keeperIds,
+                        roster_targets: rosterTargets,
+                        picks,
+                        tier_source: tierSource,
+                        notes,
+                    }),
+                });
+                if (res.ok) {
+                    setSaved(true);
+                    setTimeout(() => setSaved(false), 2000);
+                    // Update local plans list
+                    setPlans(prev => prev.map(p => p.id === activePlanId ? { ...p, name: planName, updated_at: new Date().toISOString() } : p));
+                }
+            } else {
+                // Create new plan
+                const res = await fetch('/api/draft-plans', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+                    body: JSON.stringify({
+                        league_id: leagueId,
+                        platform,
+                        name: planName || 'Draft Plan',
+                        keeper_ids: keeperIds,
+                        roster_targets: rosterTargets,
+                        picks,
+                        tier_source: tierSource,
+                        notes,
+                    }),
+                });
+                if (res.ok) {
+                    const { plan } = await res.json();
+                    setActivePlanId(plan.id);
+                    setPlans(prev => [plan, ...prev]);
+                    setSaved(true);
+                    setTimeout(() => setSaved(false), 2000);
+                }
             }
         } catch (e) {
             console.error('Failed to save draft plan:', e);
         } finally {
             setSaving(false);
         }
-    }, [leagueId, platform, keeperIds, rosterTargets, picks, tierSource, notes]);
+    }, [leagueId, platform, activePlanId, planName, keeperIds, rosterTargets, picks, tierSource, notes]);
 
     // Position color helper
     const posColor = (pos: string | null) => {
@@ -233,6 +333,44 @@ export function DraftPlanClient({
 
     return (
         <div className="space-y-6">
+            {/* Plan Management Bar */}
+            <div className="flex items-center gap-3 flex-wrap">
+                <select
+                    value={activePlanId || ''}
+                    onChange={(e) => {
+                        const plan = plans.find(p => p.id === e.target.value);
+                        if (plan) { loadPlanData(plan); setPicks([]); }
+                    }}
+                    className="text-sm font-medium bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md px-2 py-1.5 text-zinc-900 dark:text-zinc-100"
+                >
+                    {plans.length === 0 && <option value="">No saved plans</option>}
+                    {plans.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                </select>
+                <input
+                    type="text"
+                    value={planName}
+                    onChange={(e) => setPlanName(e.target.value)}
+                    placeholder="Plan name..."
+                    className="text-sm px-2 py-1.5 border border-zinc-200 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 w-40"
+                />
+                <button
+                    onClick={createNewPlan}
+                    className="text-xs px-3 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-medium"
+                >
+                    + New Plan
+                </button>
+                {activePlanId && (
+                    <button
+                        onClick={() => { if (confirm('Delete this plan?')) deletePlan(activePlanId); }}
+                        className="text-xs px-3 py-1.5 rounded-md bg-red-50 dark:bg-red-900/20 hover:bg-red-100 text-red-600 dark:text-red-400 font-medium"
+                    >
+                        Delete
+                    </button>
+                )}
+            </div>
+
             {/* Header with team selector and save button */}
             <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
@@ -276,6 +414,7 @@ export function DraftPlanClient({
                 {[
                     { key: 'keepers' as const, label: 'Keepers', icon: Users },
                     { key: 'board' as const, label: 'Draft Board', icon: ClipboardList },
+                    { key: 'results' as const, label: 'Results', icon: Target },
                     { key: 'notes' as const, label: 'Notes', icon: StickyNote },
                 ].map(({ key, label, icon: Icon }) => (
                     <button
@@ -352,6 +491,9 @@ export function DraftPlanClient({
                         toggleWatchlist={toggleWatchlist}
                         posColor={posColor}
                     />
+                )}
+                {activeSection === 'results' && (
+                    <PlanResultsSection leagueId={leagueId} plans={plans} />
                 )}
                 {activeSection === 'notes' && (
                     <NotesSection notes={notes} setNotes={setNotes} />
@@ -568,11 +710,12 @@ function DraftBoardSection({
     // Run the simulation
     const remainingPool = [...draftPool];
     const draftedByPos: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
-    const pickSuggestions: (typeof picks[number] & { suggestion: string; targetPos: string; best: { player: Player; score: number } | null; runnerUp: { player: Player; score: number } | null })[] = [];
+    const pickSuggestions: (typeof picks[number] & { suggestion: string; targetPos: string; best: { player: Player; score: number } | null; runnerUp: { player: Player; score: number } | null; insights: string[]; candidates: { player: Player; score: number; tag: string }[] })[] = [];
 
     // For each of our picks, simulate all picks before it, then pick for us
     let lastOverall = 0;
-    for (const pick of picks) {
+    for (let idx = 0; idx < picks.length; idx++) {
+        const pick = picks[idx];
         const overallPick = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
 
         // Simulate CPU picks between our last pick and this one
@@ -634,7 +777,86 @@ function DraftBoardSection({
             suggestion = 'Slim pickings — take best available';
         }
 
-        pickSuggestions.push({ ...pick, suggestion, targetPos, best: best ? { player: best.player, score: best.score } : null, runnerUp: runnerUp && runnerUp.player ? { player: runnerUp.player, score: runnerUp.score } : null });
+        // Generate strategic insights for this pick
+        const insights: string[] = [];
+        const currentCountsForInsight = {
+            QB: keptCounts.QB + draftedByPos.QB,
+            RB: keptCounts.RB + draftedByPos.RB,
+            WR: keptCounts.WR + draftedByPos.WR,
+            TE: keptCounts.TE + draftedByPos.TE,
+        };
+
+        // Analyze each position's board state
+        const positionInsights: { pos: string; playersInTier: number; topValue: number; need: number; nextPickGap: number }[] = [];
+        const nextPicksBefore = idx < picks.length - 1
+            ? ((picks[idx + 1].pickNumber || 0) - (pick.pickNumber || 0) - 1)
+            : numTeams;
+
+        (['QB', 'RB', 'WR', 'TE'] as const).forEach(pos => {
+            const posPlayersLeft = remainingPool.filter(p => p.position === pos);
+            if (posPlayersLeft.length === 0) return;
+            const topValue = posPlayersLeft[0]?.fc_value || 0;
+            const sameTier = posPlayersLeft.filter(p => (p.fc_value || 0) >= topValue * 0.65);
+            const have = currentCountsForInsight[pos];
+            const want = idealStarters[pos] || 0;
+            const need = want - have;
+
+            positionInsights.push({ pos, playersInTier: sameTier.length, topValue, need, nextPickGap: nextPicksBefore });
+        });
+
+        // Urgent tier breaks (positions about to dry up)
+        const urgent = positionInsights.filter(p => p.playersInTier <= 2 && p.need > 0);
+        urgent.forEach(u => {
+            insights.push(`⚠️ Last ${u.playersInTier} quality ${u.pos}${u.playersInTier > 1 ? 's' : ''} in this tier — end of the line if you need one`);
+        });
+
+        // Positions where tier thins before your next pick
+        const thinning = positionInsights.filter(p => p.playersInTier > 2 && p.playersInTier <= p.nextPickGap && p.need > 0);
+        thinning.forEach(t => {
+            insights.push(`${t.pos}: ${t.playersInTier} in tier but ${t.nextPickGap} picks until you're up again — may not survive`);
+        });
+
+        // Positions you can safely wait on
+        const safe = positionInsights.filter(p => p.playersInTier > 5 && p.need > 0);
+        if (safe.length > 0) {
+            const safeNames = safe.map(s => `${s.pos} (${s.playersInTier} deep)`).join(', ');
+            insights.push(`Can wait on: ${safeNames}`);
+        }
+
+        // If you have no needs, give board-level context
+        if (insights.length === 0) {
+            const bestValuePos = positionInsights.sort((a, b) => b.topValue - a.topValue)[0];
+            if (bestValuePos) {
+                insights.push(`Best value on board: ${bestValuePos.pos} at ${bestValuePos.topValue.toLocaleString()} — pure BPA territory`);
+            }
+        }
+
+        // Build candidate list: best at each position from BEFORE this pick was made
+        // (remainingPool already had best.player removed, so add it back for display)
+        const candidatePool = best ? [best.player, ...remainingPool] : [...remainingPool];
+        const candidatesByPos: { player: Player; score: number; tag: string }[] = [];
+        const currentCountsForCandidates = {
+            QB: keptCounts.QB + draftedByPos.QB - (best && best.player.position === 'QB' ? 1 : 0),
+            RB: keptCounts.RB + draftedByPos.RB - (best && best.player.position === 'RB' ? 1 : 0),
+            WR: keptCounts.WR + draftedByPos.WR - (best && best.player.position === 'WR' ? 1 : 0),
+            TE: keptCounts.TE + draftedByPos.TE - (best && best.player.position === 'TE' ? 1 : 0),
+        };
+        (['QB', 'RB', 'WR', 'TE'] as const).forEach(pos => {
+            const posPlayers = candidatePool.filter(p => p.position === pos).slice(0, 2);
+            posPlayers.forEach(posPlayer => {
+                const score = scoreForUs(posPlayer, currentCountsForCandidates);
+                const have = currentCountsForCandidates[pos];
+                const want = idealStarters[pos] || 0;
+                let tag = 'VALUE';
+                if (have < want) tag = 'NEED';
+                else if (posPlayer.years_exp === 0) tag = 'UPSIDE';
+                else if (posPlayer.redraft_auction_value && posPlayer.redraft_auction_value >= 15) tag = 'SAFE';
+                candidatesByPos.push({ player: posPlayer, score, tag });
+            });
+        });
+        const pickCandidates = candidatesByPos.sort((a, b) => b.score - a.score).slice(0, 8);
+
+        pickSuggestions.push({ ...pick, suggestion, targetPos, best: best ? { player: best.player, score: best.score } : null, runnerUp: runnerUp && runnerUp.player ? { player: runnerUp.player, score: runnerUp.score } : null, insights, candidates: pickCandidates });
     }
 
     // Best available from draft pool (top 5 per position)
@@ -924,40 +1146,112 @@ function DraftBoardSection({
                                     <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
                                 </button>
 
-                                {/* Expanded: suggestions + search */}
+                                {/* Expanded: candidates + search */}
                                 {isExpanded && (
                                     <div className="border-t border-zinc-100 dark:border-zinc-800 px-3 py-3 space-y-3">
-                                        {/* Quick suggestions */}
-                                        <div className="flex flex-wrap gap-2">
-                                            {pick.best && (
-                                                <button
-                                                    onClick={() => selectPlayerForPick(idx, pick.best!.player)}
-                                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-medium transition-colors"
-                                                >
-                                                    <Check className="w-3 h-3" />
-                                                    {pick.best.player.full_name}
-                                                    <span className="text-[10px] opacity-70">({pick.best.player.position})</span>
-                                                </button>
-                                            )}
-                                            {pick.runnerUp && (
-                                                <button
-                                                    onClick={() => selectPlayerForPick(idx, pick.runnerUp!.player)}
-                                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 text-xs font-medium transition-colors"
-                                                >
-                                                    {pick.runnerUp.player.full_name}
-                                                    <span className="text-[10px] opacity-70">({pick.runnerUp.player.position})</span>
-                                                </button>
-                                            )}
-                                            {hasOverride && (
-                                                <button
-                                                    onClick={() => clearPick(idx)}
-                                                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-red-50 dark:bg-red-900/20 hover:bg-red-100 text-red-600 dark:text-red-400 text-xs font-medium transition-colors"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                    Clear selection
-                                                </button>
-                                            )}
+                                        {/* Clear recommendation with reasoning */}
+                                        {pick.best && (
+                                            <div className="p-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-200 dark:border-indigo-800">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-indigo-500 uppercase">Recommended</span>
+                                                        <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mt-0.5">
+                                                            {pick.best.player.full_name}
+                                                            <span className={`ml-1.5 text-[10px] font-bold px-1 py-0.5 rounded ${posColor(pick.best.player.position)}`}>{pick.best.player.position}</span>
+                                                            <span className="ml-2 text-[10px] font-mono text-zinc-500">{(pick.best.player.fc_value || 0).toLocaleString()}</span>
+                                                            {pick.best.player.redraft_auction_value && <span className="ml-1 text-[10px] font-mono text-amber-600 dark:text-amber-400">${pick.best.player.redraft_auction_value}</span>}
+                                                        </div>
+                                                        <div className="text-[11px] text-zinc-500 mt-0.5">
+                                                            {(() => {
+                                                                const nextBest = pick.candidates.find(c => c.player.id !== pick.best!.player.id);
+                                                                const gap = nextBest ? (pick.best!.player.fc_value || 0) - (nextBest.player.fc_value || 0) : 0;
+                                                                if (gap > 3000) return `${gap.toLocaleString()} value above next best — clear top pick`;
+                                                                if (gap > 1500) return `Significant value edge (${gap.toLocaleString()}) over alternatives`;
+                                                                return `Close in value to alternatives — position need may tip the decision`;
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => selectPlayerForPick(idx, pick.best!.player)}
+                                                        className="px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium"
+                                                    >
+                                                        Select
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Position needs bar */}
+                                        <div className="flex gap-2">
+                                            {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => {
+                                                const have = (keptPlayers.filter(p => p.position === pos).length || 0) +
+                                                    picks.slice(0, idx).filter(p => p.targetPosition === pos).length;
+                                                const want = (sf ? { QB: 2, RB: 3, WR: 4, TE: 2 } : { QB: 1, RB: 3, WR: 4, TE: 2 })[pos];
+                                                const status = have >= want ? 'set' : have === 0 ? 'empty' : 'need';
+                                                return (
+                                                    <div key={pos} className={`text-[10px] px-2 py-0.5 rounded font-medium ${
+                                                        status === 'set' ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+                                                        : status === 'empty' ? 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                                                        : 'bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300'
+                                                    }`}>
+                                                        {pos}: {status === 'set' ? '✓' : `need ${want - have}`}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
+
+                                        {/* Alternatives by position */}
+                                        <div>
+                                            <div className="text-[10px] font-semibold text-zinc-500 uppercase mb-1.5">Alternatives</div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => {
+                                                    const posCandidates = pick.candidates
+                                                        .filter(c => c.player.position === pos && c.player.id !== pick.best?.player.id);
+                                                    if (posCandidates.length === 0) return null;
+                                                    return (
+                                                        <div key={pos} className="rounded-md border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                                                            <div className={`text-[10px] font-bold px-2 py-1 ${posColor(pos)}`}>{pos}</div>
+                                                            {posCandidates.map(c => (
+                                                                <button
+                                                                    key={c.player.id}
+                                                                    onClick={() => selectPlayerForPick(idx, c.player)}
+                                                                    className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs border-t border-zinc-100 dark:border-zinc-800"
+                                                                >
+                                                                    <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">{c.player.full_name}</span>
+                                                                    <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${
+                                                                        c.tag === 'NEED' ? 'bg-red-100 dark:bg-red-900/20 text-red-600'
+                                                                        : c.tag === 'UPSIDE' ? 'bg-purple-100 dark:bg-purple-900/20 text-purple-600'
+                                                                        : c.tag === 'SAFE' ? 'bg-green-100 dark:bg-green-900/20 text-green-600'
+                                                                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                                                                    }`}>{c.tag}</span>
+                                                                    <span className="font-mono text-zinc-500 text-[10px]">{(c.player.fc_value || 0).toLocaleString()}</span>
+                                                                    <span className="font-mono text-amber-600 dark:text-amber-400 text-[10px]">{c.player.redraft_auction_value ? `$${c.player.redraft_auction_value}` : ''}</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* Strategic Insights */}
+                                        {pick.insights.length > 0 && (
+                                            <div className="space-y-1 text-xs text-zinc-500">
+                                                {pick.insights.map((insight, i) => (
+                                                    <div key={i}>• {insight}</div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {hasOverride && (
+                                            <button
+                                                onClick={() => clearPick(idx)}
+                                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-red-50 dark:bg-red-900/20 hover:bg-red-100 text-red-600 dark:text-red-400 text-xs font-medium transition-colors"
+                                            >
+                                                <X className="w-3 h-3" />
+                                                Clear selection
+                                            </button>
+                                        )}
 
                                         {/* Player search */}
                                         <div className="relative">
@@ -984,12 +1278,12 @@ function DraftBoardSection({
                                                                 className="w-full flex flex-col px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 text-sm border-b border-zinc-100 dark:border-zinc-800 last:border-0"
                                                             >
                                                                 <div className="flex items-center gap-2 w-full">
-                                                                    <button
+                                                                    <span
                                                                         onClick={(e) => { e.stopPropagation(); toggleWatchlist(p.id); }}
-                                                                        className="flex-shrink-0 p-0.5"
+                                                                        className="flex-shrink-0 p-0.5 cursor-pointer"
                                                                     >
                                                                         <Star className={`w-3.5 h-3.5 ${watchlist.includes(p.id) ? 'fill-amber-400 text-amber-400' : 'text-zinc-300 dark:text-zinc-600'}`} />
-                                                                    </button>
+                                                                    </span>
                                                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${posColor(p.position)}`}>
                                                                         {p.position}
                                                                     </span>
@@ -1047,6 +1341,73 @@ function DraftBoardSection({
                     ))}
                 </div>
             </div>
+
+            {/* Projected Roster — full team composition based on keepers + picks */}
+            <div>
+                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Projected Roster</h2>
+                {(() => {
+                    // Build projected roster: keepers + selected/suggested picks
+                    const projectedRoster: Player[] = [...keptPlayers];
+                    picks.forEach((pick, idx) => {
+                        if (pick.targetPlayer) {
+                            const player = draftPool.find(p => p.full_name === pick.targetPlayer);
+                            if (player) projectedRoster.push(player);
+                        } else if (pickSuggestions[idx]?.best?.player) {
+                            projectedRoster.push(pickSuggestions[idx].best!.player);
+                        }
+                    });
+
+                    const groups: { pos: string; players: Player[] }[] = [
+                        { pos: 'QB', players: projectedRoster.filter(p => p.position === 'QB').sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)) },
+                        { pos: 'RB', players: projectedRoster.filter(p => p.position === 'RB').sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)) },
+                        { pos: 'WR', players: projectedRoster.filter(p => p.position === 'WR').sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)) },
+                        { pos: 'TE', players: projectedRoster.filter(p => p.position === 'TE').sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)) },
+                        { pos: 'DEF', players: projectedRoster.filter(p => p.position === 'DEF') },
+                    ];
+
+                    const keptIds = new Set(keeperIds);
+                    const draftedNames = new Set(picks.filter(p => p.targetPlayer).map(p => p.targetPlayer));
+                    const suggestedNames = new Set(picks.filter((p, i) => !p.targetPlayer && pickSuggestions[i]?.best?.player).map((_, i) => pickSuggestions[i]?.best?.player.full_name));
+
+                    return (
+                        <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden divide-y divide-zinc-100 dark:divide-zinc-800">
+                            {groups.filter(g => g.players.length > 0).map(group => (
+                                <div key={group.pos} className="px-3 py-2.5">
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${posColor(group.pos)}`}>{group.pos}</span>
+                                        <span className="text-[10px] text-zinc-400">{group.players.length} players</span>
+                                        <span className="text-[10px] font-mono text-zinc-500 ml-auto">
+                                            {group.players.reduce((s, p) => s + (p.fc_value || 0), 0).toLocaleString()} total
+                                        </span>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        {group.players.map(p => {
+                                            const isKept = keptIds.has(p.id);
+                                            const isDrafted = draftedNames.has(p.full_name);
+                                            const isSuggested = suggestedNames.has(p.full_name);
+                                            return (
+                                                <div key={p.id} className={`flex items-center gap-2 text-xs py-0.5 px-1 rounded ${
+                                                    isDrafted ? 'bg-indigo-50 dark:bg-indigo-900/10' : isSuggested ? 'bg-zinc-50 dark:bg-zinc-800/30 italic' : ''
+                                                }`}>
+                                                    <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">
+                                                        {p.full_name}
+                                                    </span>
+                                                    <span className="text-[9px] text-zinc-400">
+                                                        {isKept ? 'KEPT' : isDrafted ? 'PICK' : isSuggested ? 'PROJ' : ''}
+                                                    </span>
+                                                    <span className="font-mono text-zinc-500 w-12 text-right text-[10px]">{(p.fc_value || 0).toLocaleString()}</span>
+                                                    <span className="font-mono text-amber-600 dark:text-amber-400 w-8 text-right text-[10px]">{p.redraft_auction_value ? `$${p.redraft_auction_value}` : '—'}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                })()}
+            </div>
+
             {/* Evaluate Draft Plan */}
             <div>
                 <button
@@ -1135,6 +1496,100 @@ function DraftBoardSection({
                         )}
                     </div>
                 )}
+            </div>
+        </div>
+    );
+}
+
+// --- Plan Results Section (compare mock draft outcomes across plans) ---
+
+function PlanResultsSection({ leagueId, plans }: { leagueId: string; plans: SavedPlan[] }) {
+    const [results, setResults] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const { sleeperUsername, fleaflickerUsername } = useAuth();
+    const userId = sleeperUsername || fleaflickerUsername;
+
+    useEffect(() => {
+        if (!userId) { setLoading(false); return; }
+        fetch(`/api/draft-history?leagueId=${leagueId}&userId=${userId}`)
+            .then(r => r.ok ? r.json() : [])
+            .then(data => { if (Array.isArray(data)) setResults(data); })
+            .catch(() => {})
+            .finally(() => setLoading(false));
+    }, [leagueId, userId]);
+
+    if (loading) return <div className="p-6 text-center text-zinc-400">Loading results...</div>;
+    if (results.length === 0) return (
+        <div className="p-6 text-center text-zinc-400">
+            <Target className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p>No mock draft results yet.</p>
+            <p className="text-xs mt-1">Run mock drafts with different plans to compare outcomes.</p>
+        </div>
+    );
+
+    // Group results by plan
+    const byPlan = new Map<string, { name: string; drafts: any[] }>();
+    byPlan.set('unlinked', { name: 'No Plan', drafts: [] });
+    plans.forEach(p => byPlan.set(p.id, { name: p.name, drafts: [] }));
+
+    results.forEach(r => {
+        const planId = r.plan_id || 'unlinked';
+        const group = byPlan.get(planId);
+        if (group) group.drafts.push(r);
+        else byPlan.get('unlinked')!.drafts.push(r);
+    });
+
+    // Calculate averages per plan
+    const planStats = Array.from(byPlan.entries())
+        .filter(([, v]) => v.drafts.length > 0)
+        .map(([id, { name, drafts }]) => {
+            const grades = drafts.map(d => d.draft_data?.grade || '').filter(Boolean);
+            const gradeToNum = (g: string) => {
+                const map: Record<string, number> = { 'A+': 97, 'A': 93, 'A-': 90, 'B+': 87, 'B': 83, 'B-': 80, 'C+': 77, 'C': 73, 'C-': 70, 'D': 60, 'F': 50 };
+                return map[g] || 75;
+            };
+            const avgGradeNum = grades.length > 0 ? grades.reduce((s, g) => s + gradeToNum(g), 0) / grades.length : 0;
+            const numToGrade = (n: number) => n >= 95 ? 'A+' : n >= 91 ? 'A' : n >= 88 ? 'A-' : n >= 85 ? 'B+' : n >= 81 ? 'B' : n >= 78 ? 'B-' : n >= 75 ? 'C+' : n >= 71 ? 'C' : 'C-';
+            
+            return { id, name, count: drafts.length, avgGrade: numToGrade(avgGradeNum), avgGradeNum, drafts };
+        })
+        .sort((a, b) => b.avgGradeNum - a.avgGradeNum);
+
+    return (
+        <div className="p-4 sm:p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Mock Draft Results by Plan</h2>
+            <p className="text-sm text-zinc-500">Compare outcomes across different draft strategies.</p>
+
+            <div className="space-y-3">
+                {planStats.map(plan => (
+                    <div key={plan.id} className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-3 bg-zinc-50 dark:bg-zinc-800/50">
+                            <div>
+                                <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{plan.name}</span>
+                                <span className="text-xs text-zinc-500 ml-2">{plan.count} draft{plan.count !== 1 ? 's' : ''}</span>
+                            </div>
+                            <span className={`text-xl font-bold ${
+                                plan.avgGrade.startsWith('A') ? 'text-green-600 dark:text-green-400'
+                                : plan.avgGrade.startsWith('B') ? 'text-blue-600 dark:text-blue-400'
+                                : 'text-amber-600 dark:text-amber-400'
+                            }`}>
+                                {plan.avgGrade}
+                            </span>
+                        </div>
+                        <div className="px-4 py-2 divide-y divide-zinc-100 dark:divide-zinc-800">
+                            {plan.drafts.slice(0, 5).map((d: any, i: number) => (
+                                <div key={d.id || i} className="flex items-center justify-between py-1.5 text-xs">
+                                    <span className="text-zinc-500">{new Date(d.created_at).toLocaleDateString()}</span>
+                                    <span className={`font-bold ${
+                                        d.draft_data?.grade?.startsWith('A') ? 'text-green-600'
+                                        : d.draft_data?.grade?.startsWith('B') ? 'text-blue-600'
+                                        : 'text-amber-600'
+                                    }`}>{d.draft_data?.grade || '—'}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))}
             </div>
         </div>
     );
