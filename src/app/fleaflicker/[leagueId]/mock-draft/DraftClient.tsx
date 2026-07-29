@@ -454,6 +454,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [activeWriteupTab, setActiveWriteupTab] = useState<string>('late_round');
     const [selectedDraftPlayer, setSelectedDraftPlayer] = useState<Player | null>(null);
     const [advancedStats, setAdvancedStats] = useState<any[] | null>(null);
+    const [playerBreakout, setPlayerBreakout] = useState<any | null>(null);
+    const [playerRegression, setPlayerRegression] = useState<any[] | null>(null);
     const [rosterFitSort, setRosterFitSort] = useState<'dynasty' | 'auction'>('dynasty');
     const [searchQuery, setSearchQuery] = useState('');
     const [watchList, setWatchList] = useState<Set<string>>(() => {
@@ -472,12 +474,16 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
     // Fetch advanced stats when player modal opens
     useEffect(() => {
-        if (!selectedDraftPlayer) { setAdvancedStats(null); return; }
+        if (!selectedDraftPlayer) { setAdvancedStats(null); setPlayerBreakout(null); setPlayerRegression(null); return; }
         const id = selectedDraftPlayer.id;
         fetch(`/api/player-advanced-stats?sleeper_id=${id}`)
             .then(r => r.ok ? r.json() : null)
-            .then(data => { if (data?.stats) setAdvancedStats(data.stats); else setAdvancedStats(null); })
-            .catch(() => setAdvancedStats(null));
+            .then(data => {
+                if (data?.stats) setAdvancedStats(data.stats); else setAdvancedStats(null);
+                if (data?.breakout) setPlayerBreakout(data.breakout); else setPlayerBreakout(null);
+                if (data?.regression) setPlayerRegression(data.regression); else setPlayerRegression(null);
+            })
+            .catch(() => { setAdvancedStats(null); setPlayerBreakout(null); setPlayerRegression(null); });
     }, [selectedDraftPlayer]);
 
     const toggleWatchList = (playerId: string) => {
@@ -2928,7 +2934,41 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 {/* Advanced Stats */}
                                 {advancedStats && advancedStats.length > 0 && (
                                     <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4">
-                                        <div className="text-xs font-semibold text-zinc-500 uppercase mb-3">Advanced Stats</div>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="text-xs font-semibold text-zinc-500 uppercase">Advanced Stats</div>
+                                            <div className="flex gap-1.5">
+                                                {playerBreakout && playerBreakout.verdict === 'breakout' && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">📈 BREAKOUT</span>
+                                                )}
+                                                {playerBreakout && playerBreakout.verdict === 'trending_up' && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">↗ TRENDING UP</span>
+                                                )}
+                                                {playerBreakout && playerBreakout.verdict === 'declining' && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">↘ DECLINING</span>
+                                                )}
+                                                {playerRegression && playerRegression.length > 0 && (
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">⚠️ REGRESSION RISK</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {/* Breakout signals */}
+                                        {playerBreakout && playerBreakout.signals && playerBreakout.signals.length > 0 && (
+                                            <div className="mb-3 flex flex-wrap gap-1.5">
+                                                {playerBreakout.signals.slice(0, 4).map((s: any, i: number) => (
+                                                    <span key={i} className={`text-[9px] px-1.5 py-0.5 rounded ${s.changePct > 0 ? 'bg-green-50 dark:bg-green-900/10 text-green-700 dark:text-green-300' : 'bg-red-50 dark:bg-red-900/10 text-red-700 dark:text-red-300'}`}>
+                                                        {s.label}: {s.changePct > 0 ? '+' : ''}{s.changePct}%
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {/* Regression flags */}
+                                        {playerRegression && playerRegression.length > 0 && (
+                                            <div className="mb-3 space-y-1">
+                                                {playerRegression.map((f: any, i: number) => (
+                                                    <div key={i} className="text-[10px] text-amber-700 dark:text-amber-300">⚠️ {f.reason}</div>
+                                                ))}
+                                            </div>
+                                        )}
                                         {advancedStats.map((s: any) => (
                                             <div key={s.season} className="mb-3 last:mb-0">
                                                 <div className="text-[10px] font-bold text-zinc-400 mb-1.5">{s.season} · {s.games_played || '—'} games · {s.team}</div>
