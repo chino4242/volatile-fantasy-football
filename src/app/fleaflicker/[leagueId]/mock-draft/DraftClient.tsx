@@ -2974,7 +2974,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         )}
                                         {advancedStats.map((s: any) => (
                                             <div key={s.season} className="mb-3 last:mb-0">
-                                                <div className="text-[10px] font-bold text-zinc-400 mb-1.5">{s.season} · {s.games_played || '—'} games · {s.team}</div>
+                                                <div className="text-[10px] font-bold text-zinc-400 mb-1.5">{s.season}-{String(s.season + 1).slice(2)} · {s.games_played || '—'} games · {s.team}</div>
                                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 text-xs">
                                                     {/* Position-specific key metrics first */}
                                                     {selectedDraftPlayer.position === 'QB' && (

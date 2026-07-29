@@ -439,7 +439,7 @@ function AdvancedStatsSection({ sleeperId, position }: { sleeperId: string; posi
             )}
             {stats.map((s: any) => (
                 <div key={s.season} className="mb-2 last:mb-0">
-                    <div className="text-[10px] font-bold text-zinc-400 mb-1">{s.season} · {s.games_played || '—'} games</div>
+                    <div className="text-[10px] font-bold text-zinc-400 mb-1">{s.season}-{String(s.season + 1).slice(2)} · {s.games_played || '—'} games</div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs">
                         {position === 'QB' && (
                             <>
