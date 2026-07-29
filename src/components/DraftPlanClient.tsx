@@ -72,6 +72,7 @@ interface DraftPlanClientProps {
     freeAgents: Player[];
     keeperCount?: number;
     customRankingsMap?: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]>;
+    statsBoostMap?: Record<string, number>;
 }
 
 // --- Component ---
@@ -96,6 +97,7 @@ export function DraftPlanClient({
     freeAgents,
     keeperCount,
     customRankingsMap,
+    statsBoostMap,
 }: DraftPlanClientProps) {
     // Auth — get user identifier for API calls
     const { sleeperUsername, fleaflickerUsername } = useAuth();
@@ -487,6 +489,7 @@ export function DraftPlanClient({
                         allTeams={allTeams}
                         keeperCount={keeperCount}
                         customRankingsMap={customRankingsMap}
+                        statsBoostMap={statsBoostMap}
                         watchlist={watchlist}
                         toggleWatchlist={toggleWatchlist}
                         posColor={posColor}
@@ -516,6 +519,7 @@ function DraftBoardSection({
     allTeams,
     keeperCount,
     customRankingsMap,
+    statsBoostMap,
     watchlist,
     toggleWatchlist,
     posColor,
@@ -530,6 +534,7 @@ function DraftBoardSection({
     allTeams: TeamData[];
     keeperCount?: number;
     customRankingsMap?: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]>;
+    statsBoostMap?: Record<string, number>;
     watchlist: string[];
     toggleWatchlist: (playerId: string) => void;
     posColor: (pos: string | null) => string;
@@ -671,6 +676,10 @@ function DraftBoardSection({
 
         const valueWithProspect = adjustedValue * (1 + zapBoost);
 
+        // --- Advanced stats boost (from nflreadpy data) ---
+        const advBoost = statsBoostMap?.[player.id] || 1.0;
+        const valueWithStats = valueWithProspect * advBoost;
+
         // --- Positional need ---
         // Value always leads. Need is only a PENALTY for overstocked positions,
         // never a boost that causes a reach. You fill needs by natural value flow.
@@ -695,7 +704,7 @@ function DraftBoardSection({
         }
         // If below target (gap > 0): no boost, just 1.0 — value does the talking
 
-        const score = valueWithProspect * needMultiplier;
+        const score = valueWithStats * needMultiplier;
         return score;
     };
 

@@ -1,9 +1,10 @@
 import { db } from '@/db';
-import { players, playerValues, leagues, customRankings, rankingSources } from '@/db/schema';
+import { players, playerValues, leagues, customRankings, rankingSources, playerAdvancedStats } from '@/db/schema';
 import { getFleaflickerLeague } from '@/lib/fleaflicker';
-import { eq, desc, inArray } from 'drizzle-orm';
+import { eq, desc, inArray, sql } from 'drizzle-orm';
 import { DraftPlanClient } from '@/components/DraftPlanClient';
 import { cleanseName } from '@/lib/nameUtils';
+import { getAdvancedStatsBoost, type PlayerAdvStats } from '@/lib/advanced-stats';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,6 +98,36 @@ export default async function FleaflickerDraftPlanPage({
             customRankingsMap[r.sleeper_id].push({ rank: r.rank, signal: r.signal, notes: r.notes, source: r.source_display_name, marketScore, tier });
         }
 
+        // Fetch advanced stats boosts for draft scoring
+        const currentYear = new Date().getFullYear();
+        const advStatsRows = await db
+            .select({
+                sleeper_id: playerAdvancedStats.sleeper_id,
+                position: playerAdvancedStats.position,
+                target_share: playerAdvancedStats.target_share,
+                avg_separation: playerAdvancedStats.avg_separation,
+                avg_yac_above_expectation: playerAdvancedStats.avg_yac_above_expectation,
+                rush_yards_over_expected_per_att: playerAdvancedStats.rush_yards_over_expected_per_att,
+                rush_efficiency: playerAdvancedStats.rush_efficiency,
+                completion_pct_above_expected: playerAdvancedStats.completion_pct_above_expected,
+                offense_snap_pct: playerAdvancedStats.offense_snap_pct,
+                rushing_yards: playerAdvancedStats.rushing_yards,
+                aggressiveness: playerAdvancedStats.aggressiveness,
+                wopr: playerAdvancedStats.wopr,
+            })
+            .from(playerAdvancedStats)
+            .where(sql`${playerAdvancedStats.season} >= ${currentYear - 1} AND ${playerAdvancedStats.sleeper_id} IS NOT NULL`)
+            .orderBy(desc(playerAdvancedStats.season));
+
+        // Build boost map (most recent season per player)
+        const statsBoostMap: Record<string, number> = {};
+        const seenIds = new Set<string>();
+        for (const row of advStatsRows) {
+            if (!row.sleeper_id || seenIds.has(row.sleeper_id)) continue;
+            seenIds.add(row.sleeper_id);
+            statsBoostMap[row.sleeper_id] = getAdvancedStatsBoost(row as unknown as PlayerAdvStats);
+        }
+
         // Build name-to-player map for matching
         const playerByName = new Map(allPlayersData.map(p => [normalizeName(p.full_name), p]));
 
@@ -151,6 +182,7 @@ export default async function FleaflickerDraftPlanPage({
                         freeAgents={freeAgents}
                         keeperCount={keeperCount}
                         customRankingsMap={customRankingsMap}
+                        statsBoostMap={statsBoostMap}
                     />
                 </div>
             </div>
