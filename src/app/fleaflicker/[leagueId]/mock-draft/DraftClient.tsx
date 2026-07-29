@@ -431,6 +431,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [expandedProspect, setExpandedProspect] = useState<string | null>(null);
     const [activeWriteupTab, setActiveWriteupTab] = useState<string>('late_round');
     const [selectedDraftPlayer, setSelectedDraftPlayer] = useState<Player | null>(null);
+    const [rosterFitSort, setRosterFitSort] = useState<'dynasty' | 'auction'>('dynasty');
     const [searchQuery, setSearchQuery] = useState('');
     const [watchList, setWatchList] = useState<Set<string>>(() => {
         if (typeof window !== 'undefined') {
@@ -2743,6 +2744,131 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 <button onClick={() => { makePick(selectedDraftPlayer.id); setSelectedDraftPlayer(null); }} className="w-full mt-3 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 active:scale-[0.98] transition-all">
                                     {isLive && !isUserPick ? '✓ Select Pick' : '✓ Draft Player'}
                                 </button>
+                                {/* Roster Fit */}
+                                {userTeamId && (() => {
+                                    const myTeam = activeTeams.find(t => t.id === userTeamId);
+                                    if (!myTeam) return null;
+                                    const pos = selectedDraftPlayer.position || '';
+                                    // Find drafted players from original freeAgents list
+                                    const draftedPlayers = picks
+                                        .filter(p => p.teamId === userTeamId && p.playerId)
+                                        .map(p => freeAgents.find(fa => fa.id === p.playerId) || myTeam.players.find(tp => tp.id === p.playerId))
+                                        .filter(Boolean) as Player[];
+                                    const myRoster = [...myTeam.players, ...draftedPlayers];
+                                    const posPlayers = myRoster.filter(p => p.position === pos).sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                    const draftedIds = new Set(draftedPlayers.map(p => p.id));
+                                    const dynastyRank = posPlayers.filter(p => (p.fc_value || 0) > (selectedDraftPlayer.fc_value || 0)).length + 1;
+                                    const auctionVal = selectedDraftPlayer.redraft_auction_value || 0;
+                                    const auctionRank = posPlayers.filter(p => (p.redraft_auction_value || 0) > auctionVal).length + 1;
+                                    const overallRank = myRoster.filter(p => (p.fc_value || 0) > (selectedDraftPlayer.fc_value || 0)).length + 1;
+
+                                    // Starter slots for this position
+                                    const slots = rosterSlots || { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
+                                    const starterSlots = (slots[pos as keyof typeof slots] || 1) + (pos !== 'QB' ? (slots.FLEX || 0) * 0.5 : 0);
+                                    const effectiveStarters = Math.ceil(starterSlots);
+
+                                    // Total position value before/after
+                                    const valueBefore = posPlayers.reduce((s, p) => s + (p.fc_value || 0), 0);
+                                    const valueAfter = valueBefore + (selectedDraftPlayer.fc_value || 0);
+                                    const valuePctChange = valueBefore > 0 ? Math.round(((valueAfter - valueBefore) / valueBefore) * 100) : 100;
+
+                                    // Sort mode state is at component level (rosterFitSort)
+                                    const sortedPosPlayers = rosterFitSort === 'auction'
+                                        ? [...posPlayers].sort((a, b) => (b.redraft_auction_value || 0) - (a.redraft_auction_value || 0))
+                                        : posPlayers;
+                                    const insertRank = rosterFitSort === 'auction'
+                                        ? sortedPosPlayers.filter(p => (p.redraft_auction_value || 0) > auctionVal).length + 1
+                                        : dynastyRank;
+
+                                    return (
+                                        <div className="mt-3 rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                                            {/* Summary bar */}
+                                            <div className="px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs border-b border-zinc-200 dark:border-zinc-700">
+                                                <span className="text-zinc-500">Roster Fit:</span>
+                                                <span className="text-zinc-700 dark:text-zinc-300 font-medium">Dynasty {pos}{dynastyRank} <span className="text-zinc-400">of {posPlayers.length + 1}</span></span>
+                                                {auctionVal > 0 && <span className="text-zinc-700 dark:text-zinc-300 font-medium">Auction {pos}{auctionRank} <span className="text-zinc-400">(${auctionVal})</span></span>}
+                                                <span className="text-zinc-700 dark:text-zinc-300 font-medium">Team #{overallRank} <span className="text-zinc-400">of {myRoster.length + 1}</span></span>
+                                                <span className={`font-medium ${valuePctChange > 20 ? 'text-green-600' : valuePctChange > 5 ? 'text-emerald-600' : 'text-zinc-500'}`}>
+                                                    {pos} room: {valueBefore.toLocaleString()} → {valueAfter.toLocaleString()} (+{valuePctChange}%)
+                                                </span>
+                                            </div>
+
+                                            {/* Position depth chart */}
+                                            {posPlayers.length > 0 && (
+                                                <div className="px-3 py-2">
+                                                    {/* Header with sort toggle */}
+                                                    <div className="flex items-center justify-between mb-1.5">
+                                                        <div className="text-[10px] font-semibold text-zinc-500 uppercase">Your {pos}s</div>
+                                                        <div className="flex gap-1">
+                                                            <button
+                                                                onClick={() => setRosterFitSort('dynasty')}
+                                                                className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${rosterFitSort === 'dynasty' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-zinc-400 hover:text-zinc-600'}`}
+                                                            >Dynasty</button>
+                                                            <button
+                                                                onClick={() => setRosterFitSort('auction')}
+                                                                className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${rosterFitSort === 'auction' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' : 'text-zinc-400 hover:text-zinc-600'}`}
+                                                            >Auction</button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Column headers */}
+                                                    <div className="flex items-center gap-2 text-[9px] text-zinc-400 uppercase mb-1 px-1">
+                                                        <span className="w-4">#</span>
+                                                        <span className="flex-1">Player</span>
+                                                        <span className="w-8 text-right">Age</span>
+                                                        <span className="w-14 text-right">Dynasty</span>
+                                                        <span className="w-10 text-right">Auction</span>
+                                                    </div>
+
+                                                    {/* Player rows */}
+                                                    <div className="space-y-0.5">
+                                                        {(() => {
+                                                            const combined: { player: Player | typeof selectedDraftPlayer; isNew: boolean }[] =
+                                                                sortedPosPlayers.map(p => ({ player: p, isNew: false }));
+                                                            combined.splice(insertRank - 1, 0, { player: selectedDraftPlayer, isNew: true });
+
+                                                            return combined.map((item, i) => {
+                                                                const isStarter = i < effectiveStarters;
+                                                                const isBenchLine = i === effectiveStarters && effectiveStarters < combined.length;
+
+                                                                return (
+                                                                    <div key={item.isNew ? 'new' : item.player.id}>
+                                                                        {isBenchLine && (
+                                                                            <div className="flex items-center gap-2 py-0.5 my-0.5">
+                                                                                <div className="flex-1 border-t border-dashed border-zinc-300 dark:border-zinc-600" />
+                                                                                <span className="text-[8px] text-zinc-400 uppercase">Bench</span>
+                                                                                <div className="flex-1 border-t border-dashed border-zinc-300 dark:border-zinc-600" />
+                                                                            </div>
+                                                                        )}
+                                                                        <div className={`flex items-center gap-2 text-xs py-0.5 px-1 rounded ${
+                                                                            item.isNew ? 'bg-indigo-50 dark:bg-indigo-900/20 ring-1 ring-indigo-200 dark:ring-indigo-800' : ''
+                                                                        }`}>
+                                                                            <span className={`font-mono w-4 ${isStarter ? 'text-zinc-600 dark:text-zinc-300' : 'text-zinc-400'}`}>{i + 1}</span>
+                                                                            <span className={`flex-1 truncate ${item.isNew ? 'font-semibold text-indigo-700 dark:text-indigo-300' : 'text-zinc-900 dark:text-zinc-100'}`}>
+                                                                                {item.player.full_name}
+                                                                                {item.isNew && <span className="text-[9px] ml-1 text-indigo-500">NEW</span>}
+                                                                                {!item.isNew && draftedIds.has(item.player.id) && <span className="text-[9px] ml-1 text-emerald-500">DRAFTED</span>}
+                                                                            </span>
+                                                                            <span className="text-zinc-400 font-mono w-8 text-right text-[10px]">
+                                                                                {item.player.years_exp != null ? `Yr${item.player.years_exp}` : '—'}
+                                                                            </span>
+                                                                            <span className={`font-mono w-14 text-right ${rosterFitSort === 'dynasty' && item.isNew ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-zinc-600 dark:text-zinc-400'}`}>
+                                                                                {(item.player.fc_value || 0).toLocaleString()}
+                                                                            </span>
+                                                                            <span className={`font-mono w-10 text-right ${rosterFitSort === 'auction' && item.isNew ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-amber-600 dark:text-amber-400'}`}>
+                                                                                {item.player.redraft_auction_value ? `$${item.player.redraft_auction_value}` : '—'}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            });
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
                             </div>
                             <div className="p-4 sm:p-6 space-y-4">
                                 {/* ZAP / Late Round */}

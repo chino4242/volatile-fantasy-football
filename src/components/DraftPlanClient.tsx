@@ -698,6 +698,33 @@ function DraftBoardSection({
             .slice(0, 12)
         : [];
 
+    // Calculate where a player would rank on your roster
+    const getRosterFit = (player: Player) => {
+        // Current kept roster + any already-selected picks
+        const currentRoster: Player[] = [...keptPlayers];
+        picks.forEach(pick => {
+            if (pick.targetPlayer) {
+                const p = draftPool.find(dp => dp.full_name === pick.targetPlayer);
+                if (p) currentRoster.push(p);
+            }
+        });
+
+        const pos = player.position || '';
+
+        // Position rank by dynasty value
+        const posPlayers = currentRoster.filter(p => p.position === pos);
+        const posRankDynasty = posPlayers.filter(p => (p.fc_value || 0) > (player.fc_value || 0)).length + 1;
+
+        // Position rank by auction value
+        const posRankAuction = posPlayers.filter(p => (p.redraft_auction_value || 0) > (player.redraft_auction_value || 0)).length + 1;
+
+        // Overall team rank by dynasty value
+        const overallRank = currentRoster.filter(p => (p.fc_value || 0) > (player.fc_value || 0)).length + 1;
+        const totalAfter = currentRoster.length + 1;
+
+        return { pos, posRankDynasty, posRankAuction, posCount: posPlayers.length + 1, overallRank, totalAfter };
+    };
+
     // Evaluation: analyze the planned roster as if the draft happened
     const [evaluation, setEvaluation] = useState<TeamAnalysis | null>(null);
 
@@ -946,6 +973,7 @@ function DraftBoardSection({
                                                 <div className="mt-1 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg max-h-64 overflow-y-auto">
                                                     {searchResults.map(p => {
                                                         const availability = getAvailability(p, pickOverall);
+                                                        const fit = getRosterFit(p);
                                                         return (
                                                             <button
                                                                 key={p.id}
@@ -953,28 +981,38 @@ function DraftBoardSection({
                                                                     selectPlayerForPick(idx, p);
                                                                     setPickSearchQuery('');
                                                                 }}
-                                                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 text-sm border-b border-zinc-100 dark:border-zinc-800 last:border-0"
+                                                                className="w-full flex flex-col px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 text-sm border-b border-zinc-100 dark:border-zinc-800 last:border-0"
                                                             >
-                                                                <button
-                                                                    onClick={(e) => { e.stopPropagation(); toggleWatchlist(p.id); }}
-                                                                    className="flex-shrink-0 p-0.5"
-                                                                >
-                                                                    <Star className={`w-3.5 h-3.5 ${watchlist.includes(p.id) ? 'fill-amber-400 text-amber-400' : 'text-zinc-300 dark:text-zinc-600'}`} />
-                                                                </button>
-                                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${posColor(p.position)}`}>
-                                                                    {p.position}
-                                                                </span>
-                                                                <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">{p.full_name}</span>
-                                                                <span className="text-xs font-mono text-zinc-500 tabular-nums">
-                                                                    {(p.fc_value || 0).toLocaleString()}
-                                                                </span>
-                                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                                                    availability >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                                                                    : availability >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
-                                                                    : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-                                                                }`}>
-                                                                    {availability}%
-                                                                </span>
+                                                                <div className="flex items-center gap-2 w-full">
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); toggleWatchlist(p.id); }}
+                                                                        className="flex-shrink-0 p-0.5"
+                                                                    >
+                                                                        <Star className={`w-3.5 h-3.5 ${watchlist.includes(p.id) ? 'fill-amber-400 text-amber-400' : 'text-zinc-300 dark:text-zinc-600'}`} />
+                                                                    </button>
+                                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${posColor(p.position)}`}>
+                                                                        {p.position}
+                                                                    </span>
+                                                                    <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">{p.full_name}</span>
+                                                                    <span className="text-xs font-mono text-zinc-500 tabular-nums">
+                                                                        {(p.fc_value || 0).toLocaleString()}
+                                                                    </span>
+                                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                                                        availability >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                                                        : availability >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                                                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                                                                    }`}>
+                                                                        {availability}%
+                                                                    </span>
+                                                                </div>
+                                                                {/* Roster fit */}
+                                                                <div className="flex items-center gap-3 mt-1 ml-7 text-[10px] text-zinc-500">
+                                                                    <span>Dynasty: <span className="font-medium text-zinc-700 dark:text-zinc-300">{fit.pos}{fit.posRankDynasty}</span> of {fit.posCount}</span>
+                                                                    {p.redraft_auction_value ? (
+                                                                        <span>Auction: <span className="font-medium text-zinc-700 dark:text-zinc-300">{fit.pos}{fit.posRankAuction}</span> (${p.redraft_auction_value})</span>
+                                                                    ) : null}
+                                                                    <span>Team: <span className="font-medium text-zinc-700 dark:text-zinc-300">#{fit.overallRank}</span>/{fit.totalAfter}</span>
+                                                                </div>
                                                             </button>
                                                         );
                                                     })}

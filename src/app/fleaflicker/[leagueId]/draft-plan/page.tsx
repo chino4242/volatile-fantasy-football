@@ -66,7 +66,7 @@ export default async function FleaflickerDraftPlanPage({
             })
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
-            .where(inArray(players.position, ['QB', 'RB', 'WR', 'TE']))
+            .where(inArray(players.position, ['QB', 'RB', 'WR', 'TE', 'DEF']))
             .orderBy(desc(valueCol));
 
         // Fetch custom rankings (Late Round market scores, etc.)
