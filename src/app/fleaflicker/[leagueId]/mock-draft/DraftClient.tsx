@@ -453,6 +453,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [expandedProspect, setExpandedProspect] = useState<string | null>(null);
     const [activeWriteupTab, setActiveWriteupTab] = useState<string>('late_round');
     const [selectedDraftPlayer, setSelectedDraftPlayer] = useState<Player | null>(null);
+    const [advancedStats, setAdvancedStats] = useState<any[] | null>(null);
     const [rosterFitSort, setRosterFitSort] = useState<'dynasty' | 'auction'>('dynasty');
     const [searchQuery, setSearchQuery] = useState('');
     const [watchList, setWatchList] = useState<Set<string>>(() => {
@@ -468,6 +469,16 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             localStorage.setItem(`vff_watchlist_${leagueId}`, JSON.stringify([...watchList]));
         }
     }, [watchList, leagueId]);
+
+    // Fetch advanced stats when player modal opens
+    useEffect(() => {
+        if (!selectedDraftPlayer) { setAdvancedStats(null); return; }
+        const id = selectedDraftPlayer.id;
+        fetch(`/api/player-advanced-stats?sleeper_id=${id}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data?.stats) setAdvancedStats(data.stats); else setAdvancedStats(null); })
+            .catch(() => setAdvancedStats(null));
+    }, [selectedDraftPlayer]);
 
     const toggleWatchList = (playerId: string) => {
         setWatchList(prev => { const next = new Set(prev); if (next.has(playerId)) next.delete(playerId); else next.add(playerId); return next; });
@@ -2914,6 +2925,63 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 })()}
                             </div>
                             <div className="p-4 sm:p-6 space-y-4">
+                                {/* Advanced Stats */}
+                                {advancedStats && advancedStats.length > 0 && (
+                                    <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4">
+                                        <div className="text-xs font-semibold text-zinc-500 uppercase mb-3">Advanced Stats</div>
+                                        {advancedStats.map((s: any) => (
+                                            <div key={s.season} className="mb-3 last:mb-0">
+                                                <div className="text-[10px] font-bold text-zinc-400 mb-1.5">{s.season} · {s.games_played || '—'} games · {s.team}</div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 text-xs">
+                                                    {/* Position-specific key metrics first */}
+                                                    {selectedDraftPlayer.position === 'QB' && (
+                                                        <>
+                                                            {s.completion_pct_above_expected && <div><span className="text-zinc-500">CPOE:</span> <span className={`font-mono font-medium ${parseFloat(s.completion_pct_above_expected) > 0 ? 'text-green-600' : 'text-red-500'}`}>{parseFloat(s.completion_pct_above_expected) > 0 ? '+' : ''}{parseFloat(s.completion_pct_above_expected).toFixed(1)}%</span></div>}
+                                                            {s.avg_time_to_throw && <div><span className="text-zinc-500">Time to Throw:</span> <span className="font-mono">{parseFloat(s.avg_time_to_throw).toFixed(2)}s</span></div>}
+                                                            {s.aggressiveness && <div><span className="text-zinc-500">Aggressiveness:</span> <span className="font-mono">{parseFloat(s.aggressiveness).toFixed(1)}%</span></div>}
+                                                            {s.passing_yards && <div><span className="text-zinc-500">Pass Yds:</span> <span className="font-mono">{parseInt(s.passing_yards).toLocaleString()}</span></div>}
+                                                            {s.passing_tds && <div><span className="text-zinc-500">Pass TD:</span> <span className="font-mono">{s.passing_tds}</span></div>}
+                                                            {s.rushing_yards && parseInt(s.rushing_yards) > 100 && <div><span className="text-zinc-500">Rush Yds:</span> <span className="font-mono">{parseInt(s.rushing_yards).toLocaleString()}</span></div>}
+                                                        </>
+                                                    )}
+                                                    {selectedDraftPlayer.position === 'WR' && (
+                                                        <>
+                                                            {s.avg_separation && <div><span className="text-zinc-500">Separation:</span> <span className="font-mono font-medium">{parseFloat(s.avg_separation).toFixed(2)} yds</span></div>}
+                                                            {s.avg_yac_above_expectation && <div><span className="text-zinc-500">YAC vs Exp:</span> <span className={`font-mono font-medium ${parseFloat(s.avg_yac_above_expectation) > 0 ? 'text-green-600' : 'text-red-500'}`}>{parseFloat(s.avg_yac_above_expectation) > 0 ? '+' : ''}{parseFloat(s.avg_yac_above_expectation).toFixed(1)}</span></div>}
+                                                            {s.target_share && <div><span className="text-zinc-500">Target Share:</span> <span className="font-mono">{(parseFloat(s.target_share) * 100).toFixed(1)}%</span></div>}
+                                                            {s.wopr && <div><span className="text-zinc-500">WOPR:</span> <span className="font-mono">{parseFloat(s.wopr).toFixed(3)}</span></div>}
+                                                            {s.receiving_yards && <div><span className="text-zinc-500">Rec Yds:</span> <span className="font-mono">{parseInt(s.receiving_yards).toLocaleString()}</span></div>}
+                                                            {s.receptions && <div><span className="text-zinc-500">Rec:</span> <span className="font-mono">{s.receptions}/{s.targets} tgt</span></div>}
+                                                        </>
+                                                    )}
+                                                    {selectedDraftPlayer.position === 'RB' && (
+                                                        <>
+                                                            {s.rush_yards_over_expected_per_att && <div><span className="text-zinc-500">RYOE/Att:</span> <span className={`font-mono font-medium ${parseFloat(s.rush_yards_over_expected_per_att) > 0 ? 'text-green-600' : 'text-red-500'}`}>{parseFloat(s.rush_yards_over_expected_per_att) > 0 ? '+' : ''}{parseFloat(s.rush_yards_over_expected_per_att).toFixed(2)}</span></div>}
+                                                            {s.rush_efficiency && <div><span className="text-zinc-500">Efficiency:</span> <span className="font-mono">{parseFloat(s.rush_efficiency).toFixed(2)}</span></div>}
+                                                            {s.rushing_yards && <div><span className="text-zinc-500">Rush Yds:</span> <span className="font-mono">{parseInt(s.rushing_yards).toLocaleString()}</span></div>}
+                                                            {s.carries && <div><span className="text-zinc-500">Carries:</span> <span className="font-mono">{s.carries}</span></div>}
+                                                            {s.target_share && <div><span className="text-zinc-500">Target Share:</span> <span className="font-mono">{(parseFloat(s.target_share) * 100).toFixed(1)}%</span></div>}
+                                                            {s.receptions && <div><span className="text-zinc-500">Rec:</span> <span className="font-mono">{s.receptions}/{s.targets} tgt</span></div>}
+                                                        </>
+                                                    )}
+                                                    {selectedDraftPlayer.position === 'TE' && (
+                                                        <>
+                                                            {s.avg_separation && <div><span className="text-zinc-500">Separation:</span> <span className="font-mono font-medium">{parseFloat(s.avg_separation).toFixed(2)} yds</span></div>}
+                                                            {s.target_share && <div><span className="text-zinc-500">Target Share:</span> <span className="font-mono">{(parseFloat(s.target_share) * 100).toFixed(1)}%</span></div>}
+                                                            {s.receiving_yards && <div><span className="text-zinc-500">Rec Yds:</span> <span className="font-mono">{parseInt(s.receiving_yards).toLocaleString()}</span></div>}
+                                                            {s.receptions && <div><span className="text-zinc-500">Rec:</span> <span className="font-mono">{s.receptions}/{s.targets} tgt</span></div>}
+                                                            {s.avg_yac_above_expectation && <div><span className="text-zinc-500">YAC vs Exp:</span> <span className={`font-mono font-medium ${parseFloat(s.avg_yac_above_expectation) > 0 ? 'text-green-600' : 'text-red-500'}`}>{parseFloat(s.avg_yac_above_expectation) > 0 ? '+' : ''}{parseFloat(s.avg_yac_above_expectation).toFixed(1)}</span></div>}
+                                                        </>
+                                                    )}
+                                                    {/* Common metrics */}
+                                                    {s.offense_snap_pct && <div><span className="text-zinc-500">Snap %:</span> <span className="font-mono">{(parseFloat(s.offense_snap_pct) * 100).toFixed(0)}%</span></div>}
+                                                    {s.fantasy_points_ppr && <div><span className="text-zinc-500">PPR Pts:</span> <span className="font-mono font-medium">{parseFloat(s.fantasy_points_ppr).toFixed(1)}</span></div>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
                                 {/* ZAP / Late Round */}
                                 {selectedDraftPlayer.zap_analysis && (
                                     <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4">
