@@ -3,8 +3,8 @@ import { getPickFantasyCalcId } from "@/lib/sleeper";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { db } from "@/db";
-import { players, playerValues, leagues, prospectData, prospectWriteups } from "@/db/schema";
-import { inArray, eq, sql } from "drizzle-orm";
+import { players, playerValues, leagues, prospectData, prospectWriteups, playerAdvancedStats } from "@/db/schema";
+import { inArray, eq, sql, desc } from "drizzle-orm";
 import { TeamRosterTable } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterTable";
 import { TeamRosterComposition } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
@@ -199,6 +199,40 @@ export default async function FleaflickerTeamPage({
     const activeSources = await getActiveSources();
     const rankingsVintage = formatVintage(await getRankingsVintage(format));
 
+    // Fetch advanced stats for rostered players (most recent season)
+    const rosterSleeperIds = matchedPlayers.map(p => p.sleeper_id);
+    const advancedStatsRows = rosterSleeperIds.length > 0
+        ? await db
+            .select({
+                sleeper_id: playerAdvancedStats.sleeper_id,
+                season: playerAdvancedStats.season,
+                target_share: playerAdvancedStats.target_share,
+                avg_separation: playerAdvancedStats.avg_separation,
+                rush_yards_over_expected_per_att: playerAdvancedStats.rush_yards_over_expected_per_att,
+                completion_pct_above_expected: playerAdvancedStats.completion_pct_above_expected,
+                offense_snap_pct: playerAdvancedStats.offense_snap_pct,
+                rushing_yards: playerAdvancedStats.rushing_yards,
+            })
+            .from(playerAdvancedStats)
+            .where(inArray(playerAdvancedStats.sleeper_id, rosterSleeperIds))
+            .orderBy(desc(playerAdvancedStats.season))
+        : [];
+    
+    // Build a map of sleeper_id -> most recent season stats
+    const advancedStatsMap: Record<string, { target_share?: string | null; avg_separation?: string | null; rush_yards_over_expected_per_att?: string | null; completion_pct_above_expected?: string | null; offense_snap_pct?: string | null; rushing_yards?: number | null }> = {};
+    for (const row of advancedStatsRows) {
+        if (row.sleeper_id && !advancedStatsMap[row.sleeper_id]) {
+            advancedStatsMap[row.sleeper_id] = {
+                target_share: row.target_share,
+                avg_separation: row.avg_separation,
+                rush_yards_over_expected_per_att: row.rush_yards_over_expected_per_att,
+                completion_pct_above_expected: row.completion_pct_above_expected,
+                offense_snap_pct: row.offense_snap_pct,
+                rushing_yards: row.rushing_yards,
+            };
+        }
+    }
+
     // Fetch all league players for trade targets
     const allLeaguePlayerNames = fleaflickerData.rosters.flatMap(r =>
         r.players.map(p => normalizeName(p.full_name))
@@ -377,6 +411,7 @@ export default async function FleaflickerTeamPage({
                     rankingSources={activeSources}
                     keeperCount={keeperCount}
                     rankingsVintage={rankingsVintage}
+                    advancedStatsMap={advancedStatsMap}
                 />
 
                 <SavedTrades

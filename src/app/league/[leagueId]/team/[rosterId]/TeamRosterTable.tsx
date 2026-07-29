@@ -97,6 +97,7 @@ interface TeamRosterTableProps {
     rankingSources: Array<{ id: string; name: string; display_name: string; description: string | null }>;
     keeperCount?: number; // Number of keepers for keeper leagues
     rankingsVintage?: string | null; // e.g. "Mar 2026"
+    advancedStatsMap?: Record<string, { target_share?: string | null; avg_separation?: string | null; rush_yards_over_expected_per_att?: string | null; completion_pct_above_expected?: string | null; offense_snap_pct?: string | null; rushing_yards?: number | null }>;
 }
 
 // ── Signal filter ──────────────────────────────────────────────────────────────
@@ -250,6 +251,7 @@ export function TeamRosterTable({
     rankingSources,
     keeperCount,
     rankingsVintage,
+    advancedStatsMap,
 }: TeamRosterTableProps) {
     // Build dynamic columns including custom rankings
     const COLUMNS = [
@@ -624,6 +626,51 @@ export function TeamRosterTable({
                                         <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                                             <div className="text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100">{player.full_name}</div>
                                             <div className="sm:hidden text-[11px] text-zinc-400 mt-0.5">{player.position} · {player.team || 'FA'}</div>
+                                            {advancedStatsMap && advancedStatsMap[player.sleeper_id] && player.position !== 'PICK' && (() => {
+                                                const stats = advancedStatsMap[player.sleeper_id];
+                                                const pos = player.position;
+                                                if (pos === 'QB') {
+                                                    const cpoe = stats.completion_pct_above_expected ? parseFloat(stats.completion_pct_above_expected) : null;
+                                                    const rushYds = stats.rushing_yards;
+                                                    return (
+                                                        <div className="flex gap-2 mt-0.5 text-[10px] text-zinc-400">
+                                                            {cpoe !== null && <span className={cpoe > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}>CPOE: {cpoe > 0 ? '+' : ''}{cpoe.toFixed(1)}</span>}
+                                                            {rushYds != null && rushYds > 0 && <span>Rush: {rushYds}</span>}
+                                                        </div>
+                                                    );
+                                                }
+                                                if (pos === 'WR') {
+                                                    const ts = stats.target_share ? parseFloat(stats.target_share) : null;
+                                                    const sep = stats.avg_separation ? parseFloat(stats.avg_separation) : null;
+                                                    return (
+                                                        <div className="flex gap-2 mt-0.5 text-[10px] text-zinc-400">
+                                                            {ts !== null && <span>Tgt Share: {(ts * 100).toFixed(1)}%</span>}
+                                                            {sep !== null && <span>Sep: {sep.toFixed(1)}</span>}
+                                                        </div>
+                                                    );
+                                                }
+                                                if (pos === 'RB') {
+                                                    const ryoe = stats.rush_yards_over_expected_per_att ? parseFloat(stats.rush_yards_over_expected_per_att) : null;
+                                                    const ts = stats.target_share ? parseFloat(stats.target_share) : null;
+                                                    return (
+                                                        <div className="flex gap-2 mt-0.5 text-[10px] text-zinc-400">
+                                                            {ryoe !== null && <span className={ryoe > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}>RYOE: {ryoe > 0 ? '+' : ''}{ryoe.toFixed(2)}</span>}
+                                                            {ts !== null && <span>Tgt Share: {(ts * 100).toFixed(1)}%</span>}
+                                                        </div>
+                                                    );
+                                                }
+                                                if (pos === 'TE') {
+                                                    const ts = stats.target_share ? parseFloat(stats.target_share) : null;
+                                                    const snap = stats.offense_snap_pct ? parseFloat(stats.offense_snap_pct) : null;
+                                                    return (
+                                                        <div className="flex gap-2 mt-0.5 text-[10px] text-zinc-400">
+                                                            {ts !== null && <span>Tgt Share: {(ts * 100).toFixed(1)}%</span>}
+                                                            {snap !== null && <span>Snap: {(snap * 100).toFixed(0)}%</span>}
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            })()}
                                         </td>
                                         <td className="px-2 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400 hidden sm:table-cell">
                                             {player.position}

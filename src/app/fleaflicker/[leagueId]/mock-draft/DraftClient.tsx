@@ -6,6 +6,8 @@ import { ArrowLeft, RotateCcw, Download, Play, ArrowUpDown, ArrowUp, ArrowDown, 
 import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
 import { PositionScarcityChart } from '@/components/PositionScarcityChart';
+import { PlayerComparison } from '@/components/PlayerComparison';
+import type { PlayerAdvStats } from '@/lib/advanced-stats';
 import { useAuth } from '@/hooks/useUser';
 import { analyzeLeaguePostDraft } from '@/lib/post-draft-analysis';
 import type { PlayerForAnalysis } from '@/lib/post-draft-analysis';
@@ -457,6 +459,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [playerBreakout, setPlayerBreakout] = useState<any | null>(null);
     const [playerRegression, setPlayerRegression] = useState<any[] | null>(null);
     const [rosterFitSort, setRosterFitSort] = useState<'dynasty' | 'auction'>('dynasty');
+    const [showComparison, setShowComparison] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [watchList, setWatchList] = useState<Set<string>>(() => {
         if (typeof window !== 'undefined') {
@@ -474,7 +477,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
     // Fetch advanced stats when player modal opens
     useEffect(() => {
-        if (!selectedDraftPlayer) { setAdvancedStats(null); setPlayerBreakout(null); setPlayerRegression(null); return; }
+        if (!selectedDraftPlayer) { setAdvancedStats(null); setPlayerBreakout(null); setPlayerRegression(null); setShowComparison(false); return; }
         const id = selectedDraftPlayer.id;
         fetch(`/api/player-advanced-stats?sleeper_id=${id}`)
             .then(r => r.ok ? r.json() : null)
@@ -3066,8 +3069,20 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         <p className="text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-line leading-relaxed max-h-48 overflow-y-auto">{w.analysis_text}</p>
                                     </div>
                                 ))}
+                                {/* Player Comparison */}
+                                {showComparison && advancedStats && advancedStats.length > 0 && selectedDraftPlayer && (
+                                    <PlayerComparison
+                                        playerA={{ id: selectedDraftPlayer.id, full_name: selectedDraftPlayer.full_name, position: selectedDraftPlayer.position }}
+                                        playerAStats={advancedStats[0] as unknown as PlayerAdvStats}
+                                        allPlayers={freeAgents.map(p => ({ id: p.id, full_name: p.full_name, position: p.position }))}
+                                        onClose={() => setShowComparison(false)}
+                                    />
+                                )}
                                 {/* Draft action */}
                                 <div className="flex justify-end gap-3 pt-2">
+                                    {advancedStats && advancedStats.length > 0 && !showComparison && (
+                                        <button onClick={() => setShowComparison(true)} className="px-4 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors">Compare</button>
+                                    )}
                                     <button onClick={() => setSelectedDraftPlayer(null)} className="px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">Close</button>
                                 </div>
                             </div>
