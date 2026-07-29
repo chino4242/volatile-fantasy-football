@@ -127,8 +127,16 @@ def build_player_records(season, stats_df, ngs, snaps_df, pfr):
 
     for _, row in stats_df.iterrows():
         pos = row.get("position")
+        # Include standard fantasy positions + any player with receiving/rushing stats
+        # (handles two-way players like Travis Hunter listed as CB/DB)
         if pos not in ("QB", "RB", "WR", "TE"):
-            continue
+            # Check if they have fantasy-relevant stats (targets or carries)
+            targets = row.get("targets") or 0
+            carries = row.get("carries") or 0
+            if targets < 10 and carries < 10:
+                continue
+            # Override position to WR/RB based on usage
+            pos = "WR" if targets > carries else "RB"
 
         name = row.get("player_display_name", "")
         gsis_id = row.get("player_id") or row.get("gsis_id")
@@ -223,23 +231,40 @@ def safe_int(val):
 
 
 def resolve_sleeper_ids(conn, records):
-    """Match gsis_id to sleeper_id from the players table."""
+    """Match gsis_id to sleeper_id from the players table. Falls back to name matching."""
     cur = conn.cursor()
+
+    # Primary: match by gsis_id
     cur.execute("SELECT gsis_id, sleeper_id FROM players WHERE gsis_id IS NOT NULL")
     gsis_to_sleeper = {r[0]: r[1] for r in cur.fetchall()}
+
+    # Fallback: match by name (normalized)
+    cur.execute("SELECT full_name, sleeper_id FROM players WHERE position IN ('QB', 'RB', 'WR', 'TE')")
+    name_to_sleeper = {}
+    for r in cur.fetchall():
+        normalized = r[0].lower().replace("'", "").replace("-", "").replace(".", "").replace(" jr", "").replace(" sr", "").replace(" ii", "").replace(" iii", "").strip()
+        name_to_sleeper[normalized] = r[1]
     cur.close()
 
-    matched = 0
+    matched_gsis = 0
+    matched_name = 0
     for rec in records:
         gsis = rec.get("gsis_id")
         if gsis and gsis in gsis_to_sleeper:
             rec["sleeper_id"] = gsis_to_sleeper[gsis]
-            matched += 1
+            matched_gsis += 1
         else:
-            rec["sleeper_id"] = None
+            # Try name fallback
+            name = rec.get("full_name", "")
+            normalized = name.lower().replace("'", "").replace("-", "").replace(".", "").replace(" jr", "").replace(" sr", "").replace(" ii", "").replace(" iii", "").strip()
+            if normalized in name_to_sleeper:
+                rec["sleeper_id"] = name_to_sleeper[normalized]
+                matched_name += 1
+            else:
+                rec["sleeper_id"] = None
             rec["gsis_id"] = None  # Clear gsis_id if not in our players table (FK constraint)
 
-    print(f"  Matched {matched}/{len(records)} to sleeper_id via gsis_id")
+    print(f"  Matched {matched_gsis}/{len(records)} via gsis_id, {matched_name} via name fallback ({matched_gsis + matched_name} total)")
     return records
 
 
