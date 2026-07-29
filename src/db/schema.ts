@@ -448,6 +448,75 @@ export const tradeScenarios = pgTable("trade_scenarios", {
 });
 
 // Draft Plans — persistent draft strategy notebook
+
+// Player Advanced Stats (from nflreadpy — NGS, PFR, snap counts)
+export const playerAdvancedStats = pgTable("player_advanced_stats", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    gsis_id: text("gsis_id").references(() => players.gsis_id),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id),
+    full_name: text("full_name").notNull(),
+    position: text("position"),
+    team: text("team"),
+    season: integer("season").notNull(),
+
+    // Basic season stats
+    games_played: integer("games_played"),
+    fantasy_points_ppr: numeric("fantasy_points_ppr"),
+    targets: integer("targets"),
+    receptions: integer("receptions"),
+    receiving_yards: integer("receiving_yards"),
+    receiving_tds: integer("receiving_tds"),
+    carries: integer("carries"),
+    rushing_yards: integer("rushing_yards"),
+    rushing_tds: integer("rushing_tds"),
+    completions: integer("completions"),
+    passing_attempts: integer("passing_attempts"),
+    passing_yards: integer("passing_yards"),
+    passing_tds: integer("passing_tds"),
+    interceptions: integer("interceptions"),
+    target_share: numeric("target_share"),
+    wopr: numeric("wopr"),
+
+    // Next Gen Stats — Passing
+    avg_time_to_throw: numeric("avg_time_to_throw"),
+    avg_intended_air_yards: numeric("avg_intended_air_yards"),
+    aggressiveness: numeric("aggressiveness"),
+    completion_pct_above_expected: numeric("completion_pct_above_expected"),
+    avg_air_yards_differential: numeric("avg_air_yards_differential"),
+
+    // Next Gen Stats — Receiving
+    avg_cushion: numeric("avg_cushion"),
+    avg_separation: numeric("avg_separation"),
+    avg_intended_air_yards_rec: numeric("avg_intended_air_yards_rec"),
+    pct_share_intended_air_yards: numeric("pct_share_intended_air_yards"),
+    avg_yac: numeric("avg_yac"),
+    avg_yac_above_expectation: numeric("avg_yac_above_expectation"),
+
+    // Next Gen Stats — Rushing
+    rush_efficiency: numeric("rush_efficiency"),
+    avg_time_to_los: numeric("avg_time_to_los"),
+    rush_yards_over_expected: numeric("rush_yards_over_expected"),
+    rush_yards_over_expected_per_att: numeric("rush_yards_over_expected_per_att"),
+
+    // Snap counts
+    offense_snap_pct: numeric("offense_snap_pct"), // average across weeks
+
+    // PFR Advanced
+    receiving_broken_tackles: integer("receiving_broken_tackles"),
+    receiving_drop_pct: numeric("receiving_drop_pct"),
+    rushing_broken_tackles: integer("rushing_broken_tackles"),
+    passing_bad_throw_pct: numeric("passing_bad_throw_pct"),
+    times_pressured: integer("times_pressured"),
+    times_blitzed: integer("times_blitzed"),
+
+    updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => {
+    return {
+        playerSeasonIdx: index("idx_adv_stats_player_season").on(table.sleeper_id, table.season),
+        gsisSeasonIdx: index("idx_adv_stats_gsis_season").on(table.gsis_id, table.season),
+    };
+});
+
 export const draftPlans = pgTable("draft_plans", {
     id: uuid("id").primaryKey().defaultRandom(),
     user_id: text("user_id").notNull(),
