@@ -149,6 +149,9 @@ export function PlayerStatsModal({
               <X className="w-5 h-5 text-gray-500" />
             </button>
           </div>
+
+          {/* Advanced Stats */}
+          <AdvancedStatsSection sleeperId={sleeperId} position={position} />
           
           {/* Scouting Writeups */}
           {(zapAnalysis || (writeups && writeups.length > 0)) && (() => {
@@ -386,4 +389,99 @@ function StatCard({ label, value, perGame }: { label: string; value: number; per
       {perGame && perGame !== "%" && <div className="text-[10px] sm:text-xs text-gray-600">{perGame}/game</div>}
     </div>
   );
+}
+
+// --- Advanced Stats Section (fetches from API) ---
+function AdvancedStatsSection({ sleeperId, position }: { sleeperId: string; position: string }) {
+    const [stats, setStats] = useState<any[] | null>(null);
+    const [breakout, setBreakout] = useState<any | null>(null);
+    const [regression, setRegression] = useState<any[] | null>(null);
+
+    useEffect(() => {
+        fetch(`/api/player-advanced-stats?sleeper_id=${sleeperId}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.stats?.length) setStats(data.stats); else setStats(null);
+                if (data?.breakout) setBreakout(data.breakout); else setBreakout(null);
+                if (data?.regression) setRegression(data.regression); else setRegression(null);
+            })
+            .catch(() => {});
+    }, [sleeperId]);
+
+    if (!stats || stats.length === 0) return null;
+
+    return (
+        <div className="bg-zinc-50 rounded-lg p-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+                <div className="text-xs font-semibold text-zinc-500 uppercase">Advanced Stats</div>
+                <div className="flex gap-1.5">
+                    {breakout?.verdict === 'breakout' && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-green-100 text-green-700">📈 BREAKOUT</span>}
+                    {breakout?.verdict === 'trending_up' && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-blue-100 text-blue-700">↗ TRENDING UP</span>}
+                    {breakout?.verdict === 'declining' && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-red-100 text-red-700">↘ DECLINING</span>}
+                    {regression && regression.length > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-700">⚠️ REGRESSION</span>}
+                </div>
+            </div>
+            {breakout?.signals?.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-1">
+                    {breakout.signals.slice(0, 4).map((s: any, i: number) => (
+                        <span key={i} className={`text-[9px] px-1.5 py-0.5 rounded ${s.changePct > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                            {s.label}: {s.changePct > 0 ? '+' : ''}{s.changePct}%
+                        </span>
+                    ))}
+                </div>
+            )}
+            {regression && regression.length > 0 && (
+                <div className="mb-2">
+                    {regression.map((f: any, i: number) => (
+                        <div key={i} className="text-[10px] text-amber-700">⚠️ {f.reason}</div>
+                    ))}
+                </div>
+            )}
+            {stats.map((s: any) => (
+                <div key={s.season} className="mb-2 last:mb-0">
+                    <div className="text-[10px] font-bold text-zinc-400 mb-1">{s.season} · {s.games_played || '—'} games</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs">
+                        {position === 'QB' && (
+                            <>
+                                {s.completion_pct_above_expected && <div><span className="text-zinc-500">CPOE:</span> <span className={`font-mono ${parseFloat(s.completion_pct_above_expected) > 0 ? 'text-green-600' : 'text-red-500'}`}>{parseFloat(s.completion_pct_above_expected) > 0 ? '+' : ''}{parseFloat(s.completion_pct_above_expected).toFixed(1)}%</span></div>}
+                                {s.avg_time_to_throw && <div><span className="text-zinc-500">Time to Throw:</span> <span className="font-mono">{parseFloat(s.avg_time_to_throw).toFixed(2)}s</span></div>}
+                                {s.passing_yards && <div><span className="text-zinc-500">Pass Yds:</span> <span className="font-mono">{parseInt(s.passing_yards).toLocaleString()}</span></div>}
+                                {s.passing_tds && <div><span className="text-zinc-500">Pass TD:</span> <span className="font-mono">{s.passing_tds}</span></div>}
+                                {s.rushing_yards && parseInt(s.rushing_yards) > 100 && <div><span className="text-zinc-500">Rush Yds:</span> <span className="font-mono">{parseInt(s.rushing_yards).toLocaleString()}</span></div>}
+                            </>
+                        )}
+                        {position === 'WR' && (
+                            <>
+                                {s.avg_separation && <div><span className="text-zinc-500">Separation:</span> <span className="font-mono font-medium">{parseFloat(s.avg_separation).toFixed(2)} yds</span></div>}
+                                {s.avg_yac_above_expectation && <div><span className="text-zinc-500">YAC vs Exp:</span> <span className={`font-mono ${parseFloat(s.avg_yac_above_expectation) > 0 ? 'text-green-600' : 'text-red-500'}`}>{parseFloat(s.avg_yac_above_expectation) > 0 ? '+' : ''}{parseFloat(s.avg_yac_above_expectation).toFixed(1)}</span></div>}
+                                {s.target_share && <div><span className="text-zinc-500">Target Share:</span> <span className="font-mono">{(parseFloat(s.target_share) * 100).toFixed(1)}%</span></div>}
+                                {s.wopr && <div><span className="text-zinc-500">WOPR:</span> <span className="font-mono">{parseFloat(s.wopr).toFixed(3)}</span></div>}
+                                {s.receiving_yards && <div><span className="text-zinc-500">Rec Yds:</span> <span className="font-mono">{parseInt(s.receiving_yards).toLocaleString()}</span></div>}
+                                {s.receptions && <div><span className="text-zinc-500">Rec:</span> <span className="font-mono">{s.receptions}/{s.targets} tgt</span></div>}
+                            </>
+                        )}
+                        {position === 'RB' && (
+                            <>
+                                {s.rush_yards_over_expected_per_att && <div><span className="text-zinc-500">RYOE/Att:</span> <span className={`font-mono ${parseFloat(s.rush_yards_over_expected_per_att) > 0 ? 'text-green-600' : 'text-red-500'}`}>{parseFloat(s.rush_yards_over_expected_per_att) > 0 ? '+' : ''}{parseFloat(s.rush_yards_over_expected_per_att).toFixed(2)}</span></div>}
+                                {s.rushing_yards && <div><span className="text-zinc-500">Rush Yds:</span> <span className="font-mono">{parseInt(s.rushing_yards).toLocaleString()}</span></div>}
+                                {s.carries && <div><span className="text-zinc-500">Carries:</span> <span className="font-mono">{s.carries}</span></div>}
+                                {s.target_share && <div><span className="text-zinc-500">Target Share:</span> <span className="font-mono">{(parseFloat(s.target_share) * 100).toFixed(1)}%</span></div>}
+                                {s.receptions && <div><span className="text-zinc-500">Rec:</span> <span className="font-mono">{s.receptions}/{s.targets} tgt</span></div>}
+                            </>
+                        )}
+                        {position === 'TE' && (
+                            <>
+                                {s.avg_separation && <div><span className="text-zinc-500">Separation:</span> <span className="font-mono">{parseFloat(s.avg_separation).toFixed(2)} yds</span></div>}
+                                {s.target_share && <div><span className="text-zinc-500">Target Share:</span> <span className="font-mono">{(parseFloat(s.target_share) * 100).toFixed(1)}%</span></div>}
+                                {s.receiving_yards && <div><span className="text-zinc-500">Rec Yds:</span> <span className="font-mono">{parseInt(s.receiving_yards).toLocaleString()}</span></div>}
+                                {s.receptions && <div><span className="text-zinc-500">Rec:</span> <span className="font-mono">{s.receptions}/{s.targets} tgt</span></div>}
+                            </>
+                        )}
+                        {s.offense_snap_pct && <div><span className="text-zinc-500">Snap %:</span> <span className="font-mono">{(parseFloat(s.offense_snap_pct) * 100).toFixed(0)}%</span></div>}
+                        {s.fantasy_points_ppr && <div><span className="text-zinc-500">PPR:</span> <span className="font-mono">{parseFloat(s.fantasy_points_ppr).toFixed(1)}</span></div>}
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
 }
