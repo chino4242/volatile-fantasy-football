@@ -9,7 +9,20 @@ export async function GET(request: NextRequest) {
 
     try {
         // Use raw SQL to avoid Date precision issues with Drizzle
+        // Compare current values against the PREVIOUS snapshot (not the most recent,
+        // since the most recent might be from today and would show 0 change)
         const results = await db.execute(sql.raw(`
+            WITH snapshot_dates AS (
+                SELECT DISTINCT snapshot_date 
+                FROM value_snapshots 
+                ORDER BY snapshot_date DESC 
+                LIMIT 2
+            ),
+            prev_snapshot AS (
+                SELECT snapshot_date FROM snapshot_dates 
+                ORDER BY snapshot_date ASC 
+                LIMIT 1
+            )
             SELECT 
                 p.sleeper_id,
                 p.full_name,
@@ -19,7 +32,8 @@ export async function GET(request: NextRequest) {
             FROM players p
             JOIN player_values pv ON p.sleeper_id = pv.sleeper_id
             JOIN value_snapshots vs ON p.sleeper_id = vs.sleeper_id
-            WHERE vs.snapshot_date = (SELECT MAX(snapshot_date) FROM value_snapshots)
+            CROSS JOIN prev_snapshot ps
+            WHERE vs.snapshot_date = ps.snapshot_date
             AND p.position IN ('QB', 'RB', 'WR', 'TE')
             AND pv.${valueCol} IS NOT NULL
             AND vs.${valueCol} IS NOT NULL
@@ -40,8 +54,8 @@ export async function GET(request: NextRequest) {
             })
             .filter((m: any) => Math.abs(m.change_pct) >= 5);
 
-        const risers = movers.filter(m => m.change_pct > 0).sort((a, b) => b.change_pct - a.change_pct).slice(0, 15);
-        const fallers = movers.filter(m => m.change_pct < 0).sort((a, b) => a.change_pct - b.change_pct).slice(0, 15);
+        const risers = movers.filter(m => m.change_pct > 0).sort((a, b) => b.change_pct - a.change_pct).slice(0, 50);
+        const fallers = movers.filter(m => m.change_pct < 0).sort((a, b) => a.change_pct - b.change_pct).slice(0, 50);
 
         return NextResponse.json({ risers, fallers });
     } catch (error) {

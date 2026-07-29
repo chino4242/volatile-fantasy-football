@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ingestPlayers } from '../../../../../scripts/ingest-players';
 import { db } from '@/db';
-import { playerValues, valueSnapshots } from '@/db/schema';
 import { sql } from 'drizzle-orm';
 
 export const maxDuration = 60; // 60 seconds timeout for cron job
@@ -19,14 +18,14 @@ export async function GET(request: Request) {
     console.log('[CRON] Player ingestion completed successfully');
 
     // Weekly value snapshot (check if we already have one this week)
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 6);
-    const recent = await db.select({ id: valueSnapshots.id }).from(valueSnapshots).where(sql`${valueSnapshots.snapshot_date} > ${weekAgo}`).limit(1);
-    if (recent.length === 0) {
+    const recent = await db.execute(sql`SELECT id FROM value_snapshots WHERE snapshot_date > NOW() - INTERVAL '6 days' LIMIT 1`);
+    if ((recent as any[]).length === 0) {
       await db.execute(sql`INSERT INTO value_snapshots (sleeper_id, fc_value_sf, fc_value_1qb, fc_rank_sf, fc_rank_1qb, snapshot_date)
         SELECT sleeper_id, fc_value_sf, fc_value_1qb, fc_rank_sf, fc_rank_1qb, NOW()
         FROM player_values WHERE fc_value_sf IS NOT NULL OR fc_value_1qb IS NOT NULL`);
       console.log('[CRON] Weekly value snapshot taken');
+    } else {
+      console.log('[CRON] Snapshot already exists this week, skipping');
     }
     
     return NextResponse.json({ 

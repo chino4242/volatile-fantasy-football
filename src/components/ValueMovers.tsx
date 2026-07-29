@@ -19,45 +19,85 @@ interface Props {
 }
 
 export default function ValueMovers({ format }: Props) {
-    const { sleeperUserId } = useAuth();
+    const { sleeperUserId, fleaflickerLeagueIds, fleaflickerUsername } = useAuth();
     const [expanded, setExpanded] = useState(false);
     const [movers, setMovers] = useState<{ risers: Mover[]; fallers: Mover[] } | null>(null);
     const [loading, setLoading] = useState(false);
     const [userPlayerIds, setUserPlayerIds] = useState<Set<string> | null>(null);
     const [filterMode, setFilterMode] = useState<'mine' | 'all'>('mine');
 
-    // Fetch user's rostered player IDs from their Sleeper leagues
+    // Fetch user's rostered player IDs from Sleeper + Fleaflicker leagues
     useEffect(() => {
-        if (!sleeperUserId) { setUserPlayerIds(null); return; }
-        const fetchRosters = async () => {
-            try {
-                const year = new Date().getFullYear();
-                const leaguesRes = await fetch(`https://api.sleeper.app/v1/user/${sleeperUserId}/leagues/nfl/${year}`);
-                if (!leaguesRes.ok) return;
-                const leagues = await leaguesRes.json();
-                if (!Array.isArray(leagues)) return;
+        const allPlayerIds = new Set<string>();
+        let hasAnyData = false;
 
-                const allPlayerIds = new Set<string>();
+        const fetchAll = async () => {
+            // Sleeper rosters
+            if (sleeperUserId) {
+                try {
+                    const year = new Date().getFullYear();
+                    const leaguesRes = await fetch(`https://api.sleeper.app/v1/user/${sleeperUserId}/leagues/nfl/${year}`);
+                    if (leaguesRes.ok) {
+                        const leagues = await leaguesRes.json();
+                        if (Array.isArray(leagues)) {
+                            await Promise.all(
+                                leagues.slice(0, 5).map(async (league: any) => {
+                                    try {
+                                        const rostersRes = await fetch(`https://api.sleeper.app/v1/league/${league.league_id}/rosters`);
+                                        if (!rostersRes.ok) return;
+                                        const rosters = await rostersRes.json();
+                                        const myRoster = rosters.find((r: any) => r.owner_id === sleeperUserId);
+                                        if (myRoster?.players) {
+                                            myRoster.players.forEach((pid: string) => allPlayerIds.add(pid));
+                                            hasAnyData = true;
+                                        }
+                                    } catch {}
+                                })
+                            );
+                        }
+                    }
+                } catch {}
+            }
+
+            // Fleaflicker rosters — fetch via our API which returns sleeper_ids
+            if (fleaflickerLeagueIds && fleaflickerLeagueIds.length > 0) {
                 await Promise.all(
-                    leagues.slice(0, 5).map(async (league: any) => { // cap at 5 leagues to avoid too many requests
+                    fleaflickerLeagueIds.slice(0, 3).map(async (leagueId: string) => {
                         try {
-                            const rostersRes = await fetch(`https://api.sleeper.app/v1/league/${league.league_id}/rosters`);
-                            if (!rostersRes.ok) return;
-                            const rosters = await rostersRes.json();
-                            const myRoster = rosters.find((r: any) => r.owner_id === sleeperUserId);
-                            if (myRoster?.players) {
-                                myRoster.players.forEach((pid: string) => allPlayerIds.add(pid));
+                            // Try username first, then fall back to saved team selection
+                            let url = `/api/fleaflicker/league/${leagueId}/data`;
+                            if (fleaflickerUsername) {
+                                url += `?username=${encodeURIComponent(fleaflickerUsername)}`;
+                            } else {
+                                // Check if user has a saved team selection from draft plan
+                                const savedTeamId = localStorage.getItem(`vff_draft_plan_team_${leagueId}`);
+                                if (savedTeamId) {
+                                    url += `?teamId=${savedTeamId}`;
+                                } else {
+                                    return; // No way to identify user's team
+                                }
+                            }
+                            const res = await fetch(url);
+                            if (!res.ok) return;
+                            const data = await res.json();
+                            if (data.myPlayerIds && Array.isArray(data.myPlayerIds)) {
+                                data.myPlayerIds.forEach((pid: string) => allPlayerIds.add(pid));
+                                hasAnyData = true;
                             }
                         } catch {}
                     })
                 );
-                setUserPlayerIds(allPlayerIds);
-            } catch {
-                setUserPlayerIds(null);
             }
+
+            setUserPlayerIds(hasAnyData ? allPlayerIds : null);
         };
-        fetchRosters();
-    }, [sleeperUserId]);
+
+        if (sleeperUserId || (fleaflickerLeagueIds && fleaflickerLeagueIds.length > 0)) {
+            fetchAll();
+        } else {
+            setUserPlayerIds(null);
+        }
+    }, [sleeperUserId, fleaflickerLeagueIds, fleaflickerUsername]);
 
     useEffect(() => {
         if (expanded && !movers) {
@@ -84,6 +124,12 @@ export default function ValueMovers({ format }: Props) {
 
     const filteredMovers = getFilteredMovers();
     const hasRosterData = userPlayerIds && userPlayerIds.size > 0;
+
+    // Cap display at 10 for "All Players" mode, show all for "My Roster"
+    const displayMovers = filteredMovers ? {
+        risers: filterMode === 'all' ? filteredMovers.risers.slice(0, 10) : filteredMovers.risers,
+        fallers: filterMode === 'all' ? filteredMovers.fallers.slice(0, 10) : filteredMovers.fallers,
+    } : null;
 
     return (
         <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm ring-1 ring-zinc-900/5 overflow-hidden">
@@ -117,7 +163,7 @@ export default function ValueMovers({ format }: Props) {
                     )}
 
                     {loading && <p className="text-sm text-zinc-500 text-center py-4">Loading...</p>}
-                    {filteredMovers && (
+                    {displayMovers && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {/* Risers */}
                             <div>
@@ -125,13 +171,13 @@ export default function ValueMovers({ format }: Props) {
                                     <TrendingUp size={14} className="text-green-500" />
                                     <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Risers</span>
                                 </div>
-                                {filteredMovers.risers.length === 0 && (
+                                {displayMovers.risers.length === 0 && (
                                     <p className="text-[11px] text-zinc-500">
                                         {filterMode === 'mine' ? 'None of your players had significant gains this week' : 'No significant risers this week'}
                                     </p>
                                 )}
                                 <div className="space-y-1">
-                                    {filteredMovers.risers.map(m => (
+                                    {displayMovers.risers.map(m => (
                                         <div key={m.sleeper_id} className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg ${isOwned(m.sleeper_id) ? 'bg-green-50 dark:bg-green-950/20 ring-1 ring-green-200 dark:ring-green-800' : ''}`}>
                                             <div className="min-w-0">
                                                 <div className="text-[11px] font-medium text-zinc-900 dark:text-zinc-100 truncate">
@@ -152,13 +198,13 @@ export default function ValueMovers({ format }: Props) {
                                     <TrendingDown size={14} className="text-red-500" />
                                     <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Fallers</span>
                                 </div>
-                                {filteredMovers.fallers.length === 0 && (
+                                {displayMovers.fallers.length === 0 && (
                                     <p className="text-[11px] text-zinc-500">
                                         {filterMode === 'mine' ? 'None of your players had significant drops this week' : 'No significant fallers this week'}
                                     </p>
                                 )}
                                 <div className="space-y-1">
-                                    {filteredMovers.fallers.map(m => (
+                                    {displayMovers.fallers.map(m => (
                                         <div key={m.sleeper_id} className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg ${isOwned(m.sleeper_id) ? 'bg-red-50 dark:bg-red-950/20 ring-1 ring-red-200 dark:ring-red-800' : ''}`}>
                                             <div className="min-w-0">
                                                 <div className="text-[11px] font-medium text-zinc-900 dark:text-zinc-100 truncate">
