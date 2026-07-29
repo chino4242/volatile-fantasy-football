@@ -1,57 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { players, playerValues, valueSnapshots } from '@/db/schema';
-import { eq, sql, desc, asc } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
     const format = request.nextUrl.searchParams.get('format') || 'sf';
     const sf = format === 'sf';
+    const valueCol = sf ? 'fc_value_sf' : 'fc_value_1qb';
 
-    // Get the most recent snapshot date
-    const latestSnapshot = await db
-        .select({ date: valueSnapshots.snapshot_date })
-        .from(valueSnapshots)
-        .orderBy(desc(valueSnapshots.snapshot_date))
-        .limit(1);
+    try {
+        // Use raw SQL to avoid Date precision issues with Drizzle
+        const results = await db.execute(sql.raw(`
+            SELECT 
+                p.sleeper_id,
+                p.full_name,
+                p.position,
+                pv.${valueCol} as current_value,
+                vs.${valueCol} as snapshot_value
+            FROM players p
+            JOIN player_values pv ON p.sleeper_id = pv.sleeper_id
+            JOIN value_snapshots vs ON p.sleeper_id = vs.sleeper_id
+            WHERE vs.snapshot_date = (SELECT MAX(snapshot_date) FROM value_snapshots)
+            AND p.position IN ('QB', 'RB', 'WR', 'TE')
+            AND pv.${valueCol} IS NOT NULL
+            AND vs.${valueCol} IS NOT NULL
+            AND vs.${valueCol} > 100
+        `));
 
-    if (!latestSnapshot.length) {
+        const movers = (results as any[])
+            .map((r: any) => {
+                const change_pct = Math.round(((r.current_value - r.snapshot_value) / r.snapshot_value) * 100);
+                return {
+                    sleeper_id: r.sleeper_id,
+                    full_name: r.full_name,
+                    position: r.position || '',
+                    current_value: r.current_value,
+                    previous_value: r.snapshot_value,
+                    change_pct,
+                };
+            })
+            .filter((m: any) => Math.abs(m.change_pct) >= 5);
+
+        const risers = movers.filter(m => m.change_pct > 0).sort((a, b) => b.change_pct - a.change_pct).slice(0, 15);
+        const fallers = movers.filter(m => m.change_pct < 0).sort((a, b) => a.change_pct - b.change_pct).slice(0, 15);
+
+        return NextResponse.json({ risers, fallers });
+    } catch (error) {
+        console.error('Value movers error:', error);
         return NextResponse.json({ risers: [], fallers: [] });
     }
-
-    const snapshotDate = latestSnapshot[0].date;
-
-    // Get current values + snapshot values in one query
-    const results = await db
-        .select({
-            sleeper_id: players.sleeper_id,
-            full_name: players.full_name,
-            position: players.position,
-            current_value: sf ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
-            snapshot_value: sf ? valueSnapshots.fc_value_sf : valueSnapshots.fc_value_1qb,
-        })
-        .from(players)
-        .innerJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
-        .innerJoin(valueSnapshots, eq(players.sleeper_id, valueSnapshots.sleeper_id))
-        .where(sql`${valueSnapshots.snapshot_date} = ${snapshotDate} AND ${players.position} IN ('QB', 'RB', 'WR', 'TE')`);
-
-    // Calculate percentage changes
-    const movers = results
-        .filter(r => r.current_value && r.snapshot_value && r.snapshot_value > 100)
-        .map(r => {
-            const change_pct = Math.round(((r.current_value! - r.snapshot_value!) / r.snapshot_value!) * 100);
-            return {
-                sleeper_id: r.sleeper_id,
-                full_name: r.full_name,
-                position: r.position || '',
-                current_value: r.current_value!,
-                previous_value: r.snapshot_value!,
-                change_pct,
-            };
-        })
-        .filter(m => Math.abs(m.change_pct) >= 15);
-
-    const risers = movers.filter(m => m.change_pct > 0).sort((a, b) => b.change_pct - a.change_pct).slice(0, 10);
-    const fallers = movers.filter(m => m.change_pct < 0).sort((a, b) => a.change_pct - b.change_pct).slice(0, 10);
-
-    return NextResponse.json({ risers, fallers, snapshotDate });
 }
