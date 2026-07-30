@@ -129,6 +129,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
     });
 
     // Add other teams' picks to allLeaguePlayers and ownership map
+    const playerMap = new Map(dbPlayers.map(p => [p.sleeper_id, p]));
     const otherTeamsPicks = allPicks
         .filter(pick => pick.currentOwner !== Number(rosterId))
         .map(pick => {
@@ -165,8 +166,6 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
         })
         .filter(p => p.fc_value > 0);
     const allLeaguePlayersWithPicks = [...allLeaguePlayers, ...otherTeamsPicks];
-
-    const playerMap = new Map(dbPlayers.map(p => [p.sleeper_id, p]));
 
     // 5. Enrich players
     // We treat the mapped element as 'any' briefly to bypass strict Typescript checks, 
