@@ -394,15 +394,15 @@ export default async function FleaflickerTeamPage({
                     teamName={roster.name}
                     playerValueMap={Object.fromEntries(
                         [...allAssetsWithWriteups, ...allLeagueValuesWithPicks].map((p: any) => [
-                            (p.full_name || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(),
+                            normalizeName(p.full_name || ''),
                             { dynastyValue: p.fc_value || 0, auctionValue: p.redraft_auction_value || null, position: p.position || '' }
                         ])
                     )}
                     allLeaguePlayers={fleaflickerData.rosters.flatMap(r =>
                         r.players.map(p => {
-                            const norm = (p.full_name || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+                            const norm = normalizeName(p.full_name || '');
                             const allData = [...allAssetsWithWriteups, ...allLeagueValuesWithPicks] as any[];
-                            const match = allData.find(ap => (ap.full_name || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim() === norm);
+                            const match = allData.find(ap => normalizeName(ap.full_name || '') === norm);
                             return { name: p.full_name || '', position: match?.position || '', dynastyValue: match?.fc_value || 0, auctionValue: match?.redraft_auction_value || null, teamName: r.name || '' };
                         })
                     )}

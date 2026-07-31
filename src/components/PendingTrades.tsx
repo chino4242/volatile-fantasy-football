@@ -109,7 +109,7 @@ export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allL
                     const name = p.proPlayer?.nameFull || p.proPlayer?.nameShort || '';
                     const pos = p.proPlayer?.position || '';
                     const team = p.proPlayer?.proTeamAbbreviation || '';
-                    const key = name.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+                    const key = name.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\b(jr|sr|ii|iii|iv|v)\b/g, '').replace(/\s+/g, ' ').trim();
                     const data = playerValueMap[key];
                     return { name, position: pos || data?.position || '', team, dynastyValue: data?.dynastyValue || 0, auctionValue: data?.auctionValue || null };
                 };
