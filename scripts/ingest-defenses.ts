@@ -63,7 +63,7 @@ async function main() {
             ON CONFLICT (sleeper_id) DO NOTHING
         `);
 
-        if (result.rowCount && result.rowCount > 0) {
+        if ((result as any).rowCount && (result as any).rowCount > 0) {
             inserted++;
         } else {
             skipped++;
