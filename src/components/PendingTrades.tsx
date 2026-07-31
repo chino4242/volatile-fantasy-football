@@ -42,20 +42,44 @@ export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allL
     const [error, setError] = useState<string | null>(null);
     const [showSettings, setShowSettings] = useState(false);
     const [cookieValue, setCookieValue] = useState<string>('');
+    const [cookieLoaded, setCookieLoaded] = useState(false);
 
-    // Load saved cookie from localStorage
+    // Get user ID for DB storage
+    const getUserId = () => {
+        if (typeof window === 'undefined') return null;
+        return localStorage.getItem('vff_sleeper_username') || localStorage.getItem('vff_fleaflicker_username') || null;
+    };
+
+    // Load cookie from DB on mount
     useEffect(() => {
-        const saved = localStorage.getItem('vff_ff_cookie');
-        if (saved) {
-            setCookieValue(saved);
-            fetchTrades(saved);
-        }
+        const userId = getUserId();
+        if (!userId) { setCookieLoaded(true); return; }
+
+        fetch(`/api/user-settings?user_id=${userId}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.fleaflicker_cookie) {
+                    setCookieValue(data.fleaflicker_cookie);
+                    fetchTrades(data.fleaflicker_cookie);
+                }
+            })
+            .catch(() => {})
+            .finally(() => setCookieLoaded(true));
     }, [leagueId]);
 
     const saveCookie = () => {
         if (!cookieValue.trim()) return;
-        localStorage.setItem('vff_ff_cookie', cookieValue.trim());
-        fetchTrades(cookieValue.trim());
+        const trimmed = cookieValue.trim();
+        // Save to DB
+        const userId = getUserId();
+        if (userId) {
+            fetch('/api/user-settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+                body: JSON.stringify({ fleaflicker_cookie: trimmed }),
+            }).catch(() => {});
+        }
+        fetchTrades(trimmed);
         setShowSettings(false);
     };
 
@@ -123,7 +147,9 @@ export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allL
         }
     };
 
-    const hasCookie = !!localStorage.getItem('vff_ff_cookie');
+    const hasCookie = cookieLoaded && !!cookieValue;
+
+    if (!cookieLoaded) return null; // wait for DB load
 
     if (!hasCookie && trades.length === 0 && !showSettings) {
         return (
