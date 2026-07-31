@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, TrendingUp, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Info } from 'lucide-react';
 
 // --- Types ---
 
@@ -128,6 +128,18 @@ const METRIC_LABELS: Record<string, string> = {
     completion_pct_above_expected: 'CPOE',
     rushing_yards: 'Rush Yards',
     avg_time_to_throw: 'Time to Throw',
+};
+
+const METRIC_DESCRIPTIONS: Record<string, string> = {
+    avg_separation: 'Average yards of separation from defender at the catch point. Higher = gets open more easily.',
+    target_share: 'Percentage of team pass attempts directed at this player. Higher = more involved in the offense.',
+    avg_yac_above_expectation: 'Yards After Catch above what\'s expected based on the catch situation. Positive = makes plays after the catch.',
+    fantasy_points_ppr: 'Total PPR fantasy points scored. The bottom line of fantasy production.',
+    rush_yards_over_expected_per_att: 'Rush Yards Over Expected per attempt. Measures rushing efficiency vs what the blocking creates. Positive = creates extra yards.',
+    offense_snap_pct: 'Percentage of offensive snaps played. Higher = more secure role, fewer timeshares.',
+    completion_pct_above_expected: 'Completion Percentage Over Expected. Measures accuracy above what\'s expected given throw difficulty. Positive = more accurate than average.',
+    rushing_yards: 'Total rushing yards. For QBs, indicates mobility and rushing floor.',
+    avg_time_to_throw: 'Average seconds from snap to throw. Lower can mean quick processing; higher can mean extended plays.',
 };
 
 // --- Helper Functions ---
@@ -472,7 +484,7 @@ function OverviewTab({
                         {grades.map(g => (
                             <div key={g.metric} className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-3 py-2">
                                 <div>
-                                    <div className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{g.label}</div>
+                                    <div className="text-xs font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-1">{g.label} <InfoTip metric={g.metric} /></div>
                                     <div className="text-[10px] text-zinc-500">{formatStatValue(g.metric, g.value)}</div>
                                 </div>
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${GRADE_COLORS[g.grade]}`}>
@@ -531,6 +543,25 @@ function OverviewTab({
                 );
             })()}
         </div>
+    );
+}
+
+function InfoTip({ metric }: { metric: string }) {
+    const [show, setShow] = useState(false);
+    const desc = METRIC_DESCRIPTIONS[metric];
+    if (!desc) return null;
+    return (
+        <span className="relative inline-block">
+            <button onClick={(e) => { e.stopPropagation(); setShow(!show); }} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 p-0.5">
+                <Info className="w-3 h-3" />
+            </button>
+            {show && (
+                <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-1 w-52 p-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-[10px] rounded-lg shadow-lg leading-relaxed">
+                    {desc}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 dark:bg-zinc-100 rotate-45 -mt-1" />
+                </div>
+            )}
+        </span>
     );
 }
 
@@ -620,8 +651,9 @@ function StatsTab({
                     return (
                         <div key={metric} className="space-y-1">
                             <div className="flex items-center justify-between">
-                                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
                                     {METRIC_LABELS[metric] || metric}
+                                    <InfoTip metric={metric} />
                                 </span>
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs font-semibold text-zinc-900 dark:text-white">
