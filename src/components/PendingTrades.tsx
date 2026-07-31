@@ -287,6 +287,68 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks }: { trade: Enriche
     const newDiff = diff + suggestedValue;
     const hasSuggestion = suggestedAsk.players.length > 0 || suggestedAsk.picks.length > 0;
 
+    // Generate alternative deal structures ("they want X, here's what makes it fair")
+    const reframedDeals = (() => {
+        // Identify what they want (players they're obtaining from us)
+        const theyWant = trade.youSend.players;
+        if (theyWant.length === 0) return [];
+        const theyWantValue = theyWant.reduce((s, p) => s + p.dynastyValue, 0);
+        const theyWantNames = theyWant.map(p => p.name).join(' + ');
+
+        const deals: { label: string; youGive: string; youGet: string; netValue: number }[] = [];
+
+        // Option 1: Straight pick swap — find a pick from them worth ~same as what we send
+        const pickMatch = otherTeamPicks.find(pk =>
+            pk.estimatedValue >= theyWantValue * 0.8 && pk.estimatedValue <= theyWantValue * 1.3 &&
+            !trade.youReceive.picks.some(rp => rp.season === pk.season && rp.round === pk.round)
+        );
+        if (pickMatch) {
+            deals.push({
+                label: 'Pick swap',
+                youGive: theyWantNames,
+                youGet: `${pickMatch.season} ${pickMatch.round}.${String(pickMatch.slot).padStart(2, '0')}`,
+                netValue: pickMatch.estimatedValue - theyWantValue,
+            });
+        }
+
+        // Option 2: Their player of similar value
+        const playerMatch = otherTeamSorted.find(p =>
+            p.dynastyValue >= theyWantValue * 0.75 && p.dynastyValue <= theyWantValue * 1.25 &&
+            !trade.youReceive.players.some(rp => rp.name.toLowerCase() === p.name.toLowerCase())
+        );
+        if (playerMatch) {
+            deals.push({
+                label: 'Player swap',
+                youGive: theyWantNames,
+                youGet: `${playerMatch.name} (${playerMatch.position})`,
+                netValue: playerMatch.dynastyValue - theyWantValue,
+            });
+        }
+
+        // Option 3: Their cheaper player + pick to make up difference
+        const cheaperPlayer = otherTeamSorted.find(p =>
+            p.dynastyValue >= theyWantValue * 0.4 && p.dynastyValue < theyWantValue * 0.75 &&
+            !trade.youReceive.players.some(rp => rp.name.toLowerCase() === p.name.toLowerCase())
+        );
+        if (cheaperPlayer) {
+            const remainder = theyWantValue - cheaperPlayer.dynastyValue;
+            const fillPick = otherTeamPicks.find(pk =>
+                pk.estimatedValue >= remainder * 0.6 && pk.estimatedValue <= remainder * 1.5 &&
+                !trade.youReceive.picks.some(rp => rp.season === pk.season && rp.round === pk.round)
+            );
+            if (fillPick) {
+                deals.push({
+                    label: 'Player + pick',
+                    youGive: theyWantNames,
+                    youGet: `${cheaperPlayer.name} (${cheaperPlayer.position}) + ${fillPick.season} ${fillPick.round}.${String(fillPick.slot).padStart(2, '0')}`,
+                    netValue: (cheaperPlayer.dynastyValue + fillPick.estimatedValue) - theyWantValue,
+                });
+            }
+        }
+
+        return deals.slice(0, 3);
+    })();
+
     return (
         <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden mb-3 last:mb-0">
             {/* Header */}
@@ -386,6 +448,29 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks }: { trade: Enriche
                             <div className="text-[10px] font-bold text-amber-600 uppercase mb-1">Suggestion</div>
                             <div className="text-xs text-zinc-700 dark:text-zinc-300">
                                 Ask for a higher round pick to close the {Math.abs(diff).toLocaleString()} value gap
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Reframed deal alternatives */}
+                    {reframedDeals.length > 0 && (
+                        <div className="p-2 bg-zinc-50 dark:bg-zinc-800/30 rounded-lg">
+                            <div className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400 uppercase mb-1.5">
+                                Alternative Deals (they get what they want)
+                            </div>
+                            <div className="space-y-1.5">
+                                {reframedDeals.map((deal, i) => (
+                                    <div key={i} className="flex items-center gap-2 text-xs">
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 font-medium flex-shrink-0">{deal.label}</span>
+                                        <span className="text-zinc-500">You give:</span>
+                                        <span className="text-zinc-900 dark:text-zinc-100 truncate">{deal.youGive}</span>
+                                        <span className="text-zinc-400">→</span>
+                                        <span className="text-zinc-900 dark:text-zinc-100 truncate">{deal.youGet}</span>
+                                        <span className={`font-mono text-[10px] flex-shrink-0 ${deal.netValue >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                            {deal.netValue >= 0 ? '+' : ''}{deal.netValue.toLocaleString()}
+                                        </span>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}
