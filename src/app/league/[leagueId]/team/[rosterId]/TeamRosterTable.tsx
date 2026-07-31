@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { TrendingUp, TrendingDown, Minus, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { PlayerStatsModal } from '@/components/PlayerStatsModal';
+import PlayerProfileCard from '@/components/PlayerProfileCard';
 import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
 
@@ -815,12 +815,15 @@ export function TeamRosterTable({
 
             {/* Player Stats Modal */}
             {selectedPlayer && (
-                <PlayerStatsModal
+                <PlayerProfileCard
                     playerName={selectedPlayer.full_name}
                     position={selectedPlayer.position || 'N/A'}
                     team={selectedPlayer.team}
                     sleeperId={selectedPlayer.sleeper_id}
                     onClose={() => setSelectedPlayer(null)}
+                    dynastyValue={selectedPlayer.fc_value ?? undefined}
+                    auctionValue={selectedPlayer.redraft_auction_value ?? undefined}
+                    yearsExp={(selectedPlayer as any).years_exp ?? undefined}
                     writeups={selectedPlayer.writeups}
                     zapScore={selectedPlayer.zap_score}
                     zapCategory={selectedPlayer.zap_category}
