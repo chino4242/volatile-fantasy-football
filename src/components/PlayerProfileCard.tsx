@@ -677,7 +677,7 @@ function TrendsTab({ sleeperId }: { sleeperId: string }) {
         );
     }
 
-    const points = weeklyStats.map(w => w.fantasy_points_ppr || 0);
+    const points = weeklyStats.map(w => parseFloat(String(w.fantasy_points_ppr || '0')) || 0);
     const seasonAvg = points.reduce((a, b) => a + b, 0) / points.length;
     const maxPoints = Math.max(...points, 1);
 
