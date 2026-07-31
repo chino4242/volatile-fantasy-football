@@ -34,9 +34,10 @@ interface Props {
     teamName: string;
     playerValueMap: Record<string, { dynastyValue: number; auctionValue: number | null; position: string }>;
     allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string }[];
+    allLeaguePicks?: { season: number; round: number; slot: number; teamName: string; estimatedValue: number }[];
 }
 
-export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allLeaguePlayers }: Props) {
+export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allLeaguePlayers, allLeaguePicks }: Props) {
     const [trades, setTrades] = useState<EnrichedTrade[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -198,7 +199,7 @@ export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allL
                 <p className="text-xs text-zinc-500 text-center py-2">No pending trades</p>
             )}
 
-            {trades.map(trade => <TradeCard key={trade.id} trade={trade} allLeaguePlayers={allLeaguePlayers} />)}
+            {trades.map(trade => <TradeCard key={trade.id} trade={trade} allLeaguePlayers={allLeaguePlayers} allLeaguePicks={allLeaguePicks} />)}
         </div>
     );
 }
@@ -225,7 +226,7 @@ function CookieInput({ cookieValue, setCookieValue, onSave }: { cookieValue: str
     );
 }
 
-function TradeCard({ trade, allLeaguePlayers }: { trade: EnrichedTrade; allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string }[] }) {
+function TradeCard({ trade, allLeaguePlayers, allLeaguePicks }: { trade: EnrichedTrade; allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string }[]; allLeaguePicks?: { season: number; round: number; slot: number; teamName: string; estimatedValue: number }[] }) {
     const [showCounter, setShowCounter] = useState(false);
     const sendTotal = trade.youSend.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youSend.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const receiveTotal = trade.youReceive.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youReceive.picks.reduce((s, p) => s + p.estimatedValue, 0);
@@ -238,41 +239,53 @@ function TradeCard({ trade, allLeaguePlayers }: { trade: EnrichedTrade; allLeagu
     // Get the other team's assets for counter suggestions
     const otherTeamPlayers = allLeaguePlayers?.filter(p => p.teamName === trade.otherTeamName) || [];
     const otherTeamSorted = [...otherTeamPlayers].sort((a, b) => b.dynastyValue - a.dynastyValue);
+    const otherTeamPicks = allLeaguePicks?.filter(p => p.teamName === trade.otherTeamName)?.sort((a, b) => a.round - b.round || a.season - b.season) || [];
 
-    // Suggest a counter: find assets from their team that would close the value gap
+    // Suggest a counter: prefer pick upgrades/additions for small gaps, players for large gaps
     const suggestedAsk = (() => {
-        if (diff >= 0) return []; // trade is already in our favor
+        if (diff >= 0) return { players: [], picks: [] };
         const gap = Math.abs(diff);
+
+        // For smaller gaps (< 2000), suggest a pick upgrade or addition first
+        const availablePicks = otherTeamPicks.filter(pk =>
+            !trade.youReceive.picks.some(rp => rp.season === pk.season && rp.round === pk.round)
+        );
+        
+        if (gap < 2500 && availablePicks.length > 0) {
+            // Find a pick that closely matches the gap
+            const pickMatch = availablePicks
+                .filter(pk => pk.estimatedValue >= gap * 0.4 && pk.estimatedValue <= gap * 1.5)
+                .sort((a, b) => Math.abs(a.estimatedValue - gap) - Math.abs(b.estimatedValue - gap))[0];
+            if (pickMatch) return { players: [], picks: [pickMatch] };
+        }
+
+        // For larger gaps, suggest a player
         const candidates = otherTeamSorted.filter(p =>
             !trade.youReceive.players.some(rp => rp.name.toLowerCase() === p.name.toLowerCase()) &&
             p.dynastyValue > 0
         );
 
-        // Find the single player closest to the gap (within 50% over or under)
         const closeMatch = candidates
             .filter(p => p.dynastyValue >= gap * 0.5 && p.dynastyValue <= gap * 1.5)
             .sort((a, b) => Math.abs(a.dynastyValue - gap) - Math.abs(b.dynastyValue - gap))[0];
 
-        if (closeMatch) return [closeMatch];
+        if (closeMatch) return { players: [closeMatch], picks: [] };
 
-        // If no close single match, try a combination of cheaper players
-        const cheaperCandidates = candidates.filter(p => p.dynastyValue < gap && p.dynastyValue >= gap * 0.3);
-        if (cheaperCandidates.length > 0) {
-            // Take the most valuable one under the gap
-            return [cheaperCandidates[0]];
+        // Fallback: cheaper player + a pick
+        const cheapPlayer = candidates.find(p => p.dynastyValue >= gap * 0.3 && p.dynastyValue < gap);
+        if (cheapPlayer && availablePicks.length > 0) {
+            const remainingGap = gap - cheapPlayer.dynastyValue;
+            const pickFill = availablePicks.find(pk => pk.estimatedValue >= remainingGap * 0.5);
+            if (pickFill) return { players: [cheapPlayer], picks: [pickFill] };
+            return { players: [cheapPlayer], picks: [] };
         }
 
-        // Last resort: suggest upgrading a pick round (if picks are involved)
-        if (trade.youReceive.picks.length > 0) {
-            return []; // suggest asking for a higher pick instead
-        }
-
-        return [];
+        return { players: [], picks: [] };
     })();
 
-    // Calculate what the trade would look like with the suggestion
-    const suggestedValue = suggestedAsk.reduce((s, p) => s + p.dynastyValue, 0);
+    const suggestedValue = suggestedAsk.players.reduce((s, p) => s + p.dynastyValue, 0) + suggestedAsk.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const newDiff = diff + suggestedValue;
+    const hasSuggestion = suggestedAsk.players.length > 0 || suggestedAsk.picks.length > 0;
 
     return (
         <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden mb-3 last:mb-0">
@@ -348,16 +361,18 @@ function TradeCard({ trade, allLeaguePlayers }: { trade: EnrichedTrade; allLeagu
             {showCounter && (
                 <div className="px-3 py-3 border-t border-zinc-200 dark:border-zinc-700 space-y-3">
                     {/* Suggestion */}
-                    {suggestedAsk.length > 0 && diff < 0 && (
+                    {hasSuggestion && diff < 0 && (
                         <div className="p-2 bg-indigo-50 dark:bg-indigo-900/10 rounded-lg border border-indigo-200 dark:border-indigo-800">
                             <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1">Suggested Counter: Ask for more</div>
                             <div className="text-xs text-zinc-700 dark:text-zinc-300">
                                 Ask them to add:
-                                {suggestedAsk.map((p, i) => (
+                                {suggestedAsk.picks.map((pk, i) => (
+                                    <span key={`pk${i}`} className="ml-1 font-medium">{pk.season} Round {pk.round} pick (~{pk.estimatedValue.toLocaleString()}){suggestedAsk.players.length > 0 ? ' +' : ''}</span>
+                                ))}
+                                {suggestedAsk.players.map((p, i) => (
                                     <span key={i} className="ml-1 font-medium">
                                         {p.name} ({p.position}, {p.dynastyValue.toLocaleString()})
                                         {p.auctionValue ? ` $${p.auctionValue}` : ''}
-                                        {i < suggestedAsk.length - 1 ? ' +' : ''}
                                     </span>
                                 ))}
                             </div>
@@ -366,7 +381,7 @@ function TradeCard({ trade, allLeaguePlayers }: { trade: EnrichedTrade; allLeagu
                             </div>
                         </div>
                     )}
-                    {diff < 0 && suggestedAsk.length === 0 && trade.youReceive.picks.length > 0 && (
+                    {diff < 0 && !hasSuggestion && trade.youReceive.picks.length > 0 && (
                         <div className="p-2 bg-amber-50 dark:bg-amber-900/10 rounded-lg border border-amber-200 dark:border-amber-800">
                             <div className="text-[10px] font-bold text-amber-600 uppercase mb-1">Suggestion</div>
                             <div className="text-xs text-zinc-700 dark:text-zinc-300">
@@ -379,6 +394,19 @@ function TradeCard({ trade, allLeaguePlayers }: { trade: EnrichedTrade; allLeagu
                     <div>
                         <div className="text-[10px] font-bold text-zinc-500 uppercase mb-1.5">{trade.otherTeamName}&apos;s Assets</div>
                         <div className="max-h-48 overflow-y-auto space-y-0.5">
+                            {otherTeamPicks.length > 0 && (
+                                <div className="mb-2">
+                                    <div className="text-[9px] font-semibold text-zinc-400 uppercase mb-0.5">Draft Picks</div>
+                                    {otherTeamPicks.map((pk, i) => (
+                                        <div key={i} className="flex items-center gap-2 text-xs py-0.5">
+                                            <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600">PICK</span>
+                                            <span className="text-zinc-900 dark:text-zinc-100 flex-1">{pk.season} Round {pk.round} ({pk.slot}.{String(pk.round).padStart(2, '0')})</span>
+                                            <span className="font-mono text-zinc-500 text-[10px]">~{pk.estimatedValue.toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="text-[9px] font-semibold text-zinc-400 uppercase mb-0.5">Players</div>
                             {otherTeamSorted.slice(0, 20).map((p, i) => (
                                 <div key={i} className="flex items-center gap-2 text-xs py-0.5">
                                     <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${

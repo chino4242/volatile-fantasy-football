@@ -406,6 +406,14 @@ export default async function FleaflickerTeamPage({
                             return { name: p.full_name || '', position: match?.position || '', dynastyValue: match?.fc_value || 0, auctionValue: match?.redraft_auction_value || null, teamName: r.name || '' };
                         })
                     )}
+                    allLeaguePicks={fleaflickerData.rosters.flatMap(r =>
+                        r.draftPicks.filter(pk => pk.season >= new Date().getFullYear()).map(pk => {
+                            const pickId = getPickFantasyCalcId(String(pk.season), pk.round);
+                            const pickValue = values.find(v => v.sleeper_id === pickId);
+                            const fcVal = pickValue ? (format === 'sf' ? pickValue.fc_value_sf : pickValue.fc_value_1qb) : null;
+                            return { season: pk.season, round: pk.round, slot: pk.slot || 0, teamName: r.name || '', estimatedValue: fcVal || (pk.round === 1 ? 3000 : pk.round === 2 ? 1500 : 800) };
+                        })
+                    )}
                 />
 
                 {keeperCount && keeperCount > 0 && (
