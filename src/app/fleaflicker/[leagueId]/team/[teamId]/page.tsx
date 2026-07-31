@@ -398,6 +398,14 @@ export default async function FleaflickerTeamPage({
                             { dynastyValue: p.fc_value || 0, auctionValue: p.redraft_auction_value || null, position: p.position || '' }
                         ])
                     )}
+                    allLeaguePlayers={fleaflickerData.rosters.flatMap(r =>
+                        r.players.map(p => {
+                            const norm = (p.full_name || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+                            const allData = [...allAssetsWithWriteups, ...allLeagueValuesWithPicks] as any[];
+                            const match = allData.find(ap => (ap.full_name || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim() === norm);
+                            return { name: p.full_name || '', position: match?.position || '', dynastyValue: match?.fc_value || 0, auctionValue: match?.redraft_auction_value || null, teamName: r.name || '' };
+                        })
+                    )}
                 />
 
                 {keeperCount && keeperCount > 0 && (

@@ -33,9 +33,10 @@ interface Props {
     teamId: string;
     teamName: string;
     playerValueMap: Record<string, { dynastyValue: number; auctionValue: number | null; position: string }>;
+    allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string }[];
 }
 
-export function PendingTrades({ leagueId, teamId, teamName, playerValueMap }: Props) {
+export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allLeaguePlayers }: Props) {
     const [trades, setTrades] = useState<EnrichedTrade[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -171,7 +172,7 @@ export function PendingTrades({ leagueId, teamId, teamName, playerValueMap }: Pr
                 <p className="text-xs text-zinc-500 text-center py-2">No pending trades</p>
             )}
 
-            {trades.map(trade => <TradeCard key={trade.id} trade={trade} />)}
+            {trades.map(trade => <TradeCard key={trade.id} trade={trade} allLeaguePlayers={allLeaguePlayers} />)}
         </div>
     );
 }
@@ -198,7 +199,8 @@ function CookieInput({ cookieValue, setCookieValue, onSave }: { cookieValue: str
     );
 }
 
-function TradeCard({ trade }: { trade: EnrichedTrade }) {
+function TradeCard({ trade, allLeaguePlayers }: { trade: EnrichedTrade; allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string }[] }) {
+    const [showCounter, setShowCounter] = useState(false);
     const sendTotal = trade.youSend.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youSend.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const receiveTotal = trade.youReceive.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youReceive.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const sendAuction = trade.youSend.players.reduce((s, p) => s + (p.auctionValue || 0), 0);
@@ -206,6 +208,36 @@ function TradeCard({ trade }: { trade: EnrichedTrade }) {
     const diff = receiveTotal - sendTotal;
     const pct = sendTotal > 0 ? (diff / sendTotal) * 100 : 0;
     const verdict = pct >= 10 ? 'accept' : pct <= -10 ? 'decline' : 'even';
+
+    // Get the other team's assets for counter suggestions
+    const otherTeamPlayers = allLeaguePlayers?.filter(p => p.teamName === trade.otherTeamName) || [];
+    const otherTeamSorted = [...otherTeamPlayers].sort((a, b) => b.dynastyValue - a.dynastyValue);
+
+    // Suggest a counter: find assets from their team that would close the value gap
+    const suggestedAsk = (() => {
+        if (diff >= 0) return []; // trade is already in our favor
+        const gap = Math.abs(diff);
+        const candidates = otherTeamSorted.filter(p =>
+            !trade.youReceive.players.some(rp => rp.name.toLowerCase() === p.name.toLowerCase())
+        );
+        const suggestion: typeof candidates = [];
+        let remaining = gap;
+        for (const player of candidates) {
+            if (remaining <= 0) break;
+            if (player.dynastyValue <= remaining * 1.5 && player.dynastyValue >= remaining * 0.3) {
+                suggestion.push(player);
+                remaining -= player.dynastyValue;
+            }
+        }
+        // If we couldn't find a good match, just show the top option
+        if (suggestion.length === 0 && candidates.length > 0) {
+            const closest = candidates.reduce((best, p) =>
+                Math.abs(p.dynastyValue - gap) < Math.abs(best.dynastyValue - gap) ? p : best
+            );
+            suggestion.push(closest);
+        }
+        return suggestion;
+    })();
 
     return (
         <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden mb-3 last:mb-0">
@@ -272,7 +304,55 @@ function TradeCard({ trade }: { trade: EnrichedTrade }) {
                 {sendAuction > 0 || receiveAuction > 0 ? (
                     <span>Auction: <span className={`font-mono font-bold ${receiveAuction >= sendAuction ? 'text-green-600' : 'text-red-500'}`}>{receiveAuction >= sendAuction ? '+' : ''}{receiveAuction - sendAuction > 0 ? `$${receiveAuction - sendAuction}` : `-$${sendAuction - receiveAuction}`}</span></span>
                 ) : null}
+                <button onClick={() => setShowCounter(!showCounter)} className="ml-auto text-[10px] text-indigo-600 dark:text-indigo-400 font-medium hover:underline">
+                    {showCounter ? 'Hide Counter' : 'Counter →'}
+                </button>
             </div>
+
+            {/* Counter section */}
+            {showCounter && (
+                <div className="px-3 py-3 border-t border-zinc-200 dark:border-zinc-700 space-y-3">
+                    {/* Suggestion */}
+                    {suggestedAsk.length > 0 && diff < 0 && (
+                        <div className="p-2 bg-indigo-50 dark:bg-indigo-900/10 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                            <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1">Suggested Counter: Ask for more</div>
+                            <div className="text-xs text-zinc-700 dark:text-zinc-300">
+                                To make this fair, ask them to add:
+                                {suggestedAsk.map((p, i) => (
+                                    <span key={i} className="ml-1 font-medium">
+                                        {p.name} ({p.position}, {p.dynastyValue.toLocaleString()})
+                                        {p.auctionValue ? ` $${p.auctionValue}` : ''}
+                                        {i < suggestedAsk.length - 1 ? ' +' : ''}
+                                    </span>
+                                ))}
+                            </div>
+                            <div className="text-[9px] text-zinc-500 mt-1">
+                                This would close the {Math.abs(diff).toLocaleString()} dynasty value gap
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Other team's full roster */}
+                    <div>
+                        <div className="text-[10px] font-bold text-zinc-500 uppercase mb-1.5">{trade.otherTeamName}&apos;s Assets</div>
+                        <div className="max-h-48 overflow-y-auto space-y-0.5">
+                            {otherTeamSorted.slice(0, 20).map((p, i) => (
+                                <div key={i} className="flex items-center gap-2 text-xs py-0.5">
+                                    <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${
+                                        p.position === 'QB' ? 'bg-red-50 text-red-600 dark:bg-red-900/20' :
+                                        p.position === 'RB' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20' :
+                                        p.position === 'WR' ? 'bg-green-50 text-green-600 dark:bg-green-900/20' :
+                                        'bg-purple-50 text-purple-600 dark:bg-purple-900/20'
+                                    }`}>{p.position}</span>
+                                    <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">{p.name}</span>
+                                    <span className="font-mono text-zinc-500 text-[10px]">{p.dynastyValue.toLocaleString()}</span>
+                                    {p.auctionValue && <span className="font-mono text-amber-600 text-[10px]">${p.auctionValue}</span>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
