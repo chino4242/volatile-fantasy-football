@@ -400,7 +400,7 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks }: { trade: Enriche
                                     {otherTeamPicks.map((pk, i) => (
                                         <div key={i} className="flex items-center gap-2 text-xs py-0.5">
                                             <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600">PICK</span>
-                                            <span className="text-zinc-900 dark:text-zinc-100 flex-1">{pk.season} Round {pk.round} ({pk.slot}.{String(pk.round).padStart(2, '0')})</span>
+                                            <span className="text-zinc-900 dark:text-zinc-100 flex-1">{pk.season} {pk.round}.{String(pk.slot).padStart(2, '0')}</span>
                                             <span className="font-mono text-zinc-500 text-[10px]">~{pk.estimatedValue.toLocaleString()}</span>
                                         </div>
                                     ))}
