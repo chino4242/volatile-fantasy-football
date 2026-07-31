@@ -11,6 +11,7 @@ import TradeEvaluator from "@/components/TradeEvaluator";
 import TeamHealthDashboard from "@/components/TeamHealthDashboard";
 import { SavedTrades } from "@/components/SavedTrades";
 import { KeeperDecisionTool } from "@/components/KeeperDecisionTool";
+import { PendingTrades } from "@/components/PendingTrades";
 
 export const dynamic = "force-dynamic";
 
@@ -384,6 +385,19 @@ export default async function FleaflickerTeamPage({
                         }).filter(Boolean) as any[],
                     }))}
                     format={format}
+                />
+
+                {/* Pending Trades from Fleaflicker */}
+                <PendingTrades
+                    leagueId={leagueId}
+                    teamId={teamId}
+                    teamName={roster.name}
+                    playerValueMap={Object.fromEntries(
+                        [...allAssetsWithWriteups, ...allLeagueValuesWithPicks].map((p: any) => [
+                            (p.full_name || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(),
+                            { dynastyValue: p.fc_value || 0, auctionValue: p.redraft_auction_value || null, position: p.position || '' }
+                        ])
+                    )}
                 />
 
                 {keeperCount && keeperCount > 0 && (

@@ -193,3 +193,59 @@ export async function getFleaflickerRosterSlots(leagueId: string): Promise<Roste
     cache.set(cacheKey, slots);
     return slots;
 }
+
+// --- Trades ---
+
+export interface FleaflickerTradeTeam {
+    teamId: number;
+    teamName: string;
+    playersObtained: { id: number; name: string; position: string; team: string }[];
+    picksObtained: { season: number; round: number; originalOwnerName: string }[];
+    playersReleased: { id: number; name: string; position: string }[];
+}
+
+export interface FleaflickerTrade {
+    id: number;
+    status: string;
+    proposedOn: number;
+    teams: FleaflickerTradeTeam[];
+}
+
+export async function getFleaflickerTrades(leagueId: string, filter: 'TRADES_OWNER_OPEN' | 'TRADES_UNDER_REVIEW' | 'TRADES_COMPLETED' = 'TRADES_OWNER_OPEN'): Promise<FleaflickerTrade[]> {
+    try {
+        const res = await fetch(`${BASE_URL}/FetchTrades?sport=NFL&league_id=${leagueId}&filter=${filter}`, { cache: 'no-store' });
+        if (!res.ok) return [];
+
+        const data = await res.json();
+        if (!data.trades || !Array.isArray(data.trades)) return [];
+
+        return data.trades.map((t: any) => ({
+            id: t.id,
+            status: t.status || 'TRADE_STATUS_OPEN',
+            proposedOn: t.proposed_on ? parseInt(t.proposed_on) : 0,
+            teams: (t.teams || []).map((tt: any) => ({
+                teamId: tt.team?.id || 0,
+                teamName: tt.team?.name || 'Unknown',
+                playersObtained: (tt.players_obtained || []).map((p: any) => ({
+                    id: p.pro_player?.id || 0,
+                    name: p.pro_player?.name_full || p.pro_player?.name_short || '',
+                    position: p.pro_player?.position || '',
+                    team: p.pro_player?.pro_team_abbreviation || '',
+                })),
+                picksObtained: (tt.picks_obtained || []).map((pk: any) => ({
+                    season: pk.season || 0,
+                    round: pk.slot?.round || 0,
+                    originalOwnerName: pk.original_owner?.name || '',
+                })),
+                playersReleased: (tt.players_released || []).map((p: any) => ({
+                    id: p.pro_player?.id || 0,
+                    name: p.pro_player?.name_full || p.pro_player?.name_short || '',
+                    position: p.pro_player?.position || '',
+                })),
+            })),
+        }));
+    } catch (error) {
+        console.error('Failed to fetch Fleaflicker trades:', error);
+        return [];
+    }
+}
