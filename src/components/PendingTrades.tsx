@@ -244,26 +244,35 @@ function TradeCard({ trade, allLeaguePlayers }: { trade: EnrichedTrade; allLeagu
         if (diff >= 0) return []; // trade is already in our favor
         const gap = Math.abs(diff);
         const candidates = otherTeamSorted.filter(p =>
-            !trade.youReceive.players.some(rp => rp.name.toLowerCase() === p.name.toLowerCase())
+            !trade.youReceive.players.some(rp => rp.name.toLowerCase() === p.name.toLowerCase()) &&
+            p.dynastyValue > 0
         );
-        const suggestion: typeof candidates = [];
-        let remaining = gap;
-        for (const player of candidates) {
-            if (remaining <= 0) break;
-            if (player.dynastyValue <= remaining * 1.5 && player.dynastyValue >= remaining * 0.3) {
-                suggestion.push(player);
-                remaining -= player.dynastyValue;
-            }
+
+        // Find the single player closest to the gap (within 50% over or under)
+        const closeMatch = candidates
+            .filter(p => p.dynastyValue >= gap * 0.5 && p.dynastyValue <= gap * 1.5)
+            .sort((a, b) => Math.abs(a.dynastyValue - gap) - Math.abs(b.dynastyValue - gap))[0];
+
+        if (closeMatch) return [closeMatch];
+
+        // If no close single match, try a combination of cheaper players
+        const cheaperCandidates = candidates.filter(p => p.dynastyValue < gap && p.dynastyValue >= gap * 0.3);
+        if (cheaperCandidates.length > 0) {
+            // Take the most valuable one under the gap
+            return [cheaperCandidates[0]];
         }
-        // If we couldn't find a good match, just show the top option
-        if (suggestion.length === 0 && candidates.length > 0) {
-            const closest = candidates.reduce((best, p) =>
-                Math.abs(p.dynastyValue - gap) < Math.abs(best.dynastyValue - gap) ? p : best
-            );
-            suggestion.push(closest);
+
+        // Last resort: suggest upgrading a pick round (if picks are involved)
+        if (trade.youReceive.picks.length > 0) {
+            return []; // suggest asking for a higher pick instead
         }
-        return suggestion;
+
+        return [];
     })();
+
+    // Calculate what the trade would look like with the suggestion
+    const suggestedValue = suggestedAsk.reduce((s, p) => s + p.dynastyValue, 0);
+    const newDiff = diff + suggestedValue;
 
     return (
         <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden mb-3 last:mb-0">
@@ -343,7 +352,7 @@ function TradeCard({ trade, allLeaguePlayers }: { trade: EnrichedTrade; allLeagu
                         <div className="p-2 bg-indigo-50 dark:bg-indigo-900/10 rounded-lg border border-indigo-200 dark:border-indigo-800">
                             <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1">Suggested Counter: Ask for more</div>
                             <div className="text-xs text-zinc-700 dark:text-zinc-300">
-                                To make this fair, ask them to add:
+                                Ask them to add:
                                 {suggestedAsk.map((p, i) => (
                                     <span key={i} className="ml-1 font-medium">
                                         {p.name} ({p.position}, {p.dynastyValue.toLocaleString()})
@@ -353,7 +362,15 @@ function TradeCard({ trade, allLeaguePlayers }: { trade: EnrichedTrade; allLeagu
                                 ))}
                             </div>
                             <div className="text-[9px] text-zinc-500 mt-1">
-                                This would close the {Math.abs(diff).toLocaleString()} dynasty value gap
+                                Gap: {Math.abs(diff).toLocaleString()} → With counter: <span className={newDiff >= 0 ? 'text-green-600 font-medium' : 'text-amber-600 font-medium'}>{newDiff >= 0 ? '+' : ''}{newDiff.toLocaleString()}</span> for you
+                            </div>
+                        </div>
+                    )}
+                    {diff < 0 && suggestedAsk.length === 0 && trade.youReceive.picks.length > 0 && (
+                        <div className="p-2 bg-amber-50 dark:bg-amber-900/10 rounded-lg border border-amber-200 dark:border-amber-800">
+                            <div className="text-[10px] font-bold text-amber-600 uppercase mb-1">Suggestion</div>
+                            <div className="text-xs text-zinc-700 dark:text-zinc-300">
+                                Ask for a higher round pick to close the {Math.abs(diff).toLocaleString()} value gap
                             </div>
                         </div>
                     )}
