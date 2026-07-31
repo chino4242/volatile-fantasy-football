@@ -260,17 +260,25 @@ export default function PlayerProfileCard({
     const [apiData, setApiData] = useState<ApiResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+    const [basicStats, setBasicStats] = useState<any[] | null>(null);
 
     const fetchStats = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/player-advanced-stats?sleeper_id=${sleeperId}`);
-            if (res.ok) {
-                const data: ApiResponse = await res.json();
+            const [advRes, basicRes] = await Promise.all([
+                fetch(`/api/player-advanced-stats?sleeper_id=${sleeperId}`),
+                fetch(`/api/player-stats?sleeperId=${sleeperId}&season=${new Date().getFullYear() - 1}`),
+            ]);
+            if (advRes.ok) {
+                const data: ApiResponse = await advRes.json();
                 setApiData(data);
                 if (data.stats.length > 0) {
                     setSelectedSeason(data.stats[0].season);
                 }
+            }
+            if (basicRes.ok) {
+                const basicData = await basicRes.json();
+                setBasicStats(basicData.stats || []);
             }
         } catch {
             // silently fail - UI shows empty state
@@ -354,6 +362,8 @@ export default function PlayerProfileCard({
                             breakout={apiData?.breakout || null}
                             regression={apiData?.regression || null}
                             loading={loading}
+                            basicStats={basicStats}
+                            position={position}
                         />
                     )}
                     {activeTab === 'stats' && (
@@ -391,6 +401,8 @@ function OverviewTab({
     breakout,
     regression,
     loading,
+    basicStats,
+    position,
 }: {
     dynastyValue?: number;
     auctionValue?: number | null;
@@ -399,6 +411,8 @@ function OverviewTab({
     breakout: BreakoutResult | null;
     regression: RegressionFlag[] | null;
     loading: boolean;
+    basicStats?: any[] | null;
+    position: string;
 }) {
     return (
         <div className="space-y-4">
@@ -471,6 +485,61 @@ function OverviewTab({
             ) : (
                 <div className="text-center text-xs text-zinc-500 py-4">No advanced stats available</div>
             )}
+
+            {/* Basic Season Stats */}
+            {basicStats && basicStats.length > 0 && (() => {
+                const totals = basicStats.reduce((acc, w) => ({
+                    targets: acc.targets + (w.targets || 0),
+                    receptions: acc.receptions + (w.receptions || 0),
+                    receiving_yards: acc.receiving_yards + (w.receiving_yards || 0),
+                    receiving_tds: acc.receiving_tds + (w.receiving_tds || 0),
+                    carries: acc.carries + (w.carries || 0),
+                    rushing_yards: acc.rushing_yards + (w.rushing_yards || 0),
+                    rushing_tds: acc.rushing_tds + (w.rushing_tds || 0),
+                    passing_yards: acc.passing_yards + (w.passing_yards || 0),
+                    passing_tds: acc.passing_tds + (w.passing_tds || 0),
+                }), { targets: 0, receptions: 0, receiving_yards: 0, receiving_tds: 0, carries: 0, rushing_yards: 0, rushing_tds: 0, passing_yards: 0, passing_tds: 0 });
+                const games = basicStats.length;
+
+                return (
+                    <div>
+                        <div className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold mb-2">Season Totals ({games} games)</div>
+                        <div className="grid grid-cols-3 gap-2">
+                            {position === 'QB' && (
+                                <>
+                                    <StatBox label="Pass Yds" value={totals.passing_yards.toLocaleString()} perGame={`${Math.round(totals.passing_yards / games)}/g`} />
+                                    <StatBox label="Pass TD" value={String(totals.passing_tds)} perGame={`${(totals.passing_tds / games).toFixed(1)}/g`} />
+                                    <StatBox label="Rush Yds" value={totals.rushing_yards.toLocaleString()} perGame={`${Math.round(totals.rushing_yards / games)}/g`} />
+                                </>
+                            )}
+                            {(position === 'WR' || position === 'TE') && (
+                                <>
+                                    <StatBox label="Targets" value={String(totals.targets)} perGame={`${(totals.targets / games).toFixed(1)}/g`} />
+                                    <StatBox label="Rec Yds" value={totals.receiving_yards.toLocaleString()} perGame={`${Math.round(totals.receiving_yards / games)}/g`} />
+                                    <StatBox label="Rec TD" value={String(totals.receiving_tds)} perGame={`${(totals.receiving_tds / games).toFixed(1)}/g`} />
+                                </>
+                            )}
+                            {position === 'RB' && (
+                                <>
+                                    <StatBox label="Rush Yds" value={totals.rushing_yards.toLocaleString()} perGame={`${Math.round(totals.rushing_yards / games)}/g`} />
+                                    <StatBox label="Rush TD" value={String(totals.rushing_tds)} perGame={`${(totals.rushing_tds / games).toFixed(1)}/g`} />
+                                    <StatBox label="Targets" value={String(totals.targets)} perGame={`${(totals.targets / games).toFixed(1)}/g`} />
+                                </>
+                            )}
+                        </div>
+                    </div>
+                );
+            })()}
+        </div>
+    );
+}
+
+function StatBox({ label, value, perGame }: { label: string; value: string; perGame: string }) {
+    return (
+        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-2 text-center">
+            <div className="text-[9px] uppercase text-zinc-500 dark:text-zinc-400">{label}</div>
+            <div className="text-lg font-bold text-zinc-900 dark:text-white">{value}</div>
+            <div className="text-[10px] text-zinc-500">{perGame}</div>
         </div>
     );
 }
