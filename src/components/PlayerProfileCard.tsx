@@ -107,28 +107,28 @@ const GRADE_COLORS: Record<Grade, string> = {
 // Reference benchmarks for percentile calculation
 const BENCHMARKS: Record<string, Record<string, [number, number]>> = {
     WR: {
-        avg_separation: [2.0, 3.5],
-        target_share: [0.05, 0.30],
-        avg_yac_above_expectation: [-2.0, 2.0],
-        fantasy_points_ppr: [50, 350],
+        avg_separation: [2.2, 4.5],
+        target_share: [0.03, 0.26],
+        avg_yac_above_expectation: [-1.5, 1.5],
+        fantasy_points_ppr: [20, 225],
     },
     RB: {
-        rush_yards_over_expected_per_att: [-1.5, 1.5],
-        target_share: [0.01, 0.12],
-        offense_snap_pct: [0.30, 0.80],
-        fantasy_points_ppr: [50, 350],
+        rush_yards_over_expected_per_att: [-0.5, 1.2],
+        target_share: [0.01, 0.10],
+        offense_snap_pct: [0.05, 0.67],
+        fantasy_points_ppr: [20, 225],
     },
     QB: {
-        completion_pct_above_expected: [-5.0, 5.0],
-        rushing_yards: [0, 800],
+        completion_pct_above_expected: [-4.5, 5.7],
+        rushing_yards: [0, 600],
         avg_time_to_throw: [3.2, 2.2], // lower is better for time to throw
-        fantasy_points_ppr: [50, 350],
+        fantasy_points_ppr: [100, 350],
     },
     TE: {
-        target_share: [0.05, 0.25],
-        offense_snap_pct: [0.40, 0.90],
-        avg_separation: [2.0, 3.5],
-        fantasy_points_ppr: [50, 350],
+        target_share: [0.03, 0.20],
+        offense_snap_pct: [0.30, 0.85],
+        avg_separation: [2.2, 4.5],
+        fantasy_points_ppr: [20, 175],
     },
 };
 
