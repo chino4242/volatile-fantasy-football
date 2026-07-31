@@ -68,7 +68,21 @@ interface ApiResponse {
     scoringBoost: number | null;
 }
 
-type Tab = 'overview' | 'stats' | 'scouting';
+interface WeeklyStats {
+    week: number;
+    targets: number;
+    receptions: number;
+    receiving_yards: number;
+    receiving_tds: number;
+    carries: number;
+    rushing_yards: number;
+    rushing_tds: number;
+    passing_yards: number;
+    passing_tds: number;
+    fantasy_points_ppr: number;
+}
+
+type Tab = 'profile' | 'trends' | 'scouting';
 type Grade = 'A+' | 'A' | 'B+' | 'B' | 'C' | 'D' | 'F';
 
 // --- Constants ---
@@ -268,11 +282,11 @@ export default function PlayerProfileCard({
     zapAnalysis,
     writeups,
 }: PlayerProfileCardProps) {
-    const [activeTab, setActiveTab] = useState<Tab>('overview');
+    const [activeTab, setActiveTab] = useState<Tab>('profile');
     const [apiData, setApiData] = useState<ApiResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
-    const [basicStats, setBasicStats] = useState<any[] | null>(null);
+    const [basicStats, setBasicStats] = useState<WeeklyStats[] | null>(null);
 
     const fetchStats = useCallback(async () => {
         setLoading(true);
@@ -312,8 +326,8 @@ export default function PlayerProfileCard({
     const estimatedAge = yearsExp != null ? 21 + yearsExp : null;
 
     const tabs: { id: Tab; label: string }[] = [
-        { id: 'overview', label: 'Overview' },
-        { id: 'stats', label: 'Stats' },
+        { id: 'profile', label: 'Profile' },
+        { id: 'trends', label: 'Trends' },
         { id: 'scouting', label: 'Scouting' },
     ];
 
@@ -365,8 +379,8 @@ export default function PlayerProfileCard({
 
                 {/* Tab Content */}
                 <div className="flex-1 overflow-y-auto px-5 pb-5">
-                    {activeTab === 'overview' && (
-                        <OverviewTab
+                    {activeTab === 'profile' && (
+                        <ProfileTab
                             dynastyValue={dynastyValue}
                             auctionValue={auctionValue}
                             grades={grades}
@@ -376,17 +390,14 @@ export default function PlayerProfileCard({
                             loading={loading}
                             basicStats={basicStats}
                             position={position}
-                        />
-                    )}
-                    {activeTab === 'stats' && (
-                        <StatsTab
                             stats={apiData?.stats || []}
-                            position={position}
                             selectedSeason={selectedSeason}
                             onSeasonChange={setSelectedSeason}
                             availableSeasons={availableSeasons}
-                            loading={loading}
                         />
+                    )}
+                    {activeTab === 'trends' && (
+                        <TrendsTab sleeperId={sleeperId} />
                     )}
                     {activeTab === 'scouting' && (
                         <ScoutingTab
@@ -403,9 +414,9 @@ export default function PlayerProfileCard({
     );
 }
 
-// --- Overview Tab ---
+// --- Profile Tab (merged Overview + Stats) ---
 
-function OverviewTab({
+function ProfileTab({
     dynastyValue,
     auctionValue,
     grades,
@@ -415,6 +426,10 @@ function OverviewTab({
     loading,
     basicStats,
     position,
+    stats,
+    selectedSeason,
+    onSeasonChange,
+    availableSeasons,
 }: {
     dynastyValue?: number;
     auctionValue?: number | null;
@@ -423,9 +438,16 @@ function OverviewTab({
     breakout: BreakoutResult | null;
     regression: RegressionFlag[] | null;
     loading: boolean;
-    basicStats?: any[] | null;
+    basicStats?: WeeklyStats[] | null;
     position: string;
+    stats: StatsData[];
+    selectedSeason: number | null;
+    onSeasonChange: (s: number) => void;
+    availableSeasons: number[];
 }) {
+    const benchmarks = BENCHMARKS[position];
+    const seasonsToShow = availableSeasons.slice(0, 2);
+
     return (
         <div className="space-y-4">
             {/* Value Display */}
@@ -498,6 +520,65 @@ function OverviewTab({
                 <div className="text-center text-xs text-zinc-500 py-4">No advanced stats available</div>
             )}
 
+            {/* Percentile Bars Section */}
+            {!loading && benchmarks && stats.length > 0 && (
+                <div className="space-y-3">
+                    {/* Season Toggle */}
+                    {availableSeasons.length > 1 && (
+                        <div className="flex gap-1 p-1 rounded-lg bg-zinc-100 dark:bg-zinc-800">
+                            {seasonsToShow.map(season => (
+                                <button
+                                    key={season}
+                                    onClick={() => onSeasonChange(season)}
+                                    className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition ${
+                                        selectedSeason === season
+                                            ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm'
+                                            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                                    }`}
+                                >
+                                    {season}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold">Percentile Rankings</div>
+
+                    {Object.entries(benchmarks).map(([metric, [min, max]]) => {
+                        const seasonStats = stats.find(s => s.season === selectedSeason) || stats[0];
+                        const value = getStatValue(seasonStats, metric);
+                        if (value === null) return null;
+
+                        const isInverted = metric === 'avg_time_to_throw';
+                        const pct = isInverted
+                            ? calcPercentile(value, max, min)
+                            : calcPercentile(value, min, max);
+                        const barColor = getPercentileColor(pct);
+
+                        return (
+                            <div key={metric} className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
+                                        {METRIC_LABELS[metric] || metric}
+                                        <InfoTip metric={metric} />
+                                    </span>
+                                    <span className="text-xs font-semibold text-zinc-900 dark:text-white">
+                                        {formatStatValue(metric, value)}
+                                    </span>
+                                </div>
+                                <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
+                                    <div
+                                        className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                                        style={{ width: `${Math.round(pct)}%` }}
+                                    />
+                                </div>
+                                <div className="text-[10px] text-zinc-400 text-right">{Math.round(pct)}th percentile</div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
             {/* Basic Season Stats */}
             {basicStats && basicStats.length > 0 && (() => {
                 const totals = basicStats.reduce((acc, w) => ({
@@ -546,6 +627,179 @@ function OverviewTab({
     );
 }
 
+// --- Trends Tab (NEW) ---
+
+function TrendsTab({ sleeperId }: { sleeperId: string }) {
+    const currentYear = new Date().getFullYear();
+    const [selectedTrendSeason, setSelectedTrendSeason] = useState(currentYear - 1);
+    const [weeklyStats, setWeeklyStats] = useState<WeeklyStats[] | null>(null);
+    const [trendLoading, setTrendLoading] = useState(true);
+    const availableTrendSeasons = [currentYear, currentYear - 1, currentYear - 2];
+
+    useEffect(() => {
+        let cancelled = false;
+        async function fetchWeekly() {
+            setTrendLoading(true);
+            try {
+                const res = await fetch(`/api/player-stats?sleeperId=${sleeperId}&season=${selectedTrendSeason}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (!cancelled) setWeeklyStats(data.stats || []);
+                }
+            } catch {
+                // silently fail
+            } finally {
+                if (!cancelled) setTrendLoading(false);
+            }
+        }
+        fetchWeekly();
+        return () => { cancelled = true; };
+    }, [sleeperId, selectedTrendSeason]);
+
+    if (trendLoading) {
+        return (
+            <div className="flex justify-center py-8">
+                <div className="w-5 h-5 border-2 border-zinc-300 dark:border-zinc-600 border-t-blue-500 rounded-full animate-spin" />
+            </div>
+        );
+    }
+
+    if (!weeklyStats || weeklyStats.length === 0) {
+        return (
+            <div className="space-y-4">
+                <TrendSeasonSelector
+                    seasons={availableTrendSeasons}
+                    selected={selectedTrendSeason}
+                    onChange={setSelectedTrendSeason}
+                />
+                <div className="text-center text-xs text-zinc-500 py-8">No weekly data available for {selectedTrendSeason}</div>
+            </div>
+        );
+    }
+
+    const points = weeklyStats.map(w => w.fantasy_points_ppr || 0);
+    const seasonAvg = points.reduce((a, b) => a + b, 0) / points.length;
+    const maxPoints = Math.max(...points, 1);
+
+    // Boom/Bust
+    const booms = points.filter(p => p >= 15).length;
+    const busts = points.filter(p => p <= 6).length;
+    const average = points.length - booms - busts;
+
+    // Recent Form (last 3 games)
+    const last3 = points.slice(-3);
+    const last3Avg = last3.length > 0 ? last3.reduce((a, b) => a + b, 0) / last3.length : 0;
+    const formDiff = seasonAvg > 0 ? ((last3Avg - seasonAvg) / seasonAvg) * 100 : 0;
+    const formUp = last3Avg >= seasonAvg;
+
+    // Consistency (standard deviation)
+    const variance = points.reduce((sum, p) => sum + Math.pow(p - seasonAvg, 2), 0) / points.length;
+    const stdev = Math.sqrt(variance);
+    const consistencyLabel = stdev <= 4 ? 'High consistency' : stdev <= 7 ? 'Moderate consistency' : 'Boom/bust profile';
+
+    return (
+        <div className="space-y-4">
+            {/* Season Selector */}
+            <TrendSeasonSelector
+                seasons={availableTrendSeasons}
+                selected={selectedTrendSeason}
+                onChange={setSelectedTrendSeason}
+            />
+
+            {/* Weekly Fantasy Points Bar Chart */}
+            <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold">Weekly Fantasy Points (PPR)</div>
+                <div className="relative">
+                    {/* Season average reference line */}
+                    <div
+                        className="absolute left-0 right-0 border-t border-dashed border-zinc-400 dark:border-zinc-500 z-10"
+                        style={{ bottom: `${(seasonAvg / maxPoints) * 100}%` }}
+                    >
+                        <span className="absolute -top-3 right-0 text-[9px] text-zinc-500 dark:text-zinc-400">
+                            avg {seasonAvg.toFixed(1)}
+                        </span>
+                    </div>
+                    <div className="flex items-end gap-0.5 h-28">
+                        {points.map((pts, i) => {
+                            const heightPct = maxPoints > 0 ? (pts / maxPoints) * 100 : 0;
+                            const aboveAvg = pts >= seasonAvg;
+                            return (
+                                <div
+                                    key={i}
+                                    className="flex-1 relative group"
+                                    style={{ height: '100%' }}
+                                >
+                                    <div
+                                        className={`absolute bottom-0 left-0 right-0 rounded-t-sm transition-all ${
+                                            aboveAvg ? 'bg-green-500 dark:bg-green-600' : 'bg-amber-500 dark:bg-amber-600'
+                                        }`}
+                                        style={{ height: `${heightPct}%`, minHeight: pts > 0 ? '2px' : '0px' }}
+                                    />
+                                    <div className="absolute -top-5 left-1/2 -translate-x-1/2 hidden group-hover:block text-[9px] bg-zinc-800 text-white px-1 py-0.5 rounded whitespace-nowrap z-20">
+                                        W{weeklyStats[i].week}: {pts.toFixed(1)}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+                <div className="flex justify-between text-[9px] text-zinc-400">
+                    <span>W{weeklyStats[0]?.week || 1}</span>
+                    <span>W{weeklyStats[weeklyStats.length - 1]?.week || 18}</span>
+                </div>
+            </div>
+
+            {/* Boom/Bust Ratio */}
+            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3">
+                <div className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold mb-1">Boom / Bust</div>
+                <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                    🔥 {booms} boom{booms !== 1 ? 's' : ''} · 💀 {busts} bust{busts !== 1 ? 's' : ''} · {average} average
+                </div>
+                <div className="text-[10px] text-zinc-500 mt-1">Boom = 15+ PPR · Bust = 6 or fewer PPR</div>
+            </div>
+
+            {/* Recent Form */}
+            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3">
+                <div className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold mb-1">Recent Form</div>
+                <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                    {formUp ? '↗' : '↘'} {last3Avg.toFixed(1)} last 3 vs {seasonAvg.toFixed(1)} season ({formUp ? '+' : ''}{formDiff.toFixed(0)}%)
+                </div>
+            </div>
+
+            {/* Consistency Score */}
+            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3">
+                <div className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold mb-1">Consistency</div>
+                <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                    {consistencyLabel}
+                </div>
+                <div className="text-[10px] text-zinc-500 mt-1">σ = {stdev.toFixed(1)} pts/week</div>
+            </div>
+        </div>
+    );
+}
+
+function TrendSeasonSelector({ seasons, selected, onChange }: { seasons: number[]; selected: number; onChange: (s: number) => void }) {
+    return (
+        <div className="flex gap-1 p-1 rounded-lg bg-zinc-100 dark:bg-zinc-800">
+            {seasons.map(season => (
+                <button
+                    key={season}
+                    onClick={() => onChange(season)}
+                    className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition ${
+                        selected === season
+                            ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm'
+                            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
+                >
+                    {season}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// --- Shared Components ---
+
 function InfoTip({ metric }: { metric: string }) {
     const [show, setShow] = useState(false);
     const desc = METRIC_DESCRIPTIONS[metric];
@@ -571,112 +825,6 @@ function StatBox({ label, value, perGame }: { label: string; value: string; perG
             <div className="text-[9px] uppercase text-zinc-500 dark:text-zinc-400">{label}</div>
             <div className="text-lg font-bold text-zinc-900 dark:text-white">{value}</div>
             <div className="text-[10px] text-zinc-500">{perGame}</div>
-        </div>
-    );
-}
-
-// --- Stats Tab ---
-
-function StatsTab({
-    stats,
-    position,
-    selectedSeason,
-    onSeasonChange,
-    availableSeasons,
-    loading,
-}: {
-    stats: StatsData[];
-    position: string;
-    selectedSeason: number | null;
-    onSeasonChange: (s: number) => void;
-    availableSeasons: number[];
-    loading: boolean;
-}) {
-    const benchmarks = BENCHMARKS[position];
-
-    if (loading) {
-        return (
-            <div className="flex justify-center py-8">
-                <div className="w-5 h-5 border-2 border-zinc-300 dark:border-zinc-600 border-t-blue-500 rounded-full animate-spin" />
-            </div>
-        );
-    }
-
-    if (!benchmarks || stats.length === 0) {
-        return <div className="text-center text-xs text-zinc-500 py-8">No stats available for this player</div>;
-    }
-
-    // Show up to 2 most recent seasons
-    const seasonsToShow = availableSeasons.slice(0, 2);
-
-    return (
-        <div className="space-y-4">
-            {/* Season Toggle */}
-            {availableSeasons.length > 1 && (
-                <div className="flex gap-1 p-1 rounded-lg bg-zinc-100 dark:bg-zinc-800">
-                    {seasonsToShow.map(season => (
-                        <button
-                            key={season}
-                            onClick={() => onSeasonChange(season)}
-                            className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition ${
-                                selectedSeason === season
-                                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm'
-                                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
-                            }`}
-                        >
-                            {season}
-                        </button>
-                    ))}
-                </div>
-            )}
-
-            {/* Percentile Bars */}
-            <div className="space-y-3">
-                {Object.entries(benchmarks).map(([metric, [min, max]]) => {
-                    const seasonStats = stats.find(s => s.season === selectedSeason) || stats[0];
-                    const value = getStatValue(seasonStats, metric);
-                    if (value === null) return null;
-
-                    const isInverted = metric === 'avg_time_to_throw';
-                    const pct = isInverted
-                        ? calcPercentile(value, max, min)
-                        : calcPercentile(value, min, max);
-                    const barColor = getPercentileColor(pct);
-
-                    // Get comparison season value
-                    const compSeason = seasonsToShow.find(s => s !== selectedSeason);
-                    const compStats = compSeason ? stats.find(s => s.season === compSeason) : null;
-                    const compValue = compStats ? getStatValue(compStats, metric) : null;
-
-                    return (
-                        <div key={metric} className="space-y-1">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
-                                    {METRIC_LABELS[metric] || metric}
-                                    <InfoTip metric={metric} />
-                                </span>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs font-semibold text-zinc-900 dark:text-white">
-                                        {formatStatValue(metric, value)}
-                                    </span>
-                                    {compValue !== null && (
-                                        <span className="text-[10px] text-zinc-400">
-                                            ({formatStatValue(metric, compValue)})
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
-                                <div
-                                    className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-                                    style={{ width: `${Math.round(pct)}%` }}
-                                />
-                            </div>
-                            <div className="text-[10px] text-zinc-400 text-right">{Math.round(pct)}th percentile</div>
-                        </div>
-                    );
-                })}
-            </div>
         </div>
     );
 }
