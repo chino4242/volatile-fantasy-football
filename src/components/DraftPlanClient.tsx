@@ -733,10 +733,16 @@ function DraftBoardSection({
         return value;
     };
 
+    // Monte Carlo simulation state (declared here so pickSuggestions can reference it)
+    const [simResult, setSimResult] = useState<SimResult | null>(null);
+    const [simRunning, setSimRunning] = useState(false);
+    const [simProgress, setSimProgress] = useState(0);
+    const [expandedTierCell, setExpandedTierCell] = useState<string | null>(null);
+
     // Run the simulation
     const remainingPool = [...draftPool];
     const draftedByPos: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
-    const pickSuggestions: (typeof picks[number] & { suggestion: string; targetPos: string; best: { player: Player; score: number } | null; runnerUp: { player: Player; score: number } | null; insights: string[]; candidates: { player: Player; score: number; tag: string }[] })[] = [];
+    const pickSuggestions: (typeof picks[number] & { suggestion: string; targetPos: string; best: { player: Player; score: number } | null; runnerUp: { player: Player; score: number } | null; insights: string[]; candidates: { player: Player; score: number; tag: string }[]; tierInfo: { label: string; position: string; players: { name: string; value: number }[]; groupAvailability: number } | null })[] = [];
 
     // For each of our picks, simulate all picks before it, then pick for us
     let lastOverall = 0;
@@ -894,7 +900,62 @@ function DraftBoardSection({
         });
         const pickCandidates = candidatesByPos.sort((a, b) => b.score - a.score).slice(0, 8);
 
-        pickSuggestions.push({ ...pick, suggestion, targetPos, best: best ? { player: best.player, score: best.score } : null, runnerUp: runnerUp && runnerUp.player ? { player: runnerUp.player, score: runnerUp.score } : null, insights, candidates: pickCandidates });
+        // Compute tier info for this pick
+        let tierInfo: { label: string; position: string; players: { name: string; value: number }[]; groupAvailability: number } | null = null;
+        if (best && best.player) {
+            const tierPos = best.player.position || 'BPA';
+            const bestValue = tierSource === 'redraft' ? (best.player.redraft_auction_value || 0) : (best.player.fc_value || 0);
+
+            // Define tier boundaries based on tierSource
+            let tierLabel: string;
+            let tierFloor: number;
+            if (tierSource === 'redraft') {
+                if (bestValue >= 30) { tierLabel = 'Elite'; tierFloor = 30; }
+                else if (bestValue >= 20) { tierLabel = 'Starter'; tierFloor = 20; }
+                else if (bestValue >= 12) { tierLabel = 'Flex'; tierFloor = 12; }
+                else if (bestValue >= 5) { tierLabel = 'Bench'; tierFloor = 5; }
+                else { tierLabel = 'Deep'; tierFloor = 1; }
+            } else {
+                if (bestValue >= 5000) { tierLabel = 'T1-3'; tierFloor = 5000; }
+                else if (bestValue >= 3500) { tierLabel = 'T4-6'; tierFloor = 3500; }
+                else if (bestValue >= 2500) { tierLabel = 'T7-9'; tierFloor = 2500; }
+                else if (bestValue >= 1500) { tierLabel = 'T10-12'; tierFloor = 1500; }
+                else { tierLabel = 'T13+'; tierFloor = 800; }
+            }
+
+            // Find all players in this tier at this position from the remaining pool
+            const getPlayerVal = (p: Player) => tierSource === 'redraft' ? (p.redraft_auction_value || 0) : (p.fc_value || 0);
+            const tierPlayers = remainingPool
+                .filter(p => p.position === tierPos && getPlayerVal(p) >= tierFloor)
+                .sort((a, b) => getPlayerVal(b) - getPlayerVal(a));
+
+            // Group availability: probability at least 1 from this tier is available
+            let groupAvailability = 95; // default heuristic
+            if (simResult) {
+                const pickIdx = idx;
+                // P(at least 1 available) = 1 - P(all gone)
+                let pAllGone = 1;
+                for (const tp of tierPlayers) {
+                    const counts = simResult.availability.get(tp.id);
+                    const prob = counts ? (counts[pickIdx] / simResult.totalSims) : 0;
+                    pAllGone *= (1 - prob);
+                }
+                groupAvailability = Math.round((1 - pAllGone) * 100);
+            } else if (tierPlayers.length > 0) {
+                // Heuristic: more players in tier = higher chance one survives
+                const overallPick = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
+                groupAvailability = Math.min(99, Math.round(60 + tierPlayers.length * 8 - overallPick * 0.5));
+            }
+
+            tierInfo = {
+                label: tierLabel,
+                position: tierPos,
+                players: tierPlayers.slice(0, 6).map(p => ({ name: p.full_name, value: getPlayerVal(p) })),
+                groupAvailability: Math.max(0, Math.min(99, groupAvailability)),
+            };
+        }
+
+        pickSuggestions.push({ ...pick, suggestion, targetPos, best: best ? { player: best.player, score: best.score } : null, runnerUp: runnerUp && runnerUp.player ? { player: runnerUp.player, score: runnerUp.score } : null, insights, candidates: pickCandidates, tierInfo });
     }
 
     // Best available from draft pool (top 5 per position)
@@ -949,12 +1010,7 @@ function DraftBoardSection({
     // Expanded pick state for search
     const [expandedPickIdx, setExpandedPickIdx] = useState<number | null>(null);
     const [pickSearchQuery, setPickSearchQuery] = useState('');
-
-    // Monte Carlo simulation state
-    const [simResult, setSimResult] = useState<SimResult | null>(null);
-    const [simRunning, setSimRunning] = useState(false);
-    const [simProgress, setSimProgress] = useState(0);
-    const [expandedTierCell, setExpandedTierCell] = useState<string | null>(null);
+    const [suggestionMode, setSuggestionMode] = useState<'player' | 'tier'>('tier');
 
     const runSimulation = () => {
         setSimRunning(true);
@@ -1121,6 +1177,17 @@ function DraftBoardSection({
                 {simResult && !simRunning && (
                     <span className="text-[10px] text-zinc-500">Availability % now based on simulated data</span>
                 )}
+                {/* Suggestion mode toggle */}
+                <div className="ml-auto flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
+                    <button
+                        onClick={() => setSuggestionMode('tier')}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${suggestionMode === 'tier' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                    >Tiers</button>
+                    <button
+                        onClick={() => setSuggestionMode('player')}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${suggestionMode === 'player' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                    >Players</button>
+                </div>
             </div>
 
             {/* Position Scarcity Chart (same as mock/live draft) */}
@@ -1385,19 +1452,34 @@ function DraftBoardSection({
                                             <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${posColor(pick.targetPos === 'BPA' ? null : pick.targetPos)}`}>
                                                 {pick.targetPos}
                                             </span>
-                                            <span className="text-sm text-zinc-600 dark:text-zinc-400 flex-1 truncate italic">
-                                                {pick.suggestion}
-                                            </span>
-                                            {pick.best && (() => {
-                                                const avail = getAvailability(pick.best!.player, pickOverall);
-                                                return (
+                                            {suggestionMode === 'tier' && pick.tierInfo ? (
+                                                <>
+                                                    <span className="text-sm text-zinc-600 dark:text-zinc-400 flex-1 truncate italic">
+                                                        Target {pick.tierInfo.label} ({pick.tierInfo.players.length} avail) — {pick.tierInfo.players.slice(0, 3).map(p => p.name.split(' ').pop()).join(', ')}{pick.tierInfo.players.length > 3 ? '...' : ''}
+                                                    </span>
                                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
-                                                        avail >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                                                        : avail >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                                        pick.tierInfo.groupAvailability >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                                        : pick.tierInfo.groupAvailability >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
                                                         : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-                                                    }`}>{avail}%</span>
-                                                );
-                                            })()}
+                                                    }`}>{pick.tierInfo.groupAvailability}%</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="text-sm text-zinc-600 dark:text-zinc-400 flex-1 truncate italic">
+                                                        {pick.suggestion}
+                                                    </span>
+                                                    {pick.best && (() => {
+                                                        const avail = getAvailability(pick.best!.player, pickOverall);
+                                                        return (
+                                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                                                avail >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                                                : avail >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                                                : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                                                            }`}>{avail}%</span>
+                                                        );
+                                                    })()}
+                                                </>
+                                            )}
                                         </>
                                     )}
                                     <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
