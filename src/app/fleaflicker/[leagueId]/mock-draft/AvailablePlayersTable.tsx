@@ -217,7 +217,7 @@ export default function AvailablePlayersTable({
                     />
                     {/* Position Filters */}
                     <div className="flex gap-1 sm:gap-2 flex-shrink-0">
-                        {['ALL', 'QB', 'RB', 'WR', 'TE'].map(pos => (
+                        {['ALL', 'QB', 'RB', 'WR', 'TE', 'DEF'].map(pos => (
                             <button
                                 key={pos}
                                 onClick={() => setPositionFilter(pos)}
