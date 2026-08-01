@@ -11,6 +11,7 @@ import type { PlayerAdvStats } from '@/lib/advanced-stats';
 import { useAuth } from '@/hooks/useUser';
 import { analyzeLeaguePostDraft } from '@/lib/post-draft-analysis';
 import type { PlayerForAnalysis } from '@/lib/post-draft-analysis';
+import { DRAFT_STYLES, getEffectiveValue, estimateFuturePickValue } from '@/lib/draft-simulation';
 
 interface Player {
     id: string;
@@ -268,15 +269,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     };
     const [preHealthSnapshot, setPreHealthSnapshot] = useState<ReturnType<typeof computeHealthSnapshot> | null>(null);
 
-    // CPU drafting personalities
-    type DraftStyle = 'balanced' | 'bpa' | 'need' | 'prospect' | 'winNow';
-    const DRAFT_STYLES: { style: DraftStyle; label: string; weights: { value: number; need: number; dynasty: number; redraft: number; prospect: number } }[] = [
-        { style: 'balanced', label: 'Balanced', weights: { value: 0.90, need: 0.10, dynasty: 1, redraft: 1, prospect: 1 } },
-        { style: 'bpa', label: 'BPA Purist', weights: { value: 0.98, need: 0.02, dynasty: 0.3, redraft: 0.3, prospect: 0.3 } },
-        { style: 'need', label: 'Need-Based', weights: { value: 0.70, need: 0.30, dynasty: 1, redraft: 1, prospect: 1 } },
-        { style: 'prospect', label: 'Prospect Chaser', weights: { value: 0.85, need: 0.08, dynasty: 1.5, redraft: 0.5, prospect: 2.5 } },
-        { style: 'winNow', label: 'Win Now', weights: { value: 0.85, need: 0.10, dynasty: 0.5, redraft: 2.5, prospect: 0.5 } },
-    ];
+    // CPU drafting personalities (DRAFT_STYLES imported from @/lib/draft-simulation)
     const teamStyles = useRef<Map<number, typeof DRAFT_STYLES[number]>>(new Map());
     const getTeamStyle = (teamId: number) => {
         if (teamId === userTeamId) return DRAFT_STYLES[0]; // user always balanced
@@ -437,15 +430,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
     // Value mode: 0 = pure dynasty, 100 = pure redraft
     const [redraftWeight, setRedraftWeight] = useState(0);
-    const getEffectiveValue = (player: Player): number => {
-        const dynVal = player.fc_value || 0;
-        if (redraftWeight === 0) return dynVal;
-        const rdRank = player.redraft_rank_overall;
-        if (!rdRank) return dynVal;
-        const rdValue = Math.max(1000, Math.round(5000 - (rdRank - 1) * 16));
-        const w = redraftWeight / 100;
-        return Math.round(dynVal * (1 - w) + rdValue * w);
-    };
+    const getEffValue = (player: Player): number => getEffectiveValue(player, redraftWeight);
     const [selectedTradeAssets, setSelectedTradeAssets] = useState<Set<string>>(new Set());
     const [tradeSearch, setTradeSearch] = useState('');
     const [tradeTargetPlayer, setTradeTargetPlayer] = useState<(Player & { teamName: string; teamId: number }) | null>(null);
@@ -1007,21 +992,13 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         return sorted[overall - 1]?.fc_value || 0;
     };
 
-    const estimateFuturePickValue = (round: number) => {
-        if (round === 1) return 2900;
-        if (round === 2) return 1500;
-        if (round === 3) return 900;
-        if (round === 4) return 500;
-        return 300;
-    };
-
     const calculateSideValue = (assets: Set<string>, teamPlayers: Player[], includeCurrentPick: boolean) => {
         let total = 0;
         if (includeCurrentPick && currentPick) total += estimatePickValue(currentPick.round, currentPick.pick);
         assets.forEach(assetId => {
             if (assetId.startsWith('player_')) {
                 const player = teamPlayers.find(p => p.id === assetId.replace('player_', ''));
-                if (player) total += getEffectiveValue(player);
+                if (player) total += getEffValue(player);
             } else if (assetId.startsWith('draftpick_')) {
                 // Current draft pick: draftpick_round_slot — value based on BPA
                 const [, r, s] = assetId.split('_');
@@ -1062,7 +1039,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
         return rosteredPlayers
             .filter(p => {
-                const value = getEffectiveValue(p);
+                const value = getEffValue(p);
                 return value >= minValue && value <= maxValue;
             })
             .sort((a, b) => {
@@ -1297,7 +1274,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             {(() => {
                                 const userTeam = activeTeams.find(t => t.id === userTeamId);
                                 if (!userTeam) return null;
-                                const sortedPlayers = [...userTeam.players].sort((a,b) => getEffectiveValue(b) - getEffectiveValue(a));
+                                const sortedPlayers = [...userTeam.players].sort((a,b) => getEffValue(b) - getEffValue(a));
                                 
                                 return sortedPlayers.map(player => {
                                     const isSelected = selectedKeepers.has(player.id);
@@ -1323,7 +1300,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                     {player.full_name}
                                                 </div>
                                                 <div className="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                                                    {getEffectiveValue(player).toLocaleString()}
+                                                    {getEffValue(player).toLocaleString()}
                                                 </div>
                                             </div>
                                             <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">
