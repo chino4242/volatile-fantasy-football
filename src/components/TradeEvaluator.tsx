@@ -12,6 +12,7 @@ interface Player {
     fc_rank_sf?: number | null;
     fc_rank_1qb?: number | null;
     redraft_rank_overall?: number | null;
+    redraft_auction_value?: number | null;
 }
 
 interface Props {
@@ -525,6 +526,75 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
                             {Math.abs(diffPct) <= 10 && diff !== 0 && ' · Fair Trade ✓'}
                         </div>
                     </div>
+
+                    {/* Auction Value + Position Impact */}
+                    {(myAssets.size > 0 || selectedPlayer) && (() => {
+                        // Auction values
+                        const myAuction = Array.from(myAssets).reduce((sum, id) => {
+                            const p = myPlayers.find(pl => pl.sleeper_id === id);
+                            return sum + (p?.redraft_auction_value || 0);
+                        }, 0);
+                        const theirAuction = (selectedPlayer?.redraft_auction_value || 0) + Array.from(theirAssets).reduce((sum, id) => {
+                            const p = otherTeamPlayers.find(pl => pl.sleeper_id === id);
+                            return sum + (p?.redraft_auction_value || 0);
+                        }, 0);
+                        const auctionDiff = theirAuction - myAuction;
+
+                        // Position group impact
+                        const posImpact: { pos: string; before: number; after: number }[] = [];
+                        ['QB', 'RB', 'WR', 'TE'].forEach(pos => {
+                            const beforeVal = myPlayers.filter(p => p.position === pos).reduce((s, p) => s + (p.fc_value || 0), 0);
+                            const sentVal = Array.from(myAssets).reduce((s, id) => {
+                                const p = myPlayers.find(pl => pl.sleeper_id === id);
+                                return s + (p?.position === pos ? (p.fc_value || 0) : 0);
+                            }, 0);
+                            const receivedVal = (selectedPlayer?.position === pos ? (selectedPlayer.fc_value || 0) : 0) +
+                                Array.from(theirAssets).reduce((s, id) => {
+                                    const p = otherTeamPlayers.find(pl => pl.sleeper_id === id);
+                                    return s + (p?.position === pos ? (p.fc_value || 0) : 0);
+                                }, 0);
+                            const afterVal = beforeVal - sentVal + receivedVal;
+                            if (sentVal > 0 || receivedVal > 0) {
+                                posImpact.push({ pos, before: beforeVal, after: afterVal });
+                            }
+                        });
+
+                        return (
+                            <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                                {/* Auction comparison */}
+                                {(myAuction > 0 || theirAuction > 0) && (
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-zinc-500">Auction (Redraft):</span>
+                                        <span className={`font-bold ${auctionDiff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                            Send ${myAuction} → Get ${theirAuction} ({auctionDiff >= 0 ? '+' : ''}{auctionDiff})
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* Position impact */}
+                                {posImpact.length > 0 && (
+                                    <div>
+                                        <div className="text-[9px] font-bold text-zinc-500 uppercase mb-1">Position Impact</div>
+                                        <div className="space-y-0.5">
+                                            {posImpact.map(pi => {
+                                                const change = pi.after - pi.before;
+                                                const pct = pi.before > 0 ? Math.round((change / pi.before) * 100) : 0;
+                                                return (
+                                                    <div key={pi.pos} className="flex items-center justify-between text-[10px]">
+                                                        <span className="text-zinc-600 dark:text-zinc-400 font-medium">{pi.pos}</span>
+                                                        <span className="text-zinc-500">{pi.before.toLocaleString()} → {pi.after.toLocaleString()}</span>
+                                                        <span className={`font-bold ${change >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                                            {change >= 0 ? '+' : ''}{pct}%
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* Save Deal */}
                     {leagueId && platform && myAssets.size > 0 && (
