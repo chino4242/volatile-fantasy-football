@@ -105,9 +105,33 @@ export function LeagueSubNav({ leagueId, leagueName, platform, teams }: LeagueSu
                     {currentTeam && (
                         <>
                             <ChevronRight className="w-3.5 h-3.5 text-zinc-300 dark:text-zinc-600" />
-                            <span className="text-zinc-700 dark:text-zinc-200 font-medium truncate max-w-[150px] sm:max-w-none">
-                                {currentTeam.name}
-                            </span>
+                            <div className="relative" ref={dropdownRef}>
+                                <button
+                                    onClick={() => setTeamDropdownOpen(!teamDropdownOpen)}
+                                    className="flex items-center gap-1 text-zinc-700 dark:text-zinc-200 font-medium truncate max-w-[150px] sm:max-w-none hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                                >
+                                    {currentTeam.name}
+                                    <ChevronDown className={`w-3 h-3 flex-shrink-0 transition-transform ${teamDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+                                {teamDropdownOpen && teams && teams.length > 0 && (
+                                    <div className="absolute left-0 top-full mt-1 z-50 w-56 max-h-72 overflow-y-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg py-1">
+                                        {teams.map(team => (
+                                            <Link
+                                                key={team.id}
+                                                href={`${basePath}/team/${team.id}${qs}`}
+                                                onClick={() => setTeamDropdownOpen(false)}
+                                                className={`block px-3 py-2 text-sm transition-colors ${
+                                                    String(team.id) === currentTeamId
+                                                        ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 font-medium'
+                                                        : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                                                }`}
+                                            >
+                                                {team.name}
+                                            </Link>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </>
                     )}
                 </div>
@@ -136,37 +160,7 @@ export function LeagueSubNav({ leagueId, leagueName, platform, teams }: LeagueSu
                         );
                     })}
 
-                    {/* Team selector dropdown (shown when teams are available) */}
-                    {teams && teams.length > 0 && currentTeamId && (
-                        <div className="relative ml-auto" ref={dropdownRef}>
-                            <button
-                                onClick={() => setTeamDropdownOpen(!teamDropdownOpen)}
-                                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                            >
-                                <span className="hidden sm:inline">Switch Team</span>
-                                <span className="sm:hidden">Teams</span>
-                                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${teamDropdownOpen ? 'rotate-180' : ''}`} />
-                            </button>
-                            {teamDropdownOpen && (
-                                <div className="absolute right-0 top-full mt-1 z-50 w-56 max-h-72 overflow-y-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg py-1">
-                                    {teams.map(team => (
-                                        <Link
-                                            key={team.id}
-                                            href={`${basePath}/team/${team.id}${qs}`}
-                                            onClick={() => setTeamDropdownOpen(false)}
-                                            className={`block px-3 py-2 text-sm transition-colors ${
-                                                String(team.id) === currentTeamId
-                                                    ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 font-medium'
-                                                    : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-                                            }`}
-                                        >
-                                            {team.name}
-                                        </Link>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
+                    {/* Team selector moved to breadcrumb — team name is now the dropdown */}
                 </div>
             </div>
         </div>
