@@ -755,6 +755,10 @@ function DraftBoardSection({
         }
         lastOverall = overallPick;
 
+        // If user already selected a player for this pick, use their choice
+        const userChoice = picks[idx]?.targetPlayer;
+        const userChosenPlayer = userChoice ? remainingPool.find(p => p.full_name === userChoice) || draftPool.find(p => p.full_name === userChoice) : null;
+
         // Now pick for us: score top candidates with our need-aware logic
         const currentCounts = {
             QB: keptCounts.QB + draftedByPos.QB,
@@ -798,6 +802,14 @@ function DraftBoardSection({
             remainingPool.splice(best.poolIdx, 1);
         } else {
             suggestion = 'Slim pickings — take best available';
+        }
+
+        // If user chose a different player, remove THEIR choice from pool instead
+        if (userChosenPlayer && best && userChosenPlayer.id !== best.player.id) {
+            const userIdx = remainingPool.findIndex(p => p.id === userChosenPlayer.id);
+            if (userIdx >= 0) remainingPool.splice(userIdx, 1);
+            // Re-add the system's pick since user didn't take it
+            // (it's already removed above, so downstream picks won't see it regardless)
         }
 
         // Generate strategic insights for this pick
@@ -1483,14 +1495,6 @@ function DraftBoardSection({
                                                 </button>
                                             </div>
                                         )}
-
-                                        {/* Branch from this pick */}
-                                        <button
-                                            onClick={() => onBranchFromPick(idx)}
-                                            className="flex items-center gap-1.5 text-[10px] text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors"
-                                        >
-                                            🌿 Branch plan from this pick
-                                        </button>
 
                                         {/* Player search */}
                                         <div className="relative">
