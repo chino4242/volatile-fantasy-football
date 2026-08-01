@@ -1375,126 +1375,48 @@ function DraftBoardSection({
                                 {/* Expanded: candidates + search */}
                                 {isExpanded && (
                                     <div className="border-t border-zinc-100 dark:border-zinc-800 px-3 py-3 space-y-3">
-                                        {/* Clear recommendation with reasoning */}
-                                        {pick.best && (
-                                            <div className="p-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-200 dark:border-indigo-800">
-                                                <div className="flex items-center justify-between">
-                                                    <div>
-                                                        <span className="text-[10px] font-bold text-indigo-500 uppercase">Recommended</span>
-                                                        <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mt-0.5">
-                                                            {pick.best.player.full_name}
-                                                            <span className={`ml-1.5 text-[10px] font-bold px-1 py-0.5 rounded ${posColor(pick.best.player.position)}`}>{pick.best.player.position}</span>
-                                                            <span className="ml-2 text-[10px] font-mono text-zinc-500">{(pick.best.player.fc_value || 0).toLocaleString()}</span>
-                                                            {pick.best.player.redraft_auction_value && <span className="ml-1 text-[10px] font-mono text-amber-600 dark:text-amber-400">${pick.best.player.redraft_auction_value}</span>}
-                                                        </div>
-                                                        <div className="text-[11px] text-zinc-500 mt-0.5">
-                                                            {(() => {
-                                                                const nextBest = pick.candidates.find(c => c.player.id !== pick.best!.player.id);
-                                                                const gap = nextBest ? (pick.best!.player.fc_value || 0) - (nextBest.player.fc_value || 0) : 0;
-                                                                if (gap > 3000) return `${gap.toLocaleString()} value above next best — clear top pick`;
-                                                                if (gap > 1500) return `Significant value edge (${gap.toLocaleString()}) over alternatives`;
-                                                                return `Close in value to alternatives — position need may tip the decision`;
-                                                            })()}
-                                                        </div>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => selectPlayerForPick(idx, pick.best!.player)}
-                                                        className="px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium"
-                                                    >
-                                                        Select
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Position needs bar */}
-                                        <div className="flex gap-2">
-                                            {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => {
-                                                const have = (keptPlayers.filter(p => p.position === pos).length || 0) +
-                                                    picks.slice(0, idx).filter(p => p.targetPosition === pos).length;
-                                                const want = (sf ? { QB: 2, RB: 3, WR: 4, TE: 2 } : { QB: 1, RB: 3, WR: 4, TE: 2 })[pos];
-                                                const status = have >= want ? 'set' : have === 0 ? 'empty' : 'need';
-                                                return (
-                                                    <div key={pos} className={`text-[10px] px-2 py-0.5 rounded font-medium ${
-                                                        status === 'set' ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300'
-                                                        : status === 'empty' ? 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300'
-                                                        : 'bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300'
-                                                    }`}>
-                                                        {pos}: {status === 'set' ? '✓' : `need ${want - have}`}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-
-                                        {/* Alternatives by position */}
-                                        <div>
-                                            <div className="text-[10px] font-semibold text-zinc-500 uppercase mb-1.5">Alternatives</div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => {
-                                                    const posCandidates = pick.candidates
-                                                        .filter(c => c.player.position === pos && c.player.id !== pick.best?.player.id);
-                                                    if (posCandidates.length === 0) return null;
-                                                    return (
-                                                        <div key={pos} className="rounded-md border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-                                                            <div className={`text-[10px] font-bold px-2 py-1 ${posColor(pos)}`}>{pos}</div>
-                                                            {posCandidates.map(c => (
-                                                                <button
-                                                                    key={c.player.id}
-                                                                    onClick={() => selectPlayerForPick(idx, c.player)}
-                                                                    className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs border-t border-zinc-100 dark:border-zinc-800"
-                                                                >
-                                                                    <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">{c.player.full_name}</span>
-                                                                    <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${
-                                                                        c.tag === 'NEED' ? 'bg-red-100 dark:bg-red-900/20 text-red-600'
-                                                                        : c.tag === 'UPSIDE' ? 'bg-purple-100 dark:bg-purple-900/20 text-purple-600'
-                                                                        : c.tag === 'SAFE' ? 'bg-green-100 dark:bg-green-900/20 text-green-600'
-                                                                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
-                                                                    }`}>{c.tag}</span>
-                                                                    <span className="font-mono text-zinc-500 text-[10px]">{(c.player.fc_value || 0).toLocaleString()}</span>
-                                                                    <span className="font-mono text-amber-600 dark:text-amber-400 text-[10px]">{c.player.redraft_auction_value ? `$${c.player.redraft_auction_value}` : ''}</span>
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        {/* Strategic Insights */}
-                                        {pick.insights.length > 0 && (
-                                            <div className="space-y-1 text-xs text-zinc-500">
-                                                {pick.insights.map((insight, i) => (
-                                                    <div key={i}>• {insight}</div>
-                                                ))}
-                                            </div>
-                                        )}
-
+                                        {/* Your selections */}
                                         {hasOverride && (
-                                            <div className="space-y-1.5">
-                                                <div className="text-[10px] font-semibold text-zinc-500 uppercase">Your Targets</div>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {userSelections.map(name => {
-                                                        const p = draftPool.find(dp => dp.full_name === name);
-                                                        const avail = p ? getAvailability(p, pickOverall) : 0;
-                                                        return (
-                                                            <span key={name} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs">
-                                                                {name}
-                                                                {avail > 0 && <span className={`text-[9px] font-bold ${avail >= 70 ? 'text-green-600' : avail >= 40 ? 'text-amber-600' : 'text-red-500'}`}>{avail}%</span>}
-                                                                <button onClick={() => removePlayerFromPick(idx, name)} className="text-indigo-400 hover:text-red-500 ml-0.5">
-                                                                    <X className="w-3 h-3" />
-                                                                </button>
-                                                            </span>
-                                                        );
-                                                    })}
-                                                </div>
-                                                <button
-                                                    onClick={() => clearPick(idx)}
-                                                    className="text-[10px] text-zinc-400 hover:text-red-500"
-                                                >
-                                                    Clear all
-                                                </button>
+                                            <div className="flex flex-wrap gap-1.5 pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                                                {userSelections.map(name => (
+                                                    <span key={name} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs">
+                                                        {name}
+                                                        <button onClick={() => removePlayerFromPick(idx, name)} className="text-indigo-400 hover:text-red-500">
+                                                            <X className="w-3 h-3" />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                                <button onClick={() => clearPick(idx)} className="text-[10px] text-zinc-400 hover:text-red-500 self-center ml-1">Clear</button>
                                             </div>
                                         )}
+
+                                        {/* Simple ranked list — 30 players around this pick's range */}
+                                        <div className="space-y-0.5 max-h-72 overflow-y-auto">
+                                            {(() => {
+                                                // Show players ranked around this pick position
+                                                const pickPosition = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
+                                                const startIdx = Math.max(0, pickPosition - 30);
+                                                const endIdx = Math.min(draftPool.length, pickPosition + 30);
+                                                const playersInRange = draftPool.slice(startIdx, endIdx);
+                                                return playersInRange.map((player, i) => {
+                                                    const avail = getAvailability(player, pickOverall);
+                                                    return (
+                                                        <button
+                                                            key={player.id}
+                                                            onClick={() => selectPlayerForPick(idx, player)}
+                                                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs"
+                                                        >
+                                                            <span className="text-zinc-400 font-mono w-4">{startIdx + i + 1}</span>
+                                                            <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${posColor(player.position)}`}>{player.position}</span>
+                                                            <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">{player.full_name}</span>
+                                                            <span className="font-mono text-zinc-500 text-[10px]">{(player.fc_value || 0).toLocaleString()}</span>
+                                                            {player.redraft_auction_value ? <span className="font-mono text-amber-600 text-[10px]">${player.redraft_auction_value}</span> : null}
+                                                            <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${avail >= 80 ? 'bg-green-100 dark:bg-green-900/20 text-green-600' : avail >= 50 ? 'bg-amber-100 dark:bg-amber-900/20 text-amber-600' : 'bg-red-100 dark:bg-red-900/20 text-red-500'}`}>{avail}%</span>
+                                                        </button>
+                                                    );
+                                                });
+                                            })()}
+                                        </div>
 
                                         {/* Player search */}
                                         <div className="relative">
