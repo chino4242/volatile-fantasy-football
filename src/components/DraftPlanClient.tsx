@@ -1452,7 +1452,7 @@ function DraftBoardSection({
                                             <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${posColor(pick.targetPos === 'BPA' ? null : pick.targetPos)}`}>
                                                 {pick.targetPos}
                                             </span>
-                                            {suggestionMode === 'tier' && pick.tierInfo ? (
+                                            {suggestionMode === 'tier' && pick.tierInfo && pick.tierInfo.players.length > 0 ? (
                                                 <>
                                                     <span className="text-sm text-zinc-600 dark:text-zinc-400 flex-1 truncate italic">
                                                         Target {pick.tierInfo.label} ({pick.tierInfo.players.length} avail) — {pick.tierInfo.players.slice(0, 3).map(p => p.name.split(' ').pop()).join(', ')}{pick.tierInfo.players.length > 3 ? '...' : ''}
