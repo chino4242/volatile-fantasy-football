@@ -59,6 +59,49 @@ A high-performance dynasty fantasy football analytics platform built with **Next
 - **Custom Rankings** — Import rankings from external sources (e.g., RP) with signal indicators (Super Buy/Buy/Hold/Sell/Super Sell)
 - **PWA Support** — Installable as a Progressive Web App with offline support and install prompts
 - **Nickname Aliasing** — Automatic player name matching for common nicknames (Nick→Nicholas, Hollywood Brown→Marquise Brown)
+- **Draft Plan Page** — Pre-draft planning tool at `/league/{id}/draft-plan` and `/fleaflicker/{id}/draft-plan`. Features:
+  - Interactive keeper selection with dynasty/redraft value blend slider
+  - Draft Board with simulated pool depletion and pick-by-pick strategy
+  - Position-grouped candidates with NEED/VALUE/UPSIDE/SAFE tags per pick
+  - Strategic insights (tier scarcity, safe-to-wait indicators)
+  - Player search with availability % calculation per pick
+  - Watchlist shared with mock draft (star players to track across picks)
+  - Position Scarcity Chart showing draft pool talent
+  - Projected Roster (full team composition: keepers + planned picks)
+  - Evaluate button with post-draft grade analysis
+  - Multiple saved plans per league (create/edit/delete/switch)
+  - Plan comparison via Results tab (average grades across mock drafts)
+  - Connected to Mock Draft (plan auto-loads keepers, shows 'Your Plan' when on the clock)
+- **Advanced NFL Statistics (nflreadpy)** — Full advanced stats pipeline:
+  - Season-level stats, Next Gen Stats (passing/receiving/rushing), PFR advanced, snap counts
+  - 2023/2024/2025 seasons ingested (600+ players per season)
+  - Breakout detection (YoY improvement flagging with score 0-100)
+  - Regression flags (TD dependency, low separation, volume inefficiency)
+  - Scoring boost (0.85-1.20x multiplier in draft plan based on efficiency metrics)
+  - Player comparison tool (side-by-side advanced metrics)
+  - Inline stats on team roster tables (target share, RYOE, CPOE, separation)
+- **Player Profile Card** — Mobile-optimized tabbed player view (replaces old modal):
+  - Profile tab: grade badges (A+ through F), percentile bars, season totals, scouting take
+  - Trends tab: weekly fantasy points chart, boom/bust ratio, recent form, consistency score
+  - Scouting tab: ZAP writeups, AI analysis, bull/bear cases, multi-source writeups
+  - Info tooltips explaining each metric in plain English
+  - Calibrated from real 2025 NFL distributions
+- **Trade Inbox (Fleaflicker)** — Authenticated pending trade evaluation:
+  - Cookie-based Fleaflicker auth (stored in DB for cross-device access)
+  - Pending trades with You Send / You Receive evaluation
+  - Dynasty + auction value comparison per trade
+  - ACCEPT/DECLINE/EVEN recommendation (10% threshold)
+  - Counter suggestions (picks for small gaps, players for large gaps)
+  - Reframed deal alternatives ('they want X, here are fair packages')
+  - Other team's full assets visible (players + draft picks)
+- **Trade Evaluator Enhancements** — Now includes:
+  - Auction value comparison (Send $X → Get $Y)
+  - Position group before/after impact (RB: 11,379 → 14,023 +23%)
+  - Roster Fit preview (where incoming players slot into your depth chart)
+  - Enriched verdict ('Win-now upgrade but costs dynasty value. Sends 1 keeper.')
+- **Sleeper Trade History** — Recent completed trades displayed on team pages with value evaluation
+- **Value Movers** — Shows dynasty value changes since last snapshot. Filters by My Roster (across all Sleeper + Fleaflicker leagues) or All Players
+- **Team Switcher** — Team name in breadcrumb is now clickable dropdown for switching teams
 
 ## Tech Stack
 
@@ -155,22 +198,32 @@ volatile-fantasy-football/
 │   │   │       ├── page.tsx    # League dashboard (all teams ranked)
 │   │   │       ├── free-agents/
 │   │   │       │   └── page.tsx  # Free agent view (Sleeper)
+│   │   │       ├── draft-plan/   # Sleeper draft plan page
 │   │   │       ├── live-draft/   # Sleeper live draft
 │   │   │       └── team/
 │   │   │           └── [rosterId]/
 │   │   │               └── page.tsx  # Individual team roster
-│   │   └── fleaflicker/
-│   │       └── [leagueId]/
-│   │           ├── page.tsx          # Fleaflicker league dashboard
-│   │           ├── mock-draft/
-│   │           │   ├── page.tsx      # Mock draft page (server component)
-│   │           │   └── DraftClient.tsx  # Mock draft simulator (client)
-│   │           ├── live-draft/       # Fleaflicker live draft
-│   │           ├── free-agents/
-│   │           │   └── page.tsx      # Free agent view (Fleaflicker)
-│   │           └── team/
-│   │               └── [teamId]/
-│   │                   └── page.tsx  # Fleaflicker team roster
+│   │   ├── fleaflicker/
+│   │   │   └── [leagueId]/
+│   │   │       ├── page.tsx          # Fleaflicker league dashboard
+│   │   │       ├── mock-draft/
+│   │   │       │   ├── page.tsx      # Mock draft page (server component)
+│   │   │       │   └── DraftClient.tsx  # Mock draft simulator (client)
+│   │   │       ├── draft-plan/       # Fleaflicker draft plan page
+│   │   │       ├── live-draft/       # Fleaflicker live draft
+│   │   │       ├── trades/           # Fleaflicker trades page
+│   │   │       ├── free-agents/
+│   │   │       │   └── page.tsx      # Free agent view (Fleaflicker)
+│   │   │       └── team/
+│   │   │           └── [teamId]/
+│   │   │               └── page.tsx  # Fleaflicker team roster
+│   │   └── api/
+│   │       ├── draft-plans/          # Draft plans CRUD API
+│   │       ├── player-advanced-stats/ # Advanced stats API
+│   │       ├── fleaflicker/trades/   # Authenticated trades proxy
+│   │       └── user-settings/        # User settings (cookie storage)
+│   ├── types/
+│   │   └── player.ts           # Shared Player/BasePlayer types
 │   ├── components/
 │   │   ├── AppHeader.tsx       # Sticky navigation header (auth-aware)
 │   │   ├── FreeAgentTable.tsx  # Client component for Free Agent view (with filters & sorting)
@@ -180,6 +233,11 @@ volatile-fantasy-football/
 │   │   ├── PositionScarcityChart.tsx  # Stacked bar chart for position scarcity
 │   │   ├── TradeEvaluator.tsx  # Standalone trade evaluator component
 │   │   ├── PlayerStatsModal.tsx # Weekly player stats modal
+│   │   ├── DraftPlanClient.tsx  # Draft Plan page client component
+│   │   ├── PendingTrades.tsx    # Authenticated trade inbox (Fleaflicker)
+│   │   ├── PlayerProfileCard.tsx # Mobile-optimized tabbed player view
+│   │   ├── PlayerComparison.tsx # Side-by-side player stat comparison
+│   │   ├── SleeperTradeHistory.tsx # Sleeper trade history display
 │   │   ├── InstallBanner.tsx   # PWA install prompt banner
 │   │   └── CustomRankingsBadge.tsx  # Signal badge for custom rankings
 │   ├── db/
@@ -192,10 +250,13 @@ volatile-fantasy-football/
 │       ├── fleaflicker.ts      # Fleaflicker API client
 │       ├── cache.ts            # In-memory cache with TTL support
 │       ├── draft-data.ts       # Shared draft data fetching helpers
+│       ├── draft-simulation.ts # Draft simulation utilities (styles, value blending)
+│       ├── advanced-stats.ts   # Breakout detection, regression, scoring boost
 │       ├── rankings-upload.ts  # VFF rankings Excel upload processing
 │       ├── rankings-vintage.ts # Rankings history and vintage tracking
 │       ├── custom-rankings.ts  # Custom rankings import/processing
 │       ├── nameUtils.ts        # Player name matching and nickname aliasing
+│       ├── positionColors.ts   # Shared position color utility
 │       └── nfl-data.ts         # NFL stats data utilities
 ├── drizzle.config.ts           # Drizzle Kit configuration
 ├── package.json
@@ -204,15 +265,17 @@ volatile-fantasy-football/
 
 ## Database Schema
 
-The app uses thirteen tables managed by Drizzle ORM:
+The app uses sixteen tables managed by Drizzle ORM:
 
 | Table             | Description                                            |
 | ----------------- | ------------------------------------------------------ |
 | `players`         | Master player list (name, position, team, age, years_exp) |
 | `player_values`   | Dynasty/redraft trade values, FC metrics, VFF ranks    |
+| `player_advanced_stats` | Season-level advanced stats from nflreadpy (NGS, PFR, snap counts) |
 | `prospect_data`   | Late Round prospect guide data (ZAP, categories, NFL team) |
 | `prospect_writeups` | Multi-source scouting writeups                       |
 | `draft_history`   | Saved mock/live draft results                          |
+| `draft_plans`     | Saved draft plans with keepers, picks, roster targets, notes |
 | `leagues`         | League metadata (platform, scoring, roster settings)   |
 | `rosters`         | Team rosters within a league                           |
 | `roster_players`  | Join table linking rosters to players                  |
@@ -221,6 +284,7 @@ The app uses thirteen tables managed by Drizzle ORM:
 | `custom_rankings` | Custom rankings from external sources                  |
 | `weekly_player_stats` | Weekly player stats (targets, yards, TDs, fantasy points) |
 | `weekly_roster_snapshots` | Weekly roster composition snapshots              |
+| `user_settings`   | User preferences (Fleaflicker auth cookie for cross-device) |
 
 > **Rookie identification:** The `players.years_exp` column (sourced from FantasyCalc's `maybeYoe` field) is used to flag rookies. Players with `years_exp === 0` are considered rookies.
 
@@ -279,6 +343,8 @@ See [`scripts/README-PROSPECTS.md`](scripts/README-PROSPECTS.md) for detailed in
 | `python3 scripts/ingest-sleeper-stats.py [year]` | Ingest weekly player stats from Sleeper API |
 | `npx tsx scripts/verify-db.ts`     | Verify database connection and data              |
 | `npm run ingest:nfl`               | Ingest NFL stats via Python script               |
+| `python3 scripts/ingest-advanced-stats.py [season]` | Ingest advanced stats from nflreadpy |
+| `npx tsx scripts/ingest-defenses.ts` | Insert all 32 NFL team defenses                |
 
 ## Testing
 
@@ -290,14 +356,19 @@ npm run test:all
 ```
 
 You can also run them individually:
-- `npm run test` — Runs the Vitest unit/integration suite.
+- `npm run test` — Runs the Vitest unit/integration suite (63 tests across 8 files, ~1s).
 - `npm run test:e2e` — Runs the full Playwright E2E suite (verifies critical user journeys on both Desktop and Mobile viewports).
 
 ### Test Strategy
 Our testing layers prioritize different areas:
-1. **Unit Tests (Vitest)** — API clients (`src/lib/sleeper.ts`) and complex pure functions.
+1. **Unit Tests (Vitest)** — API clients (`src/lib/sleeper.ts`), complex pure functions, and analytics logic.
+   - `cleanseName` (name normalization and nickname aliasing)
+   - `detectBreakout`, `detectRegression`, `getAdvancedStatsBoost` (advanced stats pipeline)
+   - `comparePlayerStats` (player comparison tool)
+   - `analyzeLeaguePostDraft` (draft grade analysis)
 2. **E2E Tests (Playwright)** — Critical user journeys (home -> players -> league -> team) and mobile responsiveness formatting.
 3. **Integration Tests (Vitest)** — Database ingestion scripts (`scripts/ingest-players.ts`) using Mocked Drizzle instances.
+4. **Component Tests (Vitest)** — React component rendering (AppHeader).
 
 ## Deployment
 
