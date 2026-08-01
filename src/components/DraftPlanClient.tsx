@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Save, Target, Users, ClipboardList, StickyNote, ChevronDown, Check, X, Star } from 'lucide-react';
 import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 import { analyzeLeaguePostDraft, type TeamAnalysis } from '@/lib/post-draft-analysis';
+import { runMonteCarloSim, getMonteCarloAvailability, type SimResult } from '@/lib/draft-monte-carlo';
 import { getPositionColor } from '@/lib/positionColors';
 import { useAuth } from '@/hooks/useUser';
 
@@ -879,8 +880,42 @@ function DraftBoardSection({
     const [expandedPickIdx, setExpandedPickIdx] = useState<number | null>(null);
     const [pickSearchQuery, setPickSearchQuery] = useState('');
 
-    // Calculate availability % for a player at a given pick
+    // Monte Carlo simulation state
+    const [simResult, setSimResult] = useState<SimResult | null>(null);
+    const [simRunning, setSimRunning] = useState(false);
+    const [simProgress, setSimProgress] = useState(0);
+
+    const runSimulation = () => {
+        setSimRunning(true);
+        setSimProgress(0);
+        // Run asynchronously via setTimeout to not block UI
+        setTimeout(() => {
+            const result = runMonteCarloSim({
+                draftPool: draftPool.map(p => ({ id: p.id, full_name: p.full_name, position: p.position, fc_value: p.fc_value, redraft_auction_value: p.redraft_auction_value })),
+                userPicks: picks.map(p => ({ pickNumber: p.pickNumber, round: p.round, slot: p.slot })),
+                numTeams,
+                numSims: 100,
+                sf,
+                onProgress: (completed, total) => setSimProgress(Math.round((completed / total) * 100)),
+            });
+            setSimResult(result);
+            setSimRunning(false);
+            setSimProgress(100);
+        }, 50);
+    };
+
+    // Calculate availability % — uses Monte Carlo results if available, falls back to heuristic
     const getAvailability = (player: Player, pickOverall: number): number => {
+        // Try Monte Carlo first
+        if (simResult) {
+            const pickIdx = picks.findIndex(p => (p.pickNumber || ((p.round - 1) * numTeams + p.slot)) === pickOverall);
+            if (pickIdx >= 0) {
+                const mcAvail = getMonteCarloAvailability(simResult, player.id, pickIdx);
+                if (mcAvail !== null) return mcAvail;
+            }
+        }
+
+        // Fallback: heuristic
         // Find player's rank in the draft pool (sorted by value)
         const playerRank = draftPool.findIndex(p => p.id === player.id) + 1;
         if (playerRank === 0) return 0; // not in pool
@@ -992,6 +1027,29 @@ function DraftBoardSection({
                         );
                     })}
                 </div>
+            </div>
+
+            {/* Monte Carlo Simulation */}
+            <div className="flex items-center gap-3">
+                <button
+                    onClick={runSimulation}
+                    disabled={simRunning || draftPool.length === 0}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        simResult && !simRunning
+                            ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 ring-1 ring-green-200 dark:ring-green-800'
+                            : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                    } disabled:opacity-50`}
+                >
+                    {simRunning ? `Simulating... ${simProgress}%` : simResult ? '✓ Simulated (100 runs)' : '🎲 Run Monte Carlo (100 sims)'}
+                </button>
+                {simRunning && (
+                    <div className="flex-1 h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${simProgress}%` }} />
+                    </div>
+                )}
+                {simResult && !simRunning && (
+                    <span className="text-[10px] text-zinc-500">Availability % now based on simulated data</span>
+                )}
             </div>
 
             {/* Position Scarcity Chart (same as mock/live draft) */}
