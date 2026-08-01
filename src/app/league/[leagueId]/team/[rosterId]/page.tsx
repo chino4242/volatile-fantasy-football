@@ -1,9 +1,9 @@
 import { db } from "@/db";
-import { players, playerValues, leagues, prospectData, prospectWriteups } from "@/db/schema";
-import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks } from "@/lib/sleeper";
+import { players, playerValues, leagues, prospectData, prospectWriteups, playerAdvancedStats } from "@/db/schema";
+import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks, getSleeperTransactions } from "@/lib/sleeper";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
-import { sql } from "drizzle-orm";
+import { sql, desc } from "drizzle-orm";
 import { eq, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import TeamRosterView from "./TeamRosterView";
@@ -12,6 +12,7 @@ import TradeEvaluator from "@/components/TradeEvaluator";
 import TeamHealthDashboard from "@/components/TeamHealthDashboard";
 import { SavedTrades } from "@/components/SavedTrades";
 import { KeeperDecisionTool } from "@/components/KeeperDecisionTool";
+import { SleeperTradeHistory } from "@/components/SleeperTradeHistory";
 
 export const dynamic = 'force-dynamic';
 
@@ -222,6 +223,95 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
         return { ...p, zap_score: zap?.zap_score ? parseFloat(String(zap.zap_score)) : null, zap_analysis: zap?.analysis_text || null, zap_category: zap?.zap_category || null, zap_comps: zap?.statistical_comparables || null, writeups: wu };
     });
 
+    // Fetch advanced stats for rostered players
+    const advancedStatsRows = rosterPlayerIds.length > 0
+        ? await db.select({
+            sleeper_id: playerAdvancedStats.sleeper_id,
+            target_share: playerAdvancedStats.target_share,
+            avg_separation: playerAdvancedStats.avg_separation,
+            rush_yards_over_expected_per_att: playerAdvancedStats.rush_yards_over_expected_per_att,
+            completion_pct_above_expected: playerAdvancedStats.completion_pct_above_expected,
+            offense_snap_pct: playerAdvancedStats.offense_snap_pct,
+            rushing_yards: playerAdvancedStats.rushing_yards,
+        })
+        .from(playerAdvancedStats)
+        .where(inArray(playerAdvancedStats.sleeper_id, rosterPlayerIds))
+        .orderBy(desc(playerAdvancedStats.season))
+        : [];
+
+    const advancedStatsMap: Record<string, { target_share?: string | null; avg_separation?: string | null; rush_yards_over_expected_per_att?: string | null; completion_pct_above_expected?: string | null; offense_snap_pct?: string | null; rushing_yards?: number | null }> = {};
+    for (const row of advancedStatsRows) {
+        if (row.sleeper_id && !advancedStatsMap[row.sleeper_id]) {
+            advancedStatsMap[row.sleeper_id] = {
+                target_share: row.target_share,
+                avg_separation: row.avg_separation,
+                rush_yards_over_expected_per_att: row.rush_yards_over_expected_per_att,
+                completion_pct_above_expected: row.completion_pct_above_expected,
+                offense_snap_pct: row.offense_snap_pct,
+                rushing_yards: row.rushing_yards,
+            };
+        }
+    }
+
+    // Fetch recent trades from Sleeper
+    const allTransactions = await getSleeperTransactions(leagueId);
+    const rosterTrades = allTransactions.filter(t => t.roster_ids.includes(Number(rosterId)));
+
+    // Build a combined player map for enriching trade data (includes picks)
+    const fullPlayerMap = new Map([...dbPlayers, ...allLeaguePlayers].map(p => [p.sleeper_id, p]));
+
+    const enrichedTrades = rosterTrades.map(t => {
+        const myRosterId = Number(rosterId);
+        const otherRosterIds = t.roster_ids.filter(id => id !== myRosterId);
+        const otherTeamName = otherRosterIds.map(id => rosterToOwnerMap.get(id) || `Team ${id}`).join(', ');
+
+        const youSentPlayers: { name: string; position: string; value: number }[] = [];
+        const youReceivedPlayers: { name: string; position: string; value: number }[] = [];
+        const youSentPicks: { season: string; round: number; value: number }[] = [];
+        const youReceivedPicks: { season: string; round: number; value: number }[] = [];
+
+        // Process player adds/drops
+        if (t.adds) {
+            for (const [playerId, addedToRosterId] of Object.entries(t.adds)) {
+                const player = fullPlayerMap.get(playerId);
+                const entry = {
+                    name: player?.full_name || `Player ${playerId}`,
+                    position: player?.position || '',
+                    value: player?.fc_value || 0,
+                };
+                if (addedToRosterId === myRosterId) {
+                    youReceivedPlayers.push(entry);
+                } else {
+                    youSentPlayers.push(entry);
+                }
+            }
+        }
+
+        // Process draft picks
+        for (const pick of t.draft_picks) {
+            const pickId = getPickFantasyCalcId(pick.season, pick.round);
+            const pickData = fullPlayerMap.get(pickId);
+            const entry = {
+                season: pick.season,
+                round: pick.round,
+                value: pickData?.fc_value || 0,
+            };
+            if (pick.owner_id === myRosterId) {
+                youReceivedPicks.push(entry);
+            } else {
+                youSentPicks.push(entry);
+            }
+        }
+
+        return {
+            id: t.transaction_id,
+            created: t.created,
+            otherTeamName,
+            youSent: { players: youSentPlayers, picks: youSentPicks },
+            youReceived: { players: youReceivedPlayers, picks: youReceivedPicks },
+        };
+    });
+
     // 7. Calculate stats including picks
     const pickValue = rosterPicks.reduce((sum, pick) => {
         const pickId = getPickFantasyCalcId(pick.season, pick.round);
@@ -346,6 +436,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                     rankingSources={activeSources}
                     keeperCount={keeperCount}
                     rankingsVintage={rankingsVintage}
+                    advancedStatsMap={advancedStatsMap}
                 />
 
                 <SavedTrades
@@ -353,6 +444,8 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                     platform="sleeper"
                     playerMap={new Map([...allAssetsWithWriteups, ...allLeaguePlayersWithPicks].map((p: any) => [p.sleeper_id, { sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, fc_value: p.fc_value }]))}
                 />
+
+                <SleeperTradeHistory trades={enrichedTrades} />
             </div>
         </div>
     );

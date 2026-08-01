@@ -284,6 +284,51 @@ export function getAllDraftPicks(rosters: SleeperRoster[], tradedPicks: SleeperT
     return picks;
 }
 
+// --- Transactions ---
+
+export interface SleeperTransaction {
+    transaction_id: string;
+    type: string; // 'trade', 'free_agent', 'waiver'
+    status: string; // 'complete', 'pending'
+    roster_ids: number[];
+    adds: Record<string, number> | null; // player_id -> roster_id
+    drops: Record<string, number> | null;
+    draft_picks: { season: string; round: number; roster_id: number; previous_owner_id: number; owner_id: number }[];
+    created: number;
+}
+
+export async function getSleeperTransactions(leagueId: string): Promise<SleeperTransaction[]> {
+    const cacheKey = `sleeper:transactions:${leagueId}`;
+    const cached = cache.get<SleeperTransaction[]>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+
+    // Fetch transactions for weeks 1-5 to get recent activity
+    const weeks = [1, 2, 3, 4, 5];
+    const allTransactions: SleeperTransaction[] = [];
+
+    await Promise.all(
+        weeks.map(async (week) => {
+            try {
+                const res = await fetch(`${BASE_URL}/league/${leagueId}/transactions/${week}`, { cache: 'no-store' });
+                if (res.ok) {
+                    const data: SleeperTransaction[] = await res.json();
+                    allTransactions.push(...data);
+                }
+            } catch {
+                // Skip failed weeks
+            }
+        })
+    );
+
+    // Filter to trades only and sort by most recent first
+    const trades = allTransactions
+        .filter(t => t.type === 'trade')
+        .sort((a, b) => b.created - a.created);
+
+    cache.set(cacheKey, trades);
+    return trades;
+}
+
 // --- Multi-user platform helpers ---
 
 export async function getSleeperUserId(username: string): Promise<string | null> {
