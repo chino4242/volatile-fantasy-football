@@ -596,6 +596,105 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
                         );
                     })()}
 
+                    {/* Roster Fit Preview — where incoming players slot into your depth chart */}
+                    {selectedPlayer && (() => {
+                        // Collect all incoming players (selected + their assets)
+                        const incomingPlayers = [selectedPlayer, ...Array.from(theirAssets).map(id => otherTeamPlayers.find(p => p.sleeper_id === id)).filter(Boolean)] as Player[];
+                        const positions = [...new Set(incomingPlayers.filter(p => p.position && p.position !== 'PICK').map(p => p.position!))];
+
+                        if (positions.length === 0) return null;
+
+                        return (
+                            <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                                <div className="text-[9px] font-bold text-zinc-500 uppercase mb-1.5">Roster Fit</div>
+                                {positions.map(pos => {
+                                    const myPosPlayers = myPlayers
+                                        .filter(p => p.position === pos && !myAssets.has(p.sleeper_id))
+                                        .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                    const incoming = incomingPlayers.filter(p => p.position === pos);
+
+                                    // Merge and sort
+                                    const combined = [...myPosPlayers.map(p => ({ ...p, isNew: false })), ...incoming.map(p => ({ ...p, isNew: true }))]
+                                        .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+
+                                    return (
+                                        <div key={pos} className="mb-2">
+                                            <div className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400 mb-0.5">{pos} ({combined.length})</div>
+                                            <div className="space-y-0.5">
+                                                {combined.slice(0, 6).map((p, i) => (
+                                                    <div key={p.sleeper_id + (p.isNew ? '_new' : '')} className={`flex items-center justify-between text-[10px] px-1.5 py-0.5 rounded ${p.isNew ? 'bg-green-50 dark:bg-green-900/10 ring-1 ring-green-200 dark:ring-green-800' : ''}`}>
+                                                        <span className={p.isNew ? 'font-semibold text-green-700 dark:text-green-300' : 'text-zinc-700 dark:text-zinc-300'}>
+                                                            {i + 1}. {p.full_name} {p.isNew && <span className="text-[8px]">NEW</span>}
+                                                        </span>
+                                                        <span className="font-mono text-zinc-500">{(p.fc_value || 0).toLocaleString()}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        );
+                    })()}
+
+                    {/* Enriched Verdict */}
+                    {(myAssets.size > 0 || selectedPlayer) && (() => {
+                        const myAuction = Array.from(myAssets).reduce((sum, id) => {
+                            const p = myPlayers.find(pl => pl.sleeper_id === id);
+                            return sum + (p?.redraft_auction_value || 0);
+                        }, 0);
+                        const theirAuction = (selectedPlayer?.redraft_auction_value || 0) + Array.from(theirAssets).reduce((sum, id) => {
+                            const p = otherTeamPlayers.find(pl => pl.sleeper_id === id);
+                            return sum + (p?.redraft_auction_value || 0);
+                        }, 0);
+                        const auctionDiff = theirAuction - myAuction;
+
+                        // Build verdict sentence
+                        const parts: string[] = [];
+
+                        // Position improvement
+                        const incomingPositions = [selectedPlayer, ...Array.from(theirAssets).map(id => otherTeamPlayers.find(p => p.sleeper_id === id)).filter(Boolean)]
+                            .filter(p => p && p.position && p.position !== 'PICK')
+                            .map(p => p!.position!);
+                        const uniquePositions = [...new Set(incomingPositions)];
+                        if (uniquePositions.length > 0) {
+                            parts.push(`Adds ${uniquePositions.join('/')} depth`);
+                        }
+
+                        // Win-now vs long-term
+                        if (auctionDiff > 10 && diff > 0) {
+                            parts.push(`Win-now upgrade (+$${auctionDiff} auction) but costs dynasty value`);
+                        } else if (auctionDiff > 10 && diff <= 0) {
+                            parts.push(`Win-now AND dynasty value — strong deal`);
+                        } else if (auctionDiff < -5 && diff < 0) {
+                            parts.push(`Dynasty upside play — sacrifices short-term production`);
+                        } else if (diff > 0 && Math.abs(diffPct) > 15) {
+                            parts.push(`Significant overpay — consider asking for more`);
+                        } else if (Math.abs(diffPct) <= 10) {
+                            parts.push(`Fair value exchange`);
+                        }
+
+                        // Keeper impact
+                        if (keeperCount && keeperCount > 0) {
+                            const sentKeepers = Array.from(myAssets).filter(id => {
+                                const idx = myPlayers.findIndex(p => p.sleeper_id === id);
+                                return idx >= 0 && idx < keeperCount;
+                            }).length;
+                            if (sentKeepers > 0) {
+                                parts.push(`Sends ${sentKeepers} keeper${sentKeepers > 1 ? 's' : ''}`);
+                            }
+                        }
+
+                        if (parts.length === 0) return null;
+
+                        return (
+                            <div className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border-t border-zinc-200 dark:border-zinc-700">
+                                <div className="text-[9px] font-bold text-zinc-500 uppercase mb-1">Verdict</div>
+                                <p className="text-xs text-zinc-700 dark:text-zinc-300">{parts.join('. ')}.</p>
+                            </div>
+                        );
+                    })()}
+
                     {/* Save Deal */}
                     {leagueId && platform && myAssets.size > 0 && (
                         <button
