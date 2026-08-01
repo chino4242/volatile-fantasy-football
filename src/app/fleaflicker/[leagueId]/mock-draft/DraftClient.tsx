@@ -97,7 +97,7 @@ const DEFAULT_ROUNDS = 5;
 
 export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock', defaultUserTeamId, customRankingsMap }: DraftClientProps) {
     const { sleeperUsername, fleaflickerUsername } = useAuth();
-    const userId = platform === 'sleeper' ? sleeperUsername : fleaflickerUsername;
+    const userId = sleeperUsername || fleaflickerUsername || null;
 
     // Draft history
     interface DraftHistoryEntry { id: string; mode: string; created_at: string; draft_data: { userTeamName: string; grade: string; picks: { round: number; pick: number; teamName: string; playerName: string; playerPosition: string; playerValue: number }[] } }
