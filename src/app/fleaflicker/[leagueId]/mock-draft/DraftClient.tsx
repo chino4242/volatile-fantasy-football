@@ -283,6 +283,24 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         }
     }, [userTeamId, keeperCount, keepersConfirmed, activeTeams, draftPlan]); // run when team selected or count changes
 
+    // Auto-confirm keepers when loaded from draft plan (skip manual selection step)
+    const planKeepersAutoConfirmed = useRef(false);
+    useEffect(() => {
+        if (
+            userTeamId &&
+            keeperCount &&
+            keeperCount > 0 &&
+            !keepersConfirmed &&
+            !planKeepersAutoConfirmed.current &&
+            draftPlan &&
+            draftPlan.keeper_ids.length > 0 &&
+            selectedKeepers.size === keeperCount
+        ) {
+            planKeepersAutoConfirmed.current = true;
+            handleConfirmKeepers();
+        }
+    }, [selectedKeepers, keepersConfirmed, draftPlan, userTeamId]);
+
     const handleConfirmKeepers = () => {
         if (!keeperCount) return;
 
@@ -1054,6 +1072,21 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                         <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-4">
                             Select Your Team
                         </h2>
+                        {availablePlans.length > 0 && (
+                            <div className="mb-4 p-2.5 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800 flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-bold text-amber-600 dark:text-amber-400">📋 Draft Plan:</span>
+                                <select
+                                    value={availablePlans.find(p => p.name === draftPlan?.name)?.id || ''}
+                                    onChange={(e) => loadPlanById(e.target.value)}
+                                    className="text-xs bg-white dark:bg-zinc-800 border border-amber-200 dark:border-amber-700 rounded px-2 py-1 text-zinc-900 dark:text-zinc-100"
+                                >
+                                    {availablePlans.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                                <span className="text-[10px] text-amber-500">Keepers auto-confirmed from plan</span>
+                            </div>
+                        )}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             {teams.map(team => (
                                 <button
