@@ -855,8 +855,8 @@ function DraftBoardSection({
         }
 
         // Build candidate list: best at each position from BEFORE this pick was made
-        // (remainingPool already had best.player removed, so add it back for display)
-        const candidatePool = best ? [best.player, ...remainingPool] : [...remainingPool];
+        // Build candidates from FULL draft pool (not depleted sim pool)
+        // Users want to see all top options with availability %, not just sim survivors
         const candidatesByPos: { player: Player; score: number; tag: string }[] = [];
         const currentCountsForCandidates = {
             QB: keptCounts.QB + draftedByPos.QB - (best && best.player.position === 'QB' ? 1 : 0),
@@ -865,7 +865,7 @@ function DraftBoardSection({
             TE: keptCounts.TE + draftedByPos.TE - (best && best.player.position === 'TE' ? 1 : 0),
         };
         (['QB', 'RB', 'WR', 'TE'] as const).forEach(pos => {
-            const posPlayers = candidatePool.filter(p => p.position === pos).slice(0, 2);
+            const posPlayers = draftPool.filter(p => p.position === pos).slice(0, 3);
             posPlayers.forEach(posPlayer => {
                 const score = scoreForUs(posPlayer, currentCountsForCandidates);
                 const have = currentCountsForCandidates[pos];
@@ -1560,9 +1560,12 @@ function DraftBoardSection({
                 </div>
             </div>
 
-            {/* Top Targets by Position */}
-            <div>
-                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Top Targets</h2>
+            {/* Top Targets by Position (collapsible) */}
+            <details className="group">
+                <summary className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3 cursor-pointer list-none flex items-center gap-1">
+                    <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
+                    Top Targets
+                </summary>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => (
                         <div key={pos} className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
@@ -1579,11 +1582,14 @@ function DraftBoardSection({
                         </div>
                     ))}
                 </div>
-            </div>
+            </details>
 
-            {/* Projected Roster — full team composition based on keepers + picks */}
-            <div>
-                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Projected Roster</h2>
+            {/* Projected Roster — full team composition based on keepers + picks (collapsible) */}
+            <details className="group">
+                <summary className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3 cursor-pointer list-none flex items-center gap-1">
+                    <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
+                    Projected Roster
+                </summary>
                 {(() => {
                     // Build projected roster: keepers + selected/suggested picks
                     const projectedRoster: Player[] = [...keptPlayers];
@@ -1645,7 +1651,7 @@ function DraftBoardSection({
                         </div>
                     );
                 })()}
-            </div>
+            </details>
 
             {/* Evaluate Draft Plan */}
             <div>
