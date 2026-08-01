@@ -1735,61 +1735,92 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                     {/* Trade This Pick suggestions */}
                                     {(() => {
                                         if (!currentPick || !userTeamId) return null;
-                                        const pickRound = currentPick.round;
-                                        const pickSlot = currentPick.pick;
-                                        // Estimate pick value from best available player
+                                        // Your pick value = BPA at this spot
                                         const pickValue = availablePlayers[0]?.fc_value || 3000;
+                                        const bpaPosition = availablePlayers[0]?.position || 'BPA';
 
                                         // Find teams picking later that might want to trade up
-                                        const laterTeams = new Set<number>();
-                                        for (let i = currentPickIndex + 1; i < picks.length && laterTeams.size < 8; i++) {
-                                            if (picks[i].teamId !== userTeamId && !picks[i].playerId) {
-                                                laterTeams.add(picks[i].teamId);
+                                        const laterPicksByTeam = new Map<number, { pickIndex: number; round: number; pick: number }>();
+                                        for (let i = currentPickIndex + 1; i < picks.length; i++) {
+                                            const p = picks[i];
+                                            if (p.teamId !== userTeamId && !p.playerId && !laterPicksByTeam.has(p.teamId)) {
+                                                laterPicksByTeam.set(p.teamId, { pickIndex: i, round: p.round, pick: p.pick });
                                             }
                                         }
 
-                                        // For each later team, find what they could offer
-                                        const tradeOffers: { teamId: number; teamName: string; offer: string; offerValue: number; diff: number }[] = [];
-                                        laterTeams.forEach(teamId => {
-                                            const team = teams.find(t => t.id === teamId);
+                                        // For each later team, compute realistic trade-up offer
+                                        const tradeOffers: { teamId: number; teamName: string; offer: string; offerValue: number; premium: number; reason: string }[] = [];
+                                        laterPicksByTeam.forEach(({ pickIndex, round, pick }, teamId) => {
+                                            const team = activeTeams.find(t => t.id === teamId);
                                             if (!team) return;
-                                            // Their next pick
-                                            const theirNextPick = picks.find((p, i) => i > currentPickIndex && p.teamId === teamId && !p.playerId);
-                                            if (!theirNextPick) return;
 
-                                            // A team trading up typically offers their pick + a player/pick sweetener
-                                            // Look for a player on their roster that + their pick ≈ our pick value
-                                            const theirPickValue = Math.round(pickValue * 0.7); // later pick is worth less
-                                            const sweetenerNeeded = pickValue - theirPickValue;
+                                            // Their pick value = BPA at their pick position
+                                            // Approximate: how many players will be taken between now and their pick
+                                            const picksAway = pickIndex - currentPickIndex;
+                                            const theirBPA = availablePlayers[Math.min(picksAway, availablePlayers.length - 1)];
+                                            const theirPickValue = theirBPA?.fc_value || Math.round(pickValue * 0.5);
 
-                                            // Find their best player near the sweetener value
-                                            const sweetener = team.players
-                                                .filter(p => p.position !== 'PICK' && (p.fc_value || 0) >= sweetenerNeeded * 0.5 && (p.fc_value || 0) <= sweetenerNeeded * 2)
-                                                .sort((a, b) => Math.abs((a.fc_value || 0) - sweetenerNeeded) - Math.abs((b.fc_value || 0) - sweetenerNeeded))[0];
+                                            // Gap they need to bridge
+                                            const gap = pickValue - theirPickValue;
+                                            if (gap <= 0) return; // their pick is somehow worth more — no trade-up needed
 
-                                            if (sweetener) {
-                                                const offerValue = theirPickValue + (sweetener.fc_value || 0);
-                                                tradeOffers.push({
-                                                    teamId,
-                                                    teamName: team.name,
-                                                    offer: `${theirNextPick.round}.${String(theirNextPick.pick).padStart(2, '0')} + ${sweetener.full_name}`,
-                                                    offerValue,
-                                                    diff: offerValue - pickValue,
+                                            // Trade-up premium: 10-20% overpay (closer picks = less premium needed)
+                                            const premiumPct = picksAway <= 3 ? 1.05 : picksAway <= 6 ? 1.10 : 1.15;
+                                            const targetOffer = Math.round(pickValue * premiumPct);
+                                            const sweetenerNeeded = targetOffer - theirPickValue;
+
+                                            // Does this team even WANT to trade up? Check if BPA position is a need for them
+                                            const posCount = team.players.filter(p => p.position === bpaPosition).length;
+                                            const wouldTradeUp = bpaPosition === 'RB' ? posCount < 4 :
+                                                                  bpaPosition === 'WR' ? posCount < 5 :
+                                                                  bpaPosition === 'QB' ? posCount < 2 :
+                                                                  bpaPosition === 'TE' ? posCount < 2 : true;
+                                            if (!wouldTradeUp) return;
+
+                                            // Find sweetener: a startable player they have depth at
+                                            // Prefer positions where they're deep (can afford to lose)
+                                            const posCounts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+                                            team.players.forEach(p => { if (p.position && p.position in posCounts) posCounts[p.position as keyof typeof posCounts]++; });
+
+                                            const sweetenerCandidates = team.players
+                                                .filter(p => {
+                                                    if (!p.position || p.position === 'PICK') return false;
+                                                    const val = p.fc_value || 0;
+                                                    // Must be worth enough to matter, within 60%-150% of what's needed
+                                                    if (val < sweetenerNeeded * 0.6 || val > sweetenerNeeded * 1.5) return false;
+                                                    // Team should have depth at this position (2+ others)
+                                                    const posDepth = posCounts[p.position] || 0;
+                                                    if (posDepth < 3) return false;
+                                                    return true;
+                                                })
+                                                .sort((a, b) => {
+                                                    // Prefer closest to sweetener value needed
+                                                    const aDiff = Math.abs((a.fc_value || 0) - sweetenerNeeded);
+                                                    const bDiff = Math.abs((b.fc_value || 0) - sweetenerNeeded);
+                                                    return aDiff - bDiff;
                                                 });
-                                            } else {
-                                                // Just show the pick swap
-                                                tradeOffers.push({
-                                                    teamId,
-                                                    teamName: team.name,
-                                                    offer: `${theirNextPick.round}.${String(theirNextPick.pick).padStart(2, '0')} + sweetener`,
-                                                    offerValue: theirPickValue,
-                                                    diff: theirPickValue - pickValue,
-                                                });
-                                            }
+
+                                            const sweetener = sweetenerCandidates[0];
+                                            if (!sweetener) return; // can't construct a fair offer
+
+                                            const offerValue = theirPickValue + (sweetener.fc_value || 0);
+                                            // Only show if the total offer beats your pick value (real overpay)
+                                            if (offerValue < pickValue * 1.02) return;
+
+                                            const premium = Math.round(((offerValue / pickValue) - 1) * 100);
+                                            const reason = `wants ${bpaPosition} (has ${posCount})`;
+
+                                            tradeOffers.push({
+                                                teamId,
+                                                teamName: team.name,
+                                                offer: `${round}.${String(pick).padStart(2, '0')} + ${sweetener.full_name}`,
+                                                offerValue,
+                                                premium,
+                                                reason,
+                                            });
                                         });
 
                                         const topOffers = tradeOffers
-                                            .filter(o => o.offerValue >= pickValue * 0.8)
                                             .sort((a, b) => b.offerValue - a.offerValue)
                                             .slice(0, 3);
 
@@ -1798,20 +1829,25 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         return (
                                             <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
                                                 <div className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase mb-2">💰 Trade Back Options</div>
-                                                <div className="space-y-1.5">
+                                                <div className="space-y-2">
                                                     {topOffers.map((offer, i) => (
-                                                        <div key={i} className="flex items-center justify-between text-xs">
-                                                            <div className="min-w-0">
-                                                                <span className="font-medium text-zinc-900 dark:text-zinc-100">{offer.teamName}</span>
-                                                                <span className="text-zinc-500 ml-1">offers {offer.offer}</span>
+                                                        <div key={i} className="text-xs">
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="min-w-0">
+                                                                    <span className="font-medium text-zinc-900 dark:text-zinc-100">{offer.teamName}</span>
+                                                                    <span className="text-zinc-500 ml-1">offers {offer.offer}</span>
+                                                                </div>
+                                                                <span className="text-[10px] font-mono font-bold flex-shrink-0 ml-2 text-green-600">
+                                                                    +{offer.premium}% ({offer.offerValue.toLocaleString()})
+                                                                </span>
                                                             </div>
-                                                            <span className={`text-[10px] font-mono font-bold flex-shrink-0 ml-2 ${offer.diff >= 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                                                                {offer.offerValue.toLocaleString()}
-                                                            </span>
+                                                            <div className="text-[9px] text-zinc-400 mt-0.5">{offer.reason}</div>
                                                         </div>
                                                     ))}
                                                 </div>
-                                                <div className="text-[9px] text-amber-600 dark:text-amber-400 mt-1.5">Your pick value: ~{pickValue.toLocaleString()} (based on BPA)</div>
+                                                <div className="text-[9px] text-amber-600 dark:text-amber-400 mt-2 pt-1.5 border-t border-amber-200 dark:border-amber-800">
+                                                    Your pick value: ~{pickValue.toLocaleString()} · BPA: {availablePlayers[0]?.full_name} ({bpaPosition})
+                                                </div>
                                             </div>
                                         );
                                     })()}
