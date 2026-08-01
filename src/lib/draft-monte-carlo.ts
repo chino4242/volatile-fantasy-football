@@ -45,12 +45,14 @@ export interface PickSummary {
 
 /**
  * Score a player for CPU pick decision.
- * Simplified version of the mock draft's scoreForCPU with position discounts.
+ * Position discounts are lighter than the draft plan's scoring —
+ * CPU teams DO draft QBs/TEs, just less frequently.
  */
 function scoreCPU(player: SimPlayer, sf: boolean): number {
     let value = player.fc_value || 0;
-    if (player.position === 'QB' && !sf) value *= 0.55;
-    if (player.position === 'TE') value *= 0.85;
+    // In 1QB: QBs are taken less often but NOT never — ~1 per team over a draft
+    if (player.position === 'QB' && !sf) value *= 0.75;
+    if (player.position === 'TE') value *= 0.90;
     return value;
 }
 
