@@ -33,7 +33,8 @@ interface PickPlanEntry {
     round: number;
     slot: number;
     targetPosition: string | null; // 'QB' | 'RB' | 'WR' | 'TE' | 'BPA' | null
-    targetPlayer: string | null; // player name
+    targetPlayer: string | null; // primary player name (first selected)
+    targetPlayers: string[]; // multiple penciled-in options
     notes: string;
 }
 
@@ -196,6 +197,41 @@ export function DraftPlanClient({
         }
     };
 
+    // Branch from a specific pick — duplicates plan up to that point with a new name
+    const branchFromPick = async (pickIdx: number) => {
+        const pick = picks[pickIdx];
+        // Use base plan name (strip any existing "→ Branch" suffix)
+        const baseName = planName.split(' → Branch')[0];
+        const branchName = `${baseName} → Branch at ${pick.round}.${String(pick.slot).padStart(2, '0')}`;
+        try {
+            const res = await fetch('/api/draft-plans', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+                body: JSON.stringify({
+                    league_id: leagueId,
+                    platform,
+                    name: branchName,
+                    keeper_ids: keeperIds,
+                    tier_source: tierSource,
+                    notes: `Branched from "${baseName}" at pick ${pick.round}.${String(pick.slot).padStart(2, '0')}. Make different selections from this point.`,
+                }),
+            });
+            if (res.ok) {
+                const { plan } = await res.json();
+                setPlans(prev => [plan, ...prev]);
+                setActivePlanId(plan.id);
+                setPlanName(branchName);
+                // Clear pick selections so user starts fresh from this point
+                const newPicks = picks.map((p, i) => i >= pickIdx ? { ...p, targetPlayer: null, targetPlayers: [], targetPosition: null } : p);
+                setPicks(newPicks);
+            } else {
+                console.error('Branch failed:', res.status);
+            }
+        } catch (e) {
+            console.error('Failed to branch plan:', e);
+        }
+    };
+
     // Delete a plan
     const deletePlan = async (planId: string) => {
         try {
@@ -234,6 +270,7 @@ export function DraftPlanClient({
                     slot: p.slot,
                     targetPosition: null,
                     targetPlayer: null,
+                    targetPlayers: [],
                     notes: '',
                 })));
             }
@@ -467,6 +504,7 @@ export function DraftPlanClient({
                         watchlist={watchlist}
                         toggleWatchlist={toggleWatchlist}
                         posColor={posColor}
+                        onBranchFromPick={branchFromPick}
                     />
                 )}
                 {activeSection === 'results' && (
@@ -497,6 +535,7 @@ function DraftBoardSection({
     watchlist,
     toggleWatchlist,
     posColor,
+    onBranchFromPick,
 }: {
     activeTeam: TeamData | null;
     keeperIds: string[];
@@ -512,6 +551,7 @@ function DraftBoardSection({
     watchlist: string[];
     toggleWatchlist: (playerId: string) => void;
     posColor: (pos: string | null) => string;
+    onBranchFromPick: (pickIdx: number) => void;
 }) {
     if (!activeTeam) {
         return (
@@ -862,17 +902,31 @@ function DraftBoardSection({
         scarcity[pos] = { top5Avg, top15Avg, dropoff };
     });
 
-    // Allow user to select a player for a pick
+    // Allow user to select a player for a pick (adds to shortlist)
     const selectPlayerForPick = (pickIdx: number, player: Player) => {
         const newPicks = [...picks];
-        newPicks[pickIdx] = { ...newPicks[pickIdx], targetPlayer: player.full_name, targetPosition: player.position };
+        const current = newPicks[pickIdx];
+        const existing = current.targetPlayers || [];
+        // Don't add duplicates
+        if (!existing.includes(player.full_name)) {
+            const updated = [...existing, player.full_name];
+            newPicks[pickIdx] = { ...current, targetPlayer: updated[0], targetPlayers: updated, targetPosition: player.position };
+        }
         setPicks(newPicks);
-        setExpandedPickIdx(null);
+    };
+
+    // Remove a specific player from a pick's shortlist
+    const removePlayerFromPick = (pickIdx: number, playerName: string) => {
+        const newPicks = [...picks];
+        const current = newPicks[pickIdx];
+        const updated = (current.targetPlayers || []).filter(n => n !== playerName);
+        newPicks[pickIdx] = { ...current, targetPlayer: updated[0] || null, targetPlayers: updated, targetPosition: updated.length > 0 ? current.targetPosition : null };
+        setPicks(newPicks);
     };
 
     const clearPick = (pickIdx: number) => {
         const newPicks = [...picks];
-        newPicks[pickIdx] = { ...newPicks[pickIdx], targetPlayer: null, targetPosition: null };
+        newPicks[pickIdx] = { ...newPicks[pickIdx], targetPlayer: null, targetPlayers: [], targetPosition: null };
         setPicks(newPicks);
     };
 
@@ -1241,8 +1295,9 @@ function DraftBoardSection({
                 <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Your Picks</h2>
                 <div className="space-y-3">
                     {pickSuggestions.map((pick, idx) => {
+                        const userSelections = picks[idx]?.targetPlayers || [];
                         const userSelection = picks[idx]?.targetPlayer;
-                        const hasOverride = !!userSelection;
+                        const hasOverride = userSelections.length > 0;
                         const isExpanded = expandedPickIdx === idx;
                         const pickOverall = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
 
@@ -1263,18 +1318,22 @@ function DraftBoardSection({
                                                 {picks[idx].targetPosition}
                                             </span>
                                             <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 flex-1 truncate">
-                                                {userSelection}
+                                                {userSelections.length === 1 ? userSelections[0] : `${userSelections.length} targets`}
                                             </span>
                                             {(() => {
-                                                const selectedPlayer = draftPool.find(p => p.full_name === userSelection);
-                                                if (!selectedPlayer) return null;
-                                                const avail = getAvailability(selectedPlayer, pickOverall);
+                                                // Show best availability across all selections
+                                                const avails = userSelections.map(name => {
+                                                    const p = draftPool.find(dp => dp.full_name === name);
+                                                    return p ? getAvailability(p, pickOverall) : 0;
+                                                });
+                                                const bestAvail = Math.max(...avails, 0);
+                                                if (bestAvail === 0) return null;
                                                 return (
                                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
-                                                        avail >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                                                        : avail >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                                                        bestAvail >= 80 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                                        : bestAvail >= 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
                                                         : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-                                                    }`}>{avail}%</span>
+                                                    }`}>{bestAvail}%</span>
                                                 );
                                             })()}
                                         </>
@@ -1399,14 +1458,39 @@ function DraftBoardSection({
                                         )}
 
                                         {hasOverride && (
-                                            <button
-                                                onClick={() => clearPick(idx)}
-                                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-red-50 dark:bg-red-900/20 hover:bg-red-100 text-red-600 dark:text-red-400 text-xs font-medium transition-colors"
-                                            >
-                                                <X className="w-3 h-3" />
-                                                Clear selection
-                                            </button>
+                                            <div className="space-y-1.5">
+                                                <div className="text-[10px] font-semibold text-zinc-500 uppercase">Your Targets</div>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {userSelections.map(name => {
+                                                        const p = draftPool.find(dp => dp.full_name === name);
+                                                        const avail = p ? getAvailability(p, pickOverall) : 0;
+                                                        return (
+                                                            <span key={name} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs">
+                                                                {name}
+                                                                {avail > 0 && <span className={`text-[9px] font-bold ${avail >= 70 ? 'text-green-600' : avail >= 40 ? 'text-amber-600' : 'text-red-500'}`}>{avail}%</span>}
+                                                                <button onClick={() => removePlayerFromPick(idx, name)} className="text-indigo-400 hover:text-red-500 ml-0.5">
+                                                                    <X className="w-3 h-3" />
+                                                                </button>
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <button
+                                                    onClick={() => clearPick(idx)}
+                                                    className="text-[10px] text-zinc-400 hover:text-red-500"
+                                                >
+                                                    Clear all
+                                                </button>
+                                            </div>
                                         )}
+
+                                        {/* Branch from this pick */}
+                                        <button
+                                            onClick={() => onBranchFromPick(idx)}
+                                            className="flex items-center gap-1.5 text-[10px] text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors"
+                                        >
+                                            🌿 Branch plan from this pick
+                                        </button>
 
                                         {/* Player search */}
                                         <div className="relative">
