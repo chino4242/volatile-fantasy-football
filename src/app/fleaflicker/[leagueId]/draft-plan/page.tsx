@@ -57,6 +57,7 @@ export default async function FleaflickerDraftPlanPage({
                 rank_overall: sf ? playerValues.rank_sf_overall : playerValues.rank_1qb_overall,
                 rank_tier: sf ? playerValues.rank_sf_tier : playerValues.rank_1qb_tier,
                 redraft_rank_overall: playerValues.redraft_rank_overall,
+                redraft_rank_tier: playerValues.redraft_rank_tier,
                 redraft_auction_value: playerValues.redraft_auction_value,
                 rank_sf_tier: playerValues.rank_sf_tier,
                 rank_1qb_tier: playerValues.rank_1qb_tier,

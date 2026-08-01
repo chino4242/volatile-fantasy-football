@@ -505,6 +505,7 @@ export function DraftPlanClient({
                         toggleWatchlist={toggleWatchlist}
                         posColor={posColor}
                         onBranchFromPick={branchFromPick}
+                        tierSource={tierSource}
                     />
                 )}
                 {activeSection === 'results' && (
@@ -536,6 +537,7 @@ function DraftBoardSection({
     toggleWatchlist,
     posColor,
     onBranchFromPick,
+    tierSource,
 }: {
     activeTeam: TeamData | null;
     keeperIds: string[];
@@ -552,6 +554,7 @@ function DraftBoardSection({
     toggleWatchlist: (playerId: string) => void;
     posColor: (pos: string | null) => string;
     onBranchFromPick: (pickIdx: number) => void;
+    tierSource: 'dynasty' | 'redraft' | 'zap';
 }) {
     if (!activeTeam) {
         return (
@@ -1191,7 +1194,10 @@ function DraftBoardSection({
 
             {/* Tier Availability Grid — where do tiers dry up? */}
             <div>
-                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2">Tier Availability by Pick</h2>
+                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+                    Tier Availability by Pick
+                    <span className="ml-2 text-[10px] font-normal text-zinc-400">({tierSource === 'redraft' ? 'Redraft $' : tierSource === 'zap' ? 'ZAP' : 'Dynasty'})</span>
+                </h2>
                 <p className="text-[10px] text-zinc-400 mb-3">Shows the best tier likely available at each of your picks. Tap a cell to see who&apos;s there.</p>
                 {(() => {
                     return (
@@ -1209,6 +1215,12 @@ function DraftBoardSection({
                                 </thead>
                                 <tbody>
                                     {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => {
+                                        // Value function based on tier source
+                                        const getVal = (p: Player): number => {
+                                            if (tierSource === 'redraft') return p.redraft_auction_value || 0;
+                                            return p.fc_value || 0;
+                                        };
+
                                         const tierByPick = picks.map((pick, pickIdx) => {
                                             const overallPick = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
                                             const posPlayers = draftPool.filter(p => p.position === pos);
@@ -1221,21 +1233,31 @@ function DraftBoardSection({
                                                         return { ...p, prob };
                                                     })
                                                     .filter(p => p.prob >= 50)
-                                                    .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
-                                                const bestVal = available[0]?.fc_value || 0;
-                                                const inTier = available.filter(p => (p.fc_value || 0) >= bestVal * 0.65);
-                                                return { bestVal, count: inTier.length, players: inTier.slice(0, 5).map(p => ({ name: p.full_name, value: p.fc_value || 0, prob: p.prob })) };
+                                                    .sort((a, b) => getVal(b) - getVal(a));
+                                                const bestVal = available[0] ? getVal(available[0]) : 0;
+                                                const inTier = available.filter(p => getVal(p) >= bestVal * 0.65);
+                                                return { bestVal, count: inTier.length, players: inTier.slice(0, 5).map(p => ({ name: p.full_name, value: getVal(p), prob: p.prob })) };
                                             } else {
                                                 const demandFactor = pos === 'RB' ? 0.30 : pos === 'WR' ? 0.35 : pos === 'QB' ? (sf ? 0.18 : 0.10) : 0.10;
                                                 const estimatedGone = Math.floor(overallPick * demandFactor);
                                                 const remaining = posPlayers.slice(estimatedGone);
-                                                const bestVal = remaining[0]?.fc_value || 0;
-                                                const inTier = remaining.filter(p => (p.fc_value || 0) >= bestVal * 0.65);
-                                                return { bestVal, count: inTier.length, players: inTier.slice(0, 5).map(p => ({ name: p.full_name, value: p.fc_value || 0, prob: null as number | null })) };
+                                                const bestVal = remaining[0] ? getVal(remaining[0]) : 0;
+                                                const inTier = remaining.filter(p => getVal(p) >= bestVal * 0.65);
+                                                return { bestVal, count: inTier.length, players: inTier.slice(0, 5).map(p => ({ name: p.full_name, value: getVal(p), prob: null as number | null })) };
                                             }
                                         });
 
+                                        // Tier labels/colors adapt to the value scale
                                         const getTierLabel = (val: number): string => {
+                                            if (tierSource === 'redraft') {
+                                                // Auction values: $30+ elite, $20+ solid, $10+ startable
+                                                if (val >= 30) return 'Elite';
+                                                if (val >= 20) return 'Start';
+                                                if (val >= 12) return 'Flex';
+                                                if (val >= 5) return 'Bench';
+                                                if (val >= 1) return 'Deep';
+                                                return '—';
+                                            }
                                             if (val >= 5000) return 'T1-3';
                                             if (val >= 3500) return 'T4-6';
                                             if (val >= 2500) return 'T7-9';
@@ -1245,6 +1267,14 @@ function DraftBoardSection({
                                         };
 
                                         const getTierColor = (val: number): string => {
+                                            if (tierSource === 'redraft') {
+                                                if (val >= 30) return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
+                                                if (val >= 20) return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300';
+                                                if (val >= 12) return 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300';
+                                                if (val >= 5) return 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300';
+                                                if (val >= 1) return 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500';
+                                                return 'text-zinc-300 dark:text-zinc-600';
+                                            }
                                             if (val >= 5000) return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
                                             if (val >= 3500) return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300';
                                             if (val >= 2500) return 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300';
