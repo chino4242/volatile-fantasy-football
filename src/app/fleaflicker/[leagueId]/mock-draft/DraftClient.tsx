@@ -122,7 +122,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [availablePlans, setAvailablePlans] = useState<{ id: string; name: string }[]>([]);
 
     useEffect(() => {
-        fetch(`/api/draft-plans?league_id=${leagueId}`)
+        if (!userId) return;
+        fetch(`/api/draft-plans?league_id=${leagueId}&user_id=${userId}`)
             .then(r => r.ok ? r.json() : null)
             .then(data => {
                 if (data?.plans && Array.isArray(data.plans)) {
@@ -139,12 +140,12 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                 }
             })
             .catch(() => {});
-    }, [leagueId]);
+    }, [leagueId, userId]);
 
     // Allow switching plans
     const loadPlanById = async (planId: string) => {
         try {
-            const res = await fetch(`/api/draft-plans?league_id=${leagueId}`);
+            const res = await fetch(`/api/draft-plans?league_id=${leagueId}&user_id=${userId}`);
             if (!res.ok) return;
             const { plans } = await res.json();
             const plan = plans?.find((p: any) => p.id === planId);
