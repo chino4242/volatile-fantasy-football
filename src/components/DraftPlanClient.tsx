@@ -9,27 +9,7 @@ import { useAuth } from '@/hooks/useUser';
 
 // --- Types ---
 
-interface Player {
-    id: string;
-    full_name: string;
-    position: string | null;
-    team: string | null;
-    fc_value: number | null;
-    rank_overall?: number | null;
-    rank_tier?: number | null;
-    years_exp?: number | null;
-    redraft_rank_overall?: number | null;
-    redraft_auction_value?: number | null;
-    rank_sf_tier?: number | null;
-    rank_1qb_tier?: number | null;
-    zap_category?: string | null;
-    zap_score?: number | null;
-    zap_stale?: boolean;
-    fc_rank_sf?: number | null;
-    fc_rank_1qb?: number | null;
-    rank_sf_overall?: number | null;
-    rank_1qb_overall?: number | null;
-}
+import { Player } from '@/types/player';
 
 interface DraftPick {
     season: number;

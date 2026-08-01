@@ -3,16 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
-interface Player {
-    sleeper_id: string;
-    full_name: string;
-    position: string | null;
-    age?: number | null;
-    fc_value: number | null;
-    fc_rank_sf?: number | null;
-    fc_rank_1qb?: number | null;
-    redraft_rank_overall?: number | null;
-}
+import { BasePlayer as Player } from '@/types/player';
 
 interface TeamData {
     rosterId: number;

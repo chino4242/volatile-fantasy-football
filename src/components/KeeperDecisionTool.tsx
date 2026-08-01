@@ -3,18 +3,7 @@
 import { useState, useMemo } from 'react';
 import { Settings, ChevronDown, ChevronUp } from 'lucide-react';
 
-interface Player {
-    sleeper_id: string;
-    full_name: string;
-    position: string | null;
-    fc_value: number | null;
-    redraft_rank_overall?: number | null;
-    redraft_auction_value?: number | null;
-    rank_sf_tier?: number | null;
-    rank_1qb_tier?: number | null;
-    years_exp?: number | null;
-    zap_category?: string | null;
-}
+import { BasePlayer as Player } from '@/types/player';
 
 interface KeeperSettings {
     keeperCount: number;

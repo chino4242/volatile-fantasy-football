@@ -3,17 +3,7 @@
 import { useState, useMemo } from 'react';
 import { Search, ArrowRightLeft, X, Save } from 'lucide-react';
 
-interface Player {
-    sleeper_id: string;
-    full_name: string;
-    position: string | null;
-    team: string | null;
-    fc_value: number | null;
-    fc_rank_sf?: number | null;
-    fc_rank_1qb?: number | null;
-    redraft_rank_overall?: number | null;
-    redraft_auction_value?: number | null;
-}
+import { BasePlayer as Player } from '@/types/player';
 
 interface Props {
     myPlayers: Player[];
