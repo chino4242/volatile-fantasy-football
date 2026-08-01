@@ -5,6 +5,7 @@ import { desc, eq, notInArray, and, not, like, inArray, sql } from "drizzle-orm"
 import { FreeAgentTable } from "@/components/FreeAgentTable";
 import Link from "next/link";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
+import { cleanseName } from "@/lib/nameUtils";
 
 export const dynamic = 'force-dynamic';
 
@@ -67,15 +68,14 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
 
         // Merge prospect writeups and ZAP data
         const currentYear = new Date().getFullYear();
-        const normalizeName = (n: string) => n.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
         const prospects = await db.select({ full_name: prospectData.full_name, nfl_team: prospectData.nfl_team, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
-        const zapByName = new Map(prospects.map(p => [normalizeName(p.full_name), p]));
+        const zapByName = new Map(prospects.map(p => [cleanseName(p.full_name), p]));
         const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
         const writeupsByName = new Map<string, { source: string; analysis_text: string }[]>();
-        for (const w of writeups) { const key = normalizeName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text }); }
+        for (const w of writeups) { const key = cleanseName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text }); }
         const freeAgentsWithWriteups = freeAgents.map(p => {
-            const zap = zapByName.get(normalizeName(p.full_name));
-            const wu = writeupsByName.get(normalizeName(p.full_name)) || null;
+            const zap = zapByName.get(cleanseName(p.full_name));
+            const wu = writeupsByName.get(cleanseName(p.full_name)) || null;
             return { ...p, zap_score: zap?.zap_score ? parseFloat(String(zap.zap_score)) : null, zap_analysis: zap?.analysis_text || null, zap_category: zap?.zap_category || null, zap_comps: zap?.statistical_comparables || null, writeups: wu };
         });
 

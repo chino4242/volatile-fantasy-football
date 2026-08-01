@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Save, Target, Users, ClipboardList, StickyNote, ChevronDown, Check, X, Star } from 'lucide-react';
 import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 import { analyzeLeaguePostDraft, type TeamAnalysis } from '@/lib/post-draft-analysis';
+import { getPositionColor } from '@/lib/positionColors';
 import { useAuth } from '@/hooks/useUser';
 
 // --- Types ---
@@ -315,15 +316,7 @@ export function DraftPlanClient({
     }, [leagueId, platform, activePlanId, planName, keeperIds, rosterTargets, picks, tierSource, notes]);
 
     // Position color helper
-    const posColor = (pos: string | null) => {
-        switch (pos) {
-            case 'QB': return 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20';
-            case 'RB': return 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20';
-            case 'WR': return 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20';
-            case 'TE': return 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20';
-            default: return 'text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800';
-        }
-    };
+    const posColor = getPositionColor;
 
     if (loading) {
         return (

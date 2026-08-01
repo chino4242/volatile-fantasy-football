@@ -6,6 +6,7 @@ import { FreeAgentTable } from "@/components/FreeAgentTable";
 import { FaabTargets } from "@/components/FaabTargets";
 import Link from "next/link";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
+import { cleanseName } from "@/lib/nameUtils";
 
 export const dynamic = 'force-dynamic';
 
@@ -29,17 +30,11 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
 
         // Normalize names: lowercase, strip punctuation, strip common suffixes (Jr/Sr/II/III/IV)
         // This handles Fleaflicker returning "Marvin Harrison" while DB has "Marvin Harrison Jr"
-        const normalizeName = (name: string) =>
-            name.toLowerCase()
-                .replace(/[^a-z0-9 ]/g, '')       // strip punctuation
-                .replace(/\b(jr|sr|ii|iii|iv|v)\b/g, '') // strip suffixes
-                .replace(/\s+/g, ' ')               // collapse spaces
-                .trim();
 
         const allPlayerNames = new Set<string>();
         fleaflickerData.rosters.forEach(roster => {
             roster.players.forEach(p => {
-                if (p.full_name) allPlayerNames.add(normalizeName(p.full_name));
+                if (p.full_name) allPlayerNames.add(cleanseName(p.full_name));
             });
         });
 
@@ -78,19 +73,19 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
 
         // 4. Filter out rostered players using normalized name matching
         const freeAgents = dbPlayers
-            .filter(p => !allPlayerNames.has(normalizeName(p.full_name || '')))
+            .filter(p => !allPlayerNames.has(cleanseName(p.full_name || '')))
             .slice(0, 200);
 
         // Merge prospect writeups and ZAP data
         const currentYear = new Date().getFullYear();
         const prospects = await db.select({ full_name: prospectData.full_name, nfl_team: prospectData.nfl_team, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
-        const zapByName = new Map(prospects.map(p => [normalizeName(p.full_name), p]));
+        const zapByName = new Map(prospects.map(p => [cleanseName(p.full_name), p]));
         const writeups = await db.select({ full_name: prospectWriteups.full_name, source: prospectWriteups.source, analysis_text: prospectWriteups.analysis_text }).from(prospectWriteups).where(sql`${prospectWriteups.draft_year} >= ${currentYear - 1}`);
         const writeupsByName = new Map<string, { source: string; analysis_text: string }[]>();
-        for (const w of writeups) { const key = normalizeName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text }); }
+        for (const w of writeups) { const key = cleanseName(w.full_name); if (!writeupsByName.has(key)) writeupsByName.set(key, []); writeupsByName.get(key)!.push({ source: w.source, analysis_text: w.analysis_text }); }
         const freeAgentsWithWriteups = freeAgents.map(p => {
-            const zap = zapByName.get(normalizeName(p.full_name || ''));
-            const wu = writeupsByName.get(normalizeName(p.full_name || '')) || null;
+            const zap = zapByName.get(cleanseName(p.full_name || ''));
+            const wu = writeupsByName.get(cleanseName(p.full_name || '')) || null;
             return { ...p, zap_score: zap?.zap_score ? parseFloat(String(zap.zap_score)) : null, zap_analysis: zap?.analysis_text || null, zap_category: zap?.zap_category || null, zap_comps: zap?.statistical_comparables || null, writeups: wu };
         });
 
@@ -112,9 +107,8 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
             const userRoster = fleaflickerData.rosters.find(r => r.id === teamId);
             if (userRoster) {
                 // Match roster players to DB for redraft ranks
-                const normalizeName2 = normalizeName;
                 myRoster = userRoster.players.map(p => {
-                    const dbMatch = dbPlayers.find(db => normalizeName2(db.full_name || '') === normalizeName2(p.full_name));
+                    const dbMatch = dbPlayers.find(db => cleanseName(db.full_name || '') === cleanseName(p.full_name));
                     return {
                         full_name: p.full_name,
                         position: dbMatch?.position || null,

@@ -1,4 +1,5 @@
 import { getFleaflickerLeague } from "@/lib/fleaflicker";
+import { cleanseName } from "@/lib/nameUtils";
 import { db } from "@/db";
 import { players, playerValues, leagues, valueSnapshots } from "@/db/schema";
 import { inArray, eq, desc } from "drizzle-orm";
@@ -49,18 +50,12 @@ export default async function FleaflickerLeaguePage({
 
         // Normalize: lowercase, strip punctuation + suffixes (Jr/Sr/II/III/IV)
         // Fleaflicker drops suffixes, e.g. returns "Marvin Harrison" for "Marvin Harrison Jr"
-        const normalizeName = (name: string) =>
-            name.toLowerCase()
-                .replace(/[^a-z0-9 ]/g, '')
-                .replace(/\b(jr|sr|ii|iii|iv|v)\b/g, '')
-                .replace(/\s+/g, ' ')
-                .trim();
 
         // 1. Get all unique player names from rosters
         const allPlayerNames = new Set<string>();
         fleaflickerData.rosters.forEach(roster => {
             roster.players.forEach(p => {
-                if (p.full_name) allPlayerNames.add(normalizeName(p.full_name));
+                if (p.full_name) allPlayerNames.add(cleanseName(p.full_name));
             });
         });
 
@@ -74,7 +69,7 @@ export default async function FleaflickerLeaguePage({
 
         // 3. Fetch player data from DB to get Sleeper IDs and Positions
         const allPlayers = await db.select().from(players);
-        const playerMatches = allPlayers.filter(p => allPlayerNames.has(normalizeName(p.full_name)));
+        const playerMatches = allPlayers.filter(p => allPlayerNames.has(cleanseName(p.full_name)));
 
         const playerIds = playerMatches.map(p => p.sleeper_id);
         const allLookupIds = [...playerIds, ...Array.from(allPickIds)];
@@ -100,7 +95,7 @@ export default async function FleaflickerLeaguePage({
         );
 
         const nameToPlayerMap = new Map(
-            playerMatches.map(p => [normalizeName(p.full_name), p])
+            playerMatches.map(p => [cleanseName(p.full_name), p])
         );
 
         // 5. Calculate team values
@@ -116,7 +111,7 @@ export default async function FleaflickerLeaguePage({
 
             // Calculate player values
             roster.players.forEach(player => {
-                const dbPlayer = nameToPlayerMap.get(normalizeName(player.full_name));
+                const dbPlayer = nameToPlayerMap.get(cleanseName(player.full_name));
                 if (dbPlayer) {
                     const value = valueMap.get(dbPlayer.sleeper_id) || 0;
                     totalValue += value;
@@ -206,7 +201,7 @@ export default async function FleaflickerLeaguePage({
                 powerRankingsData = fleaflickerData.rosters.map(roster => {
                     const teamPlayerIds: string[] = [];
                     roster.players.forEach(p => {
-                        const dbPlayer = nameToPlayerMap.get(normalizeName(p.full_name));
+                        const dbPlayer = nameToPlayerMap.get(cleanseName(p.full_name));
                         if (dbPlayer) teamPlayerIds.push(dbPlayer.sleeper_id);
                     });
 
@@ -254,7 +249,7 @@ export default async function FleaflickerLeaguePage({
                         const playersObtained = (team.playersObtained || []).map((p: any) => {
                             const name = p.proPlayer?.nameFull || 'Unknown';
                             const position = p.proPlayer?.position || null;
-                            const dbPlayer = nameToPlayerMap.get(normalizeName(name));
+                            const dbPlayer = nameToPlayerMap.get(cleanseName(name));
                             const value = dbPlayer ? (valueMap.get(dbPlayer.sleeper_id) || 0) : null;
                             return { name, position, value };
                         });
@@ -317,7 +312,7 @@ export default async function FleaflickerLeaguePage({
                             rosterId: r.id,
                             ownerName: r.name,
                             players: r.players.map(p => {
-                                const db = nameToPlayerMap.get(normalizeName(p.full_name));
+                                const db = nameToPlayerMap.get(cleanseName(p.full_name));
                                 if (!db) return null;
                                 const v = values.find(val => val.sleeper_id === db.sleeper_id);
                                 return { sleeper_id: db.sleeper_id, full_name: db.full_name, position: db.position, fc_value: v ? (format === 'sf' ? v.fc_value_sf : v.fc_value_1qb) : 0, fc_rank_sf: v?.fc_rank_sf, fc_rank_1qb: v?.fc_rank_1qb, redraft_rank_overall: v?.redraft_rank_overall };
