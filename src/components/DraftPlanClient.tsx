@@ -925,6 +925,7 @@ function DraftBoardSection({
             newPicks[pickIdx] = { ...current, targetPlayer: updated[0], targetPlayers: updated, targetPosition: player.position };
         }
         setPicks(newPicks);
+        setExpandedPickIdx(null); // collapse after selection
     };
 
     // Remove a specific player from a pick's shortlist
