@@ -2062,6 +2062,228 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 );
                             })()}
 
+                            {/* Comprehensive Draft Analysis */}
+                            {userTeamId !== null && (() => {
+                                const my = gradeScores.find(t => t.team.id === userTeamId);
+                                if (!my) return null;
+                                const myTeam = activeTeams.find(t => t.id === userTeamId);
+                                if (!myTeam) return null;
+
+                                const myDraftedPicks = picks.filter(p => p.teamId === userTeamId && p.playerId);
+                                const draftedPlayers = myDraftedPicks.map(p => {
+                                    const fa = freeAgents.find(f => f.id === p.playerId) || draftedPlayerMap.current.get(p.playerId!);
+                                    return fa ? { ...fa, round: p.round, pick: p.pick, pickIndex: picks.indexOf(p) } : null;
+                                }).filter(Boolean) as (Player & { round: number; pick: number; pickIndex: number })[];
+
+                                const fullRoster = [...myTeam.players, ...draftedPlayers];
+                                const positions = ['QB', 'RB', 'WR', 'TE'] as const;
+
+                                // --- Draft Strategy Recap ---
+                                const posDist = { QB: 0, RB: 0, WR: 0, TE: 0, DEF: 0 };
+                                draftedPlayers.forEach(p => { if (p.position && p.position in posDist) posDist[p.position as keyof typeof posDist]++; });
+                                const heavyPos = Object.entries(posDist).sort(([,a], [,b]) => b - a)[0];
+                                const strategyLabel = heavyPos[1] >= 4 ? `${heavyPos[0]}-heavy` : heavyPos[1] >= 3 ? `${heavyPos[0]}-leaning` : 'Balanced';
+
+                                // Best value pick: highest value relative to pick position
+                                const bestValue = draftedPlayers.reduce((best, p) => {
+                                    // What was the expected value at this pick? Use BPA that was available
+                                    const picksBeforeThis = picks.filter((pk, i) => i < p.pickIndex && pk.playerId).length;
+                                    const expectedValue = freeAgents[Math.min(picksBeforeThis, freeAgents.length - 1)]?.fc_value || 0;
+                                    const surplus = (p.fc_value || 0) - expectedValue * 0.85;
+                                    return surplus > (best?.surplus || -Infinity) ? { player: p, surplus } : best;
+                                }, null as { player: typeof draftedPlayers[0]; surplus: number } | null);
+
+                                // Biggest reach: lowest value relative to when they were picked
+                                const biggestReach = draftedPlayers.reduce((worst, p) => {
+                                    const overallPick = (p.round - 1) * activeTeams.length + p.pick;
+                                    // How many players with higher value were still available?
+                                    const betterAvailable = freeAgents.filter(fa => 
+                                        (fa.fc_value || 0) > (p.fc_value || 0) && !draftedPlayers.some(dp => dp.id === fa.id && dp.pickIndex < p.pickIndex)
+                                    ).length;
+                                    return betterAvailable > (worst?.betterAvailable || 0) ? { player: p, betterAvailable } : worst;
+                                }, null as { player: typeof draftedPlayers[0]; betterAvailable: number } | null);
+
+                                // --- Win-Now vs Dynasty ---
+                                const avgAge = draftedPlayers.reduce((sum, p) => sum + (p.years_exp || 0), 0) / (draftedPlayers.length || 1);
+                                const startersCount = my.starters.length;
+                                const totalDraftedValue = draftedPlayers.reduce((s, p) => s + (p.fc_value || 0), 0);
+                                const redraftValue = draftedPlayers.reduce((s, p) => s + (p.redraft_auction_value || 0), 0);
+                                const dynastyScore = totalDraftedValue > 25000 ? 'A' : totalDraftedValue > 18000 ? 'B+' : totalDraftedValue > 12000 ? 'B' : totalDraftedValue > 8000 ? 'C+' : 'C';
+                                const winNowScore = redraftValue > 80 ? 'A' : redraftValue > 55 ? 'B+' : redraftValue > 35 ? 'B' : redraftValue > 20 ? 'C+' : 'C';
+                                const youthPct = draftedPlayers.filter(p => (p.years_exp || 0) <= 2).length / (draftedPlayers.length || 1);
+
+                                // --- Value Over Replacement ---
+                                const vorData = draftedPlayers.map((p, idx) => {
+                                    // Find next pick by this team after this one
+                                    const nextTeamPick = draftedPlayers.find((dp, i) => i > idx);
+                                    const nextPickIndex = nextTeamPick ? nextTeamPick.pickIndex : picks.length;
+                                    // Who was the next best player at this position available?
+                                    const nextBestAtPos = freeAgents.find(fa => 
+                                        fa.position === p.position &&
+                                        (fa.fc_value || 0) < (p.fc_value || 0) &&
+                                        !draftedPlayers.some(dp => dp.id === fa.id && dp.pickIndex <= p.pickIndex)
+                                    );
+                                    const vor = (p.fc_value || 0) - (nextBestAtPos?.fc_value || 0);
+                                    return { player: p, nextBest: nextBestAtPos, vor };
+                                });
+
+                                // --- Roster Gaps ---
+                                const rosterByPos: Record<string, Player[]> = { QB: [], RB: [], WR: [], TE: [] };
+                                fullRoster.forEach(p => { if (p.position && p.position in rosterByPos) rosterByPos[p.position].push(p); });
+                                Object.values(rosterByPos).forEach(arr => arr.sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)));
+                                const idealStarters: Record<string, number> = { QB: 1, RB: 2, WR: 3, TE: 1 };
+                                const gaps: { pos: string; issue: string; bestPlayer: string; tier: number }[] = [];
+                                positions.forEach(pos => {
+                                    const best = rosterByPos[pos][0];
+                                    const bestValue = best?.fc_value || 0;
+                                    const count = rosterByPos[pos].length;
+                                    if (count < idealStarters[pos]) {
+                                        gaps.push({ pos, issue: `Missing starter (have ${count}/${idealStarters[pos]})`, bestPlayer: best?.full_name || 'None', tier: 0 });
+                                    } else if (bestValue < 3000 && pos !== 'TE') {
+                                        gaps.push({ pos, issue: `No elite option (best: ${best?.full_name})`, bestPlayer: best?.full_name || '', tier: Math.ceil(bestValue / 1000) });
+                                    } else if (bestValue < 2000 && pos === 'TE') {
+                                        gaps.push({ pos, issue: `No top-tier TE (best: ${best?.full_name})`, bestPlayer: best?.full_name || '', tier: Math.ceil(bestValue / 1000) });
+                                    }
+                                });
+
+                                // --- Draft Efficiency ---
+                                // Theoretical max: if you always took BPA at each pick
+                                let theoreticalMax = 0;
+                                let simPoolIdx = 0;
+                                const sortedFreeAgents = [...freeAgents].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                for (const dp of draftedPlayers) {
+                                    // At this pick position, what was the best available?
+                                    const picksBeforeByOthers = picks.filter((pk, i) => i < dp.pickIndex && pk.teamId !== userTeamId && pk.playerId).length;
+                                    theoreticalMax += sortedFreeAgents[Math.min(simPoolIdx, sortedFreeAgents.length - 1)]?.fc_value || 0;
+                                    simPoolIdx++;
+                                }
+                                const efficiency = theoreticalMax > 0 ? Math.round((totalDraftedValue / theoreticalMax) * 100) : 100;
+                                const effGrade = efficiency >= 90 ? 'A+' : efficiency >= 80 ? 'A' : efficiency >= 70 ? 'B+' : efficiency >= 60 ? 'B' : efficiency >= 50 ? 'C+' : 'C';
+
+                                return (
+                                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 space-y-6">
+                                        <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">📈 Draft Analysis</h3>
+
+                                        {/* Strategy Recap */}
+                                        <div>
+                                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Strategy Recap</h4>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-2.5 text-center">
+                                                    <div className="text-[9px] text-zinc-500 uppercase">Approach</div>
+                                                    <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{strategyLabel}</div>
+                                                </div>
+                                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-2.5 text-center">
+                                                    <div className="text-[9px] text-zinc-500 uppercase">Picks</div>
+                                                    <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{draftedPlayers.length}</div>
+                                                    <div className="text-[9px] text-zinc-400">{Object.entries(posDist).filter(([,v]) => v > 0).map(([k,v]) => `${v}${k}`).join(' · ')}</div>
+                                                </div>
+                                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-2.5 text-center">
+                                                    <div className="text-[9px] text-zinc-500 uppercase">Best Value</div>
+                                                    <div className="text-sm font-bold text-green-600">{bestValue?.player.full_name.split(' ').pop()}</div>
+                                                    <div className="text-[9px] text-zinc-400">{bestValue ? `+${Math.round(bestValue.surplus).toLocaleString()} surplus` : ''}</div>
+                                                </div>
+                                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-2.5 text-center">
+                                                    <div className="text-[9px] text-zinc-500 uppercase">Biggest Reach</div>
+                                                    <div className="text-sm font-bold text-amber-600">{biggestReach && biggestReach.betterAvailable > 3 ? biggestReach.player.full_name.split(' ').pop() : 'None'}</div>
+                                                    <div className="text-[9px] text-zinc-400">{biggestReach && biggestReach.betterAvailable > 3 ? `${biggestReach.betterAvailable} better avail` : 'Solid picks'}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Win-Now vs Dynasty */}
+                                        <div>
+                                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Win-Now vs Dynasty</h4>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-xs font-bold text-amber-700 dark:text-amber-400">Win-Now</span>
+                                                        <span className={`text-lg font-black ${winNowScore.startsWith('A') ? 'text-green-600' : winNowScore.startsWith('B') ? 'text-blue-600' : 'text-amber-600'}`}>{winNowScore}</span>
+                                                    </div>
+                                                    <div className="text-[10px] text-amber-600 dark:text-amber-400">{startersCount} starters drafted</div>
+                                                    <div className="text-[10px] text-amber-600 dark:text-amber-400">${redraftValue} auction value</div>
+                                                </div>
+                                                <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg p-3">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-xs font-bold text-purple-700 dark:text-purple-400">Dynasty</span>
+                                                        <span className={`text-lg font-black ${dynastyScore.startsWith('A') ? 'text-green-600' : dynastyScore.startsWith('B') ? 'text-blue-600' : 'text-amber-600'}`}>{dynastyScore}</span>
+                                                    </div>
+                                                    <div className="text-[10px] text-purple-600 dark:text-purple-400">{Math.round(youthPct * 100)}% young players (≤2 yrs)</div>
+                                                    <div className="text-[10px] text-purple-600 dark:text-purple-400">{totalDraftedValue.toLocaleString()} dynasty value added</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Value Over Replacement */}
+                                        <div>
+                                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Value Over Replacement</h4>
+                                            <div className="space-y-1">
+                                                {vorData.slice(0, 6).map((v, i) => (
+                                                    <div key={i} className="flex items-center gap-2 text-xs">
+                                                        <span className="text-zinc-400 font-mono w-10">{v.player.round}.{String(v.player.pick).padStart(2, '0')}</span>
+                                                        <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${posBadge(v.player.position || '')}`}>{v.player.position}</span>
+                                                        <span className="text-zinc-900 dark:text-zinc-100 font-medium flex-1 truncate">{v.player.full_name}</span>
+                                                        <span className={`font-mono font-bold text-[11px] ${v.vor > 0 ? 'text-green-600' : 'text-zinc-400'}`}>
+                                                            {v.vor > 0 ? `+${v.vor.toLocaleString()}` : '—'}
+                                                        </span>
+                                                        <span className="text-[9px] text-zinc-400 w-24 text-right truncate">
+                                                            {v.nextBest ? `vs ${v.nextBest.full_name.split(' ').pop()}` : ''}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {vorData.length > 6 && <div className="text-[9px] text-zinc-400 mt-1">+ {vorData.length - 6} more picks</div>}
+                                        </div>
+
+                                        {/* Roster Gaps */}
+                                        <div>
+                                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Roster Gaps Remaining</h4>
+                                            {gaps.length === 0 ? (
+                                                <div className="text-xs text-green-600 dark:text-green-400 font-medium">✓ No critical gaps — roster is well-rounded</div>
+                                            ) : (
+                                                <div className="space-y-1.5">
+                                                    {gaps.map((g, i) => (
+                                                        <div key={i} className="flex items-center gap-2 text-xs bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${posBadge(g.pos)}`}>{g.pos}</span>
+                                                            <span className="text-red-700 dark:text-red-300 flex-1">{g.issue}</span>
+                                                            <span className="text-[9px] text-red-500">Consider trading for upgrade</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Draft Efficiency */}
+                                        <div>
+                                            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Draft Efficiency</h4>
+                                            <div className="flex items-center gap-4">
+                                                <div className="flex-1">
+                                                    <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                                                        <span>Actual: {totalDraftedValue.toLocaleString()}</span>
+                                                        <span>Theoretical Max: {theoreticalMax.toLocaleString()}</span>
+                                                    </div>
+                                                    <div className="h-3 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                                        <div
+                                                            className={`h-full rounded-full transition-all ${efficiency >= 80 ? 'bg-green-500' : efficiency >= 60 ? 'bg-blue-500' : 'bg-amber-500'}`}
+                                                            style={{ width: `${Math.min(100, efficiency)}%` }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="text-center">
+                                                    <div className={`text-2xl font-black ${effGrade.startsWith('A') ? 'text-green-600' : effGrade.startsWith('B') ? 'text-blue-600' : 'text-amber-600'}`}>{effGrade}</div>
+                                                    <div className="text-[9px] text-zinc-400">{efficiency}%</div>
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] text-zinc-500 mt-2">
+                                                {efficiency >= 85 ? 'Excellent — you drafted near-optimal value at every pick.' :
+                                                 efficiency >= 70 ? 'Good — you captured strong value with minor misses.' :
+                                                 efficiency >= 55 ? 'Average — some value left on the board, likely for positional need.' :
+                                                 'Below average — significant value missed. Consider BPA strategy next time.'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
                             {/* League draft grades */}
                             <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 overflow-x-auto">
                                 <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">League Draft Grades</h3>
