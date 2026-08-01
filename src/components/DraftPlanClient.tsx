@@ -1121,6 +1121,100 @@ function DraftBoardSection({
                 </div>
             )}
 
+            {/* Tier Availability Grid — where do tiers dry up? */}
+            <div>
+                <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-2">Tier Availability by Pick</h2>
+                <p className="text-[10px] text-zinc-400 mb-3">Shows the best tier likely available at each of your picks. ⚠ = last chance (cliff).</p>
+                <div className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden overflow-x-auto">
+                    <table className="w-full text-xs">
+                        <thead>
+                            <tr className="border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+                                <th className="text-left px-2 py-1.5 font-medium text-zinc-500">Position</th>
+                                {picks.map((p, i) => (
+                                    <th key={i} className="text-center px-2 py-1.5 font-medium text-zinc-400 whitespace-nowrap">
+                                        {p.round}.{String(p.slot).padStart(2, '0')}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {(['QB', 'RB', 'WR', 'TE'] as const).map(pos => {
+                                // For each pick, determine what tier is available using simulation data or pool rank
+                                const tierByPick = picks.map((pick, pickIdx) => {
+                                    const overallPick = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
+                                    // Get players at this position remaining at this pick
+                                    const posPlayers = draftPool.filter(p => p.position === pos);
+
+                                    if (simResult) {
+                                        // Monte Carlo: find best player at position with >50% availability
+                                        const available = posPlayers
+                                            .map(p => {
+                                                const counts = simResult.availability.get(p.id);
+                                                const prob = counts ? Math.round((counts[pickIdx] / simResult.totalSims) * 100) : 0;
+                                                return { ...p, prob };
+                                            })
+                                            .filter(p => p.prob >= 50)
+                                            .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                        const bestVal = available[0]?.fc_value || 0;
+                                        const count = available.length;
+                                        return { bestVal, count };
+                                    } else {
+                                        // Heuristic: estimate based on pick position
+                                        const demandFactor = pos === 'RB' ? 0.30 : pos === 'WR' ? 0.35 : pos === 'QB' ? (sf ? 0.18 : 0.10) : 0.10;
+                                        const estimatedGone = Math.floor(overallPick * demandFactor);
+                                        const remaining = posPlayers.slice(estimatedGone);
+                                        const bestVal = remaining[0]?.fc_value || 0;
+                                        const count = remaining.filter(p => (p.fc_value || 0) >= bestVal * 0.65).length;
+                                        return { bestVal, count };
+                                    }
+                                });
+
+                                // Determine tiers and cliffs
+                                const getTierLabel = (val: number): string => {
+                                    if (val >= 5000) return 'T1-3';
+                                    if (val >= 3500) return 'T4-6';
+                                    if (val >= 2500) return 'T7-9';
+                                    if (val >= 1500) return 'T10-12';
+                                    if (val >= 800) return 'T13+';
+                                    return '—';
+                                };
+
+                                const getTierColor = (val: number): string => {
+                                    if (val >= 5000) return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
+                                    if (val >= 3500) return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300';
+                                    if (val >= 2500) return 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300';
+                                    if (val >= 1500) return 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300';
+                                    if (val >= 800) return 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500';
+                                    return 'text-zinc-300 dark:text-zinc-600';
+                                };
+
+                                return (
+                                    <tr key={pos} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0">
+                                        <td className={`px-2 py-1.5 font-bold text-[10px] ${posColor(pos)}`}>{pos}</td>
+                                        {tierByPick.map((tier, i) => {
+                                            // Detect cliff: tier drops significantly from previous pick
+                                            const prevTier = i > 0 ? tierByPick[i - 1] : null;
+                                            const isCliff = prevTier && prevTier.bestVal >= 2500 && tier.bestVal < prevTier.bestVal * 0.65;
+                                            const isLastChance = tier.count <= 2 && tier.bestVal >= 1500;
+
+                                            return (
+                                                <td key={i} className="text-center px-1 py-1.5">
+                                                    <div className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${getTierColor(tier.bestVal)}`}>
+                                                        {getTierLabel(tier.bestVal)}
+                                                        {(isCliff || isLastChance) && <span title="Cliff — tier dries up after this">⚠</span>}
+                                                    </div>
+                                                    <div className="text-[8px] text-zinc-400 mt-0.5">{tier.count} left</div>
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             {/* Draft Board - each pick with suggestion */}
             <div>
                 <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Your Picks</h2>
