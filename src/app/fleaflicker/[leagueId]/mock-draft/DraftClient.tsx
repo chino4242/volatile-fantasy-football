@@ -283,23 +283,52 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         }
     }, [userTeamId, keeperCount, keepersConfirmed, activeTeams, draftPlan]); // run when team selected or count changes
 
-    // Auto-confirm keepers when loaded from draft plan (skip manual selection step)
-    const planKeepersAutoConfirmed = useRef(false);
-    useEffect(() => {
-        if (
-            userTeamId &&
-            keeperCount &&
-            keeperCount > 0 &&
-            !keepersConfirmed &&
-            !planKeepersAutoConfirmed.current &&
-            draftPlan &&
-            draftPlan.keeper_ids.length > 0 &&
-            selectedKeepers.size === keeperCount
-        ) {
-            planKeepersAutoConfirmed.current = true;
-            handleConfirmKeepers();
+    // Track whether user chose to use plan (shows choice screen after team selection)
+    const [planChoice, setPlanChoice] = useState<'pending' | 'plan' | 'manual'>('pending');
+
+    const handleUsePlan = () => {
+        if (draftPlan && draftPlan.keeper_ids.length > 0) {
+            setSelectedKeepers(new Set(draftPlan.keeper_ids));
+            setPlanChoice('plan');
+            // Confirm keepers immediately using plan data
+            if (!keeperCount) return;
+            const updatedTeams = [...activeTeams];
+            const newDroppedPlayers: (Player & { droppedByTeam?: string })[] = [];
+            const planKeeperSet = new Set(draftPlan.keeper_ids);
+
+            for (let i = 0; i < updatedTeams.length; i++) {
+                const team = updatedTeams[i];
+                let keptPlayers = [...team.players];
+
+                if (team.id === userTeamId) {
+                    keptPlayers = team.players.filter(p => planKeeperSet.has(p.id));
+                    const dropped = team.players.filter(p => !planKeeperSet.has(p.id));
+                    newDroppedPlayers.push(...dropped.map(p => ({ ...p, droppedByTeam: team.name })));
+                } else {
+                    if (team.players.length > keeperCount) {
+                        const sorted = [...team.players].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                        keptPlayers = sorted.slice(0, keeperCount);
+                        const dropped = sorted.slice(keeperCount);
+                        newDroppedPlayers.push(...dropped.map(p => ({ ...p, droppedByTeam: team.name })));
+                    }
+                }
+
+                const positionValues = { QB: 0, RB: 0, WR: 0, TE: 0 };
+                keptPlayers.forEach(p => {
+                    if (p.position && p.fc_value) {
+                        positionValues[p.position as keyof typeof positionValues] += p.fc_value;
+                    }
+                });
+
+                updatedTeams[i] = { ...team, players: keptPlayers, positionValues };
+            }
+
+            const newFreeAgents = [...availablePlayers, ...newDroppedPlayers].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+            setActiveTeams(updatedTeams);
+            setAvailablePlayers(newFreeAgents);
+            setKeepersConfirmed(true);
         }
-    }, [selectedKeepers, keepersConfirmed, draftPlan, userTeamId]);
+    };
 
     const handleConfirmKeepers = () => {
         if (!keeperCount) return;
@@ -806,6 +835,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         setSelectedKeepers(new Set());
         setSetupComplete(!isSleeper || hasDraftOrder);
         setDraftStarted(false);
+        setPlanChoice('pending');
     };
 
     const sf = format === 'sf';
@@ -1106,8 +1136,57 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                     </div>
                 )}
 
+                {/* Plan or Manual Keepers Choice */}
+                {userTeamId !== null && keeperCount && keeperCount > 0 && !keepersConfirmed && availablePlans.length > 0 && planChoice === 'pending' && (
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 mb-6">
+                        <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
+                            Load Draft Plan?
+                        </h2>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+                            You have a saved draft plan with keepers. Use it or pick keepers manually.
+                        </p>
+                        {availablePlans.length > 1 && (
+                            <div className="mb-4">
+                                <select
+                                    value={availablePlans.find(p => p.name === draftPlan?.name)?.id || ''}
+                                    onChange={(e) => loadPlanById(e.target.value)}
+                                    className="text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 text-zinc-900 dark:text-zinc-100"
+                                >
+                                    {availablePlans.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+                        {draftPlan && (
+                            <div className="mb-4 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg text-xs text-zinc-600 dark:text-zinc-400">
+                                <span className="font-medium text-zinc-900 dark:text-zinc-100">{draftPlan.name || 'Draft Plan'}</span>
+                                {' · '}
+                                {draftPlan.keeper_ids.length} keepers
+                                {draftPlan.picks.filter(p => p.targetPlayer).length > 0 && (
+                                    <> · {draftPlan.picks.filter(p => p.targetPlayer).length} pick targets</>
+                                )}
+                            </div>
+                        )}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={handleUsePlan}
+                                className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors"
+                            >
+                                📋 Use Plan Keepers
+                            </button>
+                            <button
+                                onClick={() => setPlanChoice('manual')}
+                                className="flex-1 px-4 py-3 border-2 border-zinc-300 dark:border-zinc-600 hover:border-zinc-400 text-zinc-700 dark:text-zinc-300 font-medium rounded-lg transition-colors"
+                            >
+                                ✋ Pick Manually
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Select Keepers Screen */}
-                {userTeamId !== null && keeperCount && keeperCount > 0 && !keepersConfirmed && (
+                {userTeamId !== null && keeperCount && keeperCount > 0 && !keepersConfirmed && (availablePlans.length === 0 || planChoice === 'manual') && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-6 mb-6">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
                             <div>
