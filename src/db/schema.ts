@@ -276,6 +276,9 @@ export const prospectData = pgTable("prospect_data", {
     rookie_pos_rank: integer("rookie_pos_rank"),
     rookie_tier: integer("rookie_tier"),
     
+    // Target/Fade designation from Late Round guide
+    target_fade: text("target_fade"), // 'target', 'fade', or null
+    
     // AI-generated sentiment analysis
     ai_confidence: integer("ai_confidence"),
     ai_summary: text("ai_summary"),

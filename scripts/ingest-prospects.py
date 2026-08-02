@@ -66,6 +66,17 @@ def extract_rookie_profile(text, position):
     if breakout:
         data['breakout_score'] = float(breakout.group(1))
 
+    # Target/Fade designation
+    text_lower = text.lower()
+    if re.search(r'\btarget\b', text_lower) and not re.search(r'\bfade\b', text_lower):
+        data['target_fade'] = 'target'
+    elif re.search(r'\bfade\b', text_lower) and not re.search(r'\btarget\b', text_lower):
+        data['target_fade'] = 'fade'
+    elif re.search(r'🎯|TARGET', text):
+        data['target_fade'] = 'target'
+    elif re.search(r'FADE|👎', text):
+        data['target_fade'] = 'fade'
+
     # Analysis text (everything after the header block)
     zap_idx = text.find('ZAP Score')
     if zap_idx != -1:
@@ -188,6 +199,7 @@ def insert_prospects(prospects):
             p.get('statistical_comparables'),
             p.get('analysis_text'),
             p.get('is_year_2', False),
+            p.get('target_fade'),
         ))
 
     try:
@@ -206,7 +218,7 @@ def insert_prospects(prospects):
         INSERT INTO prospect_data (
             full_name, position, college, nfl_team, draft_year, zap_score, zap_category,
             breakout_score, draft_capital_delta, height, weight,
-            statistical_comparables, analysis_text, is_year_2
+            statistical_comparables, analysis_text, is_year_2, target_fade
         ) VALUES %s
         ON CONFLICT (full_name, draft_year) DO UPDATE SET
             position = EXCLUDED.position,
@@ -221,6 +233,7 @@ def insert_prospects(prospects):
             statistical_comparables = EXCLUDED.statistical_comparables,
             analysis_text = EXCLUDED.analysis_text,
             is_year_2 = EXCLUDED.is_year_2,
+            target_fade = EXCLUDED.target_fade,
             updated_at = NOW()
     """
 

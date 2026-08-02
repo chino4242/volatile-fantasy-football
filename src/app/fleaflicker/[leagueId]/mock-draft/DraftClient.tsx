@@ -43,6 +43,7 @@ interface Player {
     rookie_rank?: number | null;
     rookie_pos_rank?: number | null;
     rookie_tier?: number | null;
+    target_fade?: string | null;
     redraft_rank_overall?: number | null;
     redraft_rank_pos?: number | null;
     redraft_rank_tier?: number | null;
@@ -735,6 +736,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             if (bestConfidence >= 8) { value *= 1.04; }
             else if (bestConfidence <= 3) { value *= 0.96; }
         }
+
+        // Target/Fade modifier from prospect guide
+        if (player.target_fade === 'target') { value *= 1.10; tags.push('🎯 Target'); }
+        else if (player.target_fade === 'fade') { value *= 0.85; tags.push('Fade'); }
 
         const adjustedValue = value * (1 + dynastyBoost + redraftBoost + zapBoost);
 
