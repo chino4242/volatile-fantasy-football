@@ -2423,6 +2423,36 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 customRankingsMap={customRankingsMap}
                             />
                         )}
+                        {userTeamId !== null && myRosterPlayers.length > 0 && (
+                            <div className="mt-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h4 className="text-xs font-bold text-zinc-500 uppercase">Roster ({myRosterPlayers.length})</h4>
+                                    <span className="text-[10px] text-zinc-400">
+                                        ${myRosterPlayers.reduce((s, p) => s + (p.redraft_auction_value || 0), 0)} total auction
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
+                                    {[...myRosterPlayers].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)).map(p => (
+                                        <div key={p.id} className="flex items-center gap-1.5 text-xs py-0.5">
+                                            <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${
+                                                p.position === 'QB' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
+                                                p.position === 'RB' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' :
+                                                p.position === 'WR' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
+                                                p.position === 'TE' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' :
+                                                'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                                            }`}>{p.position}</span>
+                                            <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">{p.full_name}</span>
+                                            <span className="text-zinc-400 font-mono text-[10px]">{(p.fc_value || 0).toLocaleString()}</span>
+                                            {p.redraft_auction_value ? (
+                                                <span className="text-amber-600 font-mono text-[10px] w-7 text-right">${p.redraft_auction_value}</span>
+                                            ) : (
+                                                <span className="text-zinc-300 dark:text-zinc-700 font-mono text-[10px] w-7 text-right">—</span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
