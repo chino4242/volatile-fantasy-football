@@ -2156,14 +2156,19 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 let theoreticalMax = 0;
                                 let simPoolIdx = 0;
                                 const sortedFreeAgents = [...freeAgents].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                const effBreakdown: { player: typeof draftedPlayers[0]; bpa: Player | null; bpaValue: number; actualValue: number; delta: number }[] = [];
                                 for (const dp of draftedPlayers) {
-                                    // At this pick position, what was the best available?
-                                    const picksBeforeByOthers = picks.filter((pk, i) => i < dp.pickIndex && pk.teamId !== userTeamId && pk.playerId).length;
-                                    theoreticalMax += sortedFreeAgents[Math.min(simPoolIdx, sortedFreeAgents.length - 1)]?.fc_value || 0;
+                                    const bpaPlayer = sortedFreeAgents[Math.min(simPoolIdx, sortedFreeAgents.length - 1)] || null;
+                                    const bpaValue = bpaPlayer?.fc_value || 0;
+                                    const actualValue = dp.fc_value || 0;
+                                    const delta = actualValue - bpaValue;
+                                    theoreticalMax += bpaValue;
+                                    effBreakdown.push({ player: dp, bpa: bpaPlayer, bpaValue, actualValue, delta });
                                     simPoolIdx++;
                                 }
                                 const efficiency = theoreticalMax > 0 ? Math.round((totalDraftedValue / theoreticalMax) * 100) : 100;
                                 const effGrade = efficiency >= 90 ? 'A+' : efficiency >= 80 ? 'A' : efficiency >= 70 ? 'B+' : efficiency >= 60 ? 'B' : efficiency >= 50 ? 'C+' : 'C';
+                                const biggestMisses = [...effBreakdown].sort((a, b) => a.delta - b.delta).filter(e => e.delta < -200);
 
                                 return (
                                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 space-y-6">
@@ -2284,6 +2289,34 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                  efficiency >= 55 ? 'Average — some value left on the board, likely for positional need.' :
                                                  'Below average — significant value missed. Consider BPA strategy next time.'}
                                             </p>
+                                            {/* Per-pick breakdown */}
+                                            <div className="mt-3 space-y-0.5">
+                                                <div className="text-[9px] font-bold text-zinc-400 uppercase mb-1">Pick-by-Pick Breakdown</div>
+                                                {effBreakdown.map((e, i) => (
+                                                    <div key={i} className="flex items-center gap-1.5 text-[11px]">
+                                                        <span className="text-zinc-400 font-mono w-10">{e.player.round}.{String(e.player.pick).padStart(2, '0')}</span>
+                                                        <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">{e.player.full_name}</span>
+                                                        <span className="text-zinc-500 font-mono w-12 text-right">{e.actualValue.toLocaleString()}</span>
+                                                        <span className="text-zinc-400 w-4 text-center">vs</span>
+                                                        <span className="text-zinc-400 font-mono w-12 text-right">{e.bpaValue.toLocaleString()}</span>
+                                                        <span className={`font-mono font-bold w-14 text-right text-[10px] ${e.delta >= 0 ? 'text-green-600' : e.delta > -500 ? 'text-amber-500' : 'text-red-500'}`}>
+                                                            {e.delta >= 0 ? '+' : ''}{e.delta.toLocaleString()}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {biggestMisses.length > 0 && (
+                                                <div className="mt-3 p-2.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                                                    <div className="text-[9px] font-bold text-amber-700 dark:text-amber-400 uppercase mb-1">Value Left on Board</div>
+                                                    <div className="space-y-1">
+                                                        {biggestMisses.slice(0, 3).map((e, i) => (
+                                                            <div key={i} className="text-[11px] text-amber-700 dark:text-amber-300">
+                                                                {e.player.round}.{String(e.player.pick).padStart(2, '0')}: Took <span className="font-medium">{e.player.full_name}</span> ({e.actualValue.toLocaleString()}) — BPA was <span className="font-medium">{e.bpa?.full_name}</span> ({e.bpaValue.toLocaleString()})
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 );
