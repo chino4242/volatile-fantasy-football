@@ -1648,6 +1648,17 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                 {planPick.targetPosition && (
                                                                     <span className="text-[10px] text-zinc-500">({planPick.targetPosition})</span>
                                                                 )}
+                                                                {isAvailable && (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            const player = availablePlayers.find(p => p.full_name === planPick.targetPlayer);
+                                                                            if (player) makePick(player.id, 'Draft Plan');
+                                                                        }}
+                                                                        className="ml-auto px-3 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg active:scale-95 transition-all"
+                                                                    >
+                                                                        Draft
+                                                                    </button>
+                                                                )}
                                                                 {!isAvailable && <span className="text-[10px] text-red-500 font-medium ml-auto">Unavailable</span>}
                                                             </div>
                                                             {planPick.notes && <div className="text-[10px] text-zinc-500 mt-0.5">{planPick.notes}</div>}
