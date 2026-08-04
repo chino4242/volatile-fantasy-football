@@ -36,6 +36,10 @@ interface PickPlanEntry {
     targetPlayer: string | null; // primary player name (first selected)
     targetPlayers: string[]; // multiple penciled-in options
     notes: string;
+    isKeeper?: boolean;
+    keeperName?: string;
+    keeperPosition?: string | null;
+    keeperValue?: number | null;
 }
 
 interface RosterTargets {
@@ -54,6 +58,7 @@ interface DraftPlanClientProps {
     allTeams: TeamData[];
     freeAgents: Player[];
     keeperCount?: number;
+    keeperPicks?: { round: number; pick_no: number; overall: number; roster_id: number; draft_slot: number; player_id: string; player_name: string; player_position: string | null; player_value: number | null; player_data?: any }[];
     customRankingsMap?: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]>;
     statsBoostMap?: Record<string, number>;
 }
@@ -79,6 +84,7 @@ export function DraftPlanClient({
     allTeams,
     freeAgents,
     keeperCount,
+    keeperPicks,
     customRankingsMap,
     statsBoostMap,
 }: DraftPlanClientProps) {
@@ -154,6 +160,12 @@ export function DraftPlanClient({
                         // Auto-select the most recently updated plan
                         const mostRecent = loadedPlans[0];
                         loadPlanData(mostRecent);
+                    } else if (keeperPicks && keeperPicks.length > 0 && selectedTeamId) {
+                        // No saved plan — auto-populate keepers from Sleeper pre-draft picks
+                        const myKeeperIds = keeperPicks
+                            .filter(kp => kp.roster_id === selectedTeamId)
+                            .map(kp => kp.player_id);
+                        if (myKeeperIds.length > 0) setKeeperIds(myKeeperIds);
                     }
                 }
             } catch (e) {
@@ -258,21 +270,48 @@ export function DraftPlanClient({
             const allPicks = [...activeTeam.draftPicks]
                 .sort((a, b) => a.overall - b.overall);
 
-            // Cap at open roster spots
-            // Open spots = keeperCount (you keep 10, draft 10 to fill back to 20)
-            const openSpots = keeperCount || allPicks.length;
+            // Identify keeper slots (pre-draft picks for this team)
+            const keeperSlotMap = new Map<number, { player_name: string; player_position: string | null; player_value: number | null }>();
+            if (keeperPicks) {
+                for (const kp of keeperPicks) {
+                    if (kp.roster_id === activeTeam.id) {
+                        keeperSlotMap.set(kp.pick_no, { player_name: kp.player_name, player_position: kp.player_position, player_value: kp.player_value });
+                    }
+                }
+            }
+
+            // Include all picks, but mark keeper slots
+            const openSpots = keeperCount ? allPicks.length : allPicks.length;
             const cappedPicks = allPicks.slice(0, openSpots);
 
             if (cappedPicks.length > 0) {
-                setPicks(cappedPicks.map(p => ({
-                    pickNumber: p.overall,
-                    round: p.round,
-                    slot: p.slot,
-                    targetPosition: null,
-                    targetPlayer: null,
-                    targetPlayers: [],
-                    notes: '',
-                })));
+                setPicks(cappedPicks.map(p => {
+                    const keeper = keeperSlotMap.get(p.overall);
+                    if (keeper) {
+                        return {
+                            pickNumber: p.overall,
+                            round: p.round,
+                            slot: p.slot,
+                            targetPosition: keeper.player_position,
+                            targetPlayer: keeper.player_name,
+                            targetPlayers: [keeper.player_name],
+                            notes: 'Keeper',
+                            isKeeper: true,
+                            keeperName: keeper.player_name,
+                            keeperPosition: keeper.player_position,
+                            keeperValue: keeper.player_value,
+                        };
+                    }
+                    return {
+                        pickNumber: p.overall,
+                        round: p.round,
+                        slot: p.slot,
+                        targetPosition: null,
+                        targetPlayer: null,
+                        targetPlayers: [],
+                        notes: '',
+                    };
+                }));
             }
         }
     }, [loading, activeTeam, keeperCount]);
@@ -749,6 +788,13 @@ function DraftBoardSection({
     for (let idx = 0; idx < picks.length; idx++) {
         const pick = picks[idx];
         const overallPick = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
+
+        // Skip keeper slots — no simulation needed
+        if (pick.isKeeper) {
+            pickSuggestions.push({ ...pick, suggestion: 'Keeper', targetPos: pick.keeperPosition || '', best: null, runnerUp: null, insights: [], candidates: [], tierInfo: null });
+            lastOverall = overallPick;
+            continue;
+        }
 
         // Simulate CPU picks between our last pick and this one
         const picksBetween = Math.max(0, overallPick - lastOverall - 1);
@@ -1410,6 +1456,32 @@ function DraftBoardSection({
                         const hasOverride = userSelections.length > 0;
                         const isExpanded = expandedPickIdx === idx;
                         const pickOverall = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
+                        const isKeeperSlot = picks[idx]?.isKeeper;
+
+                        // Keeper slot — show locked row, no interaction
+                        if (isKeeperSlot) {
+                            return (
+                                <div key={idx} className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/10 overflow-hidden">
+                                    <div className="flex items-center gap-3 px-3 py-2.5">
+                                        <span className="text-xs font-bold text-green-600 dark:text-green-400 w-10 flex-shrink-0">
+                                            {pick.round}.{String(pick.slot).padStart(2, '0')}
+                                        </span>
+                                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${posColor(picks[idx]?.keeperPosition || null)}`}>
+                                            {picks[idx]?.keeperPosition}
+                                        </span>
+                                        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 flex-1">
+                                            {picks[idx]?.keeperName}
+                                        </span>
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                                            KEEPER
+                                        </span>
+                                        {picks[idx]?.keeperValue && (
+                                            <span className="text-xs font-mono text-zinc-400">{picks[idx].keeperValue!.toLocaleString()}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        }
 
                         return (
                             <div key={idx} className="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">

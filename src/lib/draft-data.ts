@@ -110,6 +110,15 @@ export async function getSleeperDraftData(leagueId: string, formatParam?: string
         if (!format && ld[0]?.scoring_format) format = ld[0].scoring_format as '1qb' | 'sf';
         if (!keeperCount && ld[0]?.league_type === 'keeper' && ld[0]?.keeper_count) keeperCount = ld[0].keeper_count;
     }
+    // Fallback: check Sleeper league API for max_keepers
+    if (!keeperCount) {
+        try {
+            const sleeperLeague = await fetch(`https://api.sleeper.app/v1/league/${leagueId}`).then(r => r.json());
+            if (sleeperLeague?.settings?.max_keepers && sleeperLeague.settings.max_keepers > 0) {
+                keeperCount = sleeperLeague.settings.max_keepers;
+            }
+        } catch {}
+    }
     if (!format) format = 'sf';
     const sf = format === 'sf';
 

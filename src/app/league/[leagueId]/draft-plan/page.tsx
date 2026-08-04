@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { players, playerValues, leagues } from '@/db/schema';
-import { getLeagueData, getAllDraftPicks, getCurrentSeasonDraft, getDraftTradedPicks } from '@/lib/sleeper';
+import { getLeagueData, getAllDraftPicks, getCurrentSeasonDraft, getDraftTradedPicks, getDraftPicks } from '@/lib/sleeper';
 import { eq, inArray, notInArray, not, like, desc, and } from 'drizzle-orm';
 import { DraftPlanClient } from '@/components/DraftPlanClient';
 import { createClient } from '@/lib/supabase/server';
@@ -28,6 +28,16 @@ export default async function SleeperDraftPlanPage({
             .from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
         if (!formatParam && ld[0]?.scoring_format) format = ld[0].scoring_format as '1qb' | 'sf';
         if (!keeperCount && ld[0]?.league_type === 'keeper' && ld[0]?.keeper_count) keeperCount = ld[0].keeper_count;
+    }
+
+    // Fallback: check Sleeper league settings for max_keepers
+    if (!keeperCount) {
+        try {
+            const sleeperLeague = await fetch(`https://api.sleeper.app/v1/league/${leagueId}`).then(r => r.json());
+            if (sleeperLeague?.settings?.max_keepers && sleeperLeague.settings.max_keepers > 0) {
+                keeperCount = sleeperLeague.settings.max_keepers;
+            }
+        } catch {}
     }
 
     const sf = format === 'sf';
@@ -71,18 +81,7 @@ export default async function SleeperDraftPlanPage({
         }
 
         const numTeams = Object.keys(slotToRoster).length || rosters.length;
-        const rounds = (() => {
-            const draftRounds = draft?.settings?.rounds || 5;
-            // In keeper leagues, rounds = roster_limit - keepers
-            // Use the larger of: draft settings or (roster size / teams) to handle keeper drafts
-            if (keeperCount && keeperCount > 0) {
-                // Estimate roster limit from the first team's player count
-                const rosterSize = rosters[0]?.players?.length || 20;
-                const keeperDraftRounds = rosterSize - keeperCount;
-                return Math.max(draftRounds, keeperDraftRounds);
-            }
-            return draftRounds;
-        })();
+        const rounds = draft?.settings?.rounds || 15;
         const isSnake = draft?.type === 'snake';
 
         // Build draft board
@@ -125,23 +124,57 @@ export default async function SleeperDraftPlanPage({
 
         const playerMap = new Map(rosteredPlayers.map(p => [p.id, p]));
 
+        // Fetch pre-draft keeper picks
+        const preDraftPicks = draft ? await getDraftPicks(draft.draft_id) : [];
+        const keeperPlayerIds = preDraftPicks.filter(p => p.player_id).map(p => p.player_id);
+        
+        // Fetch keeper player data from DB if not already rostered
+        const missingKeeperIds = keeperPlayerIds.filter(id => !playerMap.has(id));
+        if (missingKeeperIds.length > 0) {
+            const keeperPlayersFromDb = await db.select(playerSelect).from(players).leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id)).where(inArray(players.sleeper_id, missingKeeperIds));
+            for (const kp of keeperPlayersFromDb) { playerMap.set(kp.id, kp); }
+        }
+
+        // Build keeperPicks with full player data
+        const keeperPicks = preDraftPicks.filter(p => p.player_id).map(p => {
+            const playerData = playerMap.get(p.player_id);
+            return {
+                round: p.round,
+                pick_no: p.pick_no,
+                overall: p.pick_no,
+                roster_id: p.roster_id,
+                draft_slot: p.draft_slot,
+                player_id: p.player_id,
+                player_name: playerData ? playerData.full_name : `${p.metadata?.first_name || ''} ${p.metadata?.last_name || ''}`.trim(),
+                player_position: playerData?.position || p.metadata?.position || null,
+                player_value: playerData?.fc_value || null,
+                player_data: playerData || null,
+            };
+        });
+
         // Build teams
         const allTeams = rosters.map(roster => {
             const owner = userMap.get(roster.owner_id);
             const rosterPlayers = (roster.players || []).map(pid => playerMap.get(pid)).filter(Boolean) as typeof rosteredPlayers;
+            // Add keeper players to their team's roster (in pre-draft, rosters may be empty)
+            const teamKeepers = keeperPicks
+                .filter(kp => kp.roster_id === roster.roster_id && kp.player_data)
+                .map(kp => kp.player_data!)
+                .filter((p): p is NonNullable<typeof p> => p !== null && !rosterPlayers.some(rp => rp.id === p.id));
             const teamPicks = draftBoard.filter(p => p.currentOwner === roster.roster_id);
             return {
                 id: roster.roster_id,
                 name: owner?.display_name || `Team ${roster.roster_id}`,
-                players: rosterPlayers,
+                players: [...rosterPlayers, ...teamKeepers],
                 draftPicks: teamPicks,
             };
         });
 
         const myTeam = myRosterId ? allTeams.find(t => t.id === myRosterId) : allTeams[0];
 
-        // Fetch top free agents
-        const excludeIds = allRosteredIds.length > 0 ? allRosteredIds : ['dummy'];
+        // Fetch top free agents (exclude rostered + keepers)
+        const allExcludeIds = [...(allRosteredIds.length > 0 ? allRosteredIds : []), ...keeperPlayerIds];
+        const excludeIds = allExcludeIds.length > 0 ? allExcludeIds : ['dummy'];
         const freeAgents = await db.select(playerSelect)
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -160,6 +193,7 @@ export default async function SleeperDraftPlanPage({
                         allTeams={allTeams}
                         freeAgents={freeAgents}
                         keeperCount={keeperCount}
+                        keeperPicks={keeperPicks}
                     />
                 </div>
             </div>
