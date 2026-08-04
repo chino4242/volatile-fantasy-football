@@ -190,6 +190,33 @@ export async function getLeagueDrafts(leagueId: string): Promise<SleeperDraft[]>
     return data;
 }
 
+export interface SleeperDraftPick {
+    round: number;
+    pick_no: number;
+    roster_id: number;
+    player_id: string;
+    draft_slot: number;
+    is_keeper: boolean | null;
+    metadata: {
+        first_name?: string;
+        last_name?: string;
+        position?: string;
+        team?: string;
+    };
+}
+
+export async function getDraftPicks(draftId: string): Promise<SleeperDraftPick[]> {
+    const cacheKey = `sleeper:draft_picks:${draftId}`;
+    const cached = cache.get<SleeperDraftPick[]>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+
+    const res = await fetch(`${BASE_URL}/draft/${draftId}/picks`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    cache.set(cacheKey, data);
+    return data;
+}
+
 export async function getDraftTradedPicks(draftId: string): Promise<SleeperDraftTradedPick[]> {
     const cacheKey = `sleeper:draft_traded_picks:${draftId}`;
     const cached = cache.get<SleeperDraftTradedPick[]>(cacheKey, TTL.LEAGUE_DATA);

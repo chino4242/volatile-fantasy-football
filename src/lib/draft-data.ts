@@ -99,7 +99,7 @@ export async function getFleaflickerDraftData(leagueId: string, formatParam?: st
     return { teams, freeAgents, format, rankingsVintage, redraftVintage, rosterSlots, keeperCount, customRankingsMap: customRankingsData };
 }
 
-import { getLeagueData, getAllDraftPicks, getDraftTradedPicks, getCurrentSeasonDraft, type SleeperTradedPick } from '@/lib/sleeper';
+import { getLeagueData, getAllDraftPicks, getDraftPicks, getDraftTradedPicks, getCurrentSeasonDraft, type SleeperTradedPick } from '@/lib/sleeper';
 import { inArray, and, notInArray, not, like, desc } from 'drizzle-orm';
 
 export async function getSleeperDraftData(leagueId: string, formatParam?: string, keepersParam?: string) {
@@ -173,8 +173,22 @@ export async function getSleeperDraftData(leagueId: string, formatParam?: string
     };
 
     const rosteredPlayersWithZap = rosteredPlayers.map(addZap);
+    // Fetch pre-draft picks (keepers) from the Sleeper draft API
+    const preDraftPicks = draft ? await getDraftPicks(draft.draft_id) : [];
+    const keeperPlayerIds = preDraftPicks.filter(p => p.player_id).map(p => p.player_id);
+
+    // Fetch keeper players from DB (they may not be on any roster yet)
+    const keeperPlayersFromDb = keeperPlayerIds.length > 0
+        ? await db.select(playerSelect).from(players).leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id)).where(inArray(players.sleeper_id, keeperPlayerIds))
+        : [];
+    const keeperPlayersWithZap = keeperPlayersFromDb.map(addZap);
+
     const playerMap = new Map(rosteredPlayersWithZap.map(p => [p.id, p]));
-    const excludeIds = allRosteredIds.length > 0 ? allRosteredIds : ['dummy'];
+    // Also add keeper players to the map
+    for (const kp of keeperPlayersWithZap) { playerMap.set(kp.id, kp); }
+
+    const allExcludeIds = [...allRosteredIds, ...keeperPlayerIds];
+    const excludeIds = allExcludeIds.length > 0 ? allExcludeIds : ['dummy'];
     const freeAgents = await db.select(playerSelect).from(players).leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id)).where(and(notInArray(players.sleeper_id, excludeIds), not(like(players.sleeper_id, '%pick%')), inArray(players.position, ['QB', 'RB', 'WR', 'TE', 'DEF']))).orderBy(desc(valueCol)).limit(300);
     const freeAgentsWithZap = freeAgents.map(addZap);
 
@@ -194,5 +208,24 @@ export async function getSleeperDraftData(leagueId: string, formatParam?: string
         fetchCustomRankingsMap(),
     ]);
 
-    return { teams, freeAgents: freeAgentsWithZap, format, rankingsVintage, redraftVintage, keeperCount, customRankingsMap: customRankingsData };
+    // Build keeperPicks from the pre-draft picks (already fetched above)
+    const keeperPicks = preDraftPicks
+        .filter(p => p.player_id) // only picks that have a player assigned
+        .map(p => {
+            const playerData = playerMap.get(p.player_id);
+            return {
+                round: p.round,
+                pick_no: p.pick_no,
+                overall: p.pick_no,
+                roster_id: p.roster_id,
+                draft_slot: p.draft_slot,
+                player_id: p.player_id,
+                player_name: playerData ? playerData.full_name : `${p.metadata?.first_name || ''} ${p.metadata?.last_name || ''}`.trim(),
+                player_position: playerData?.position || p.metadata?.position || null,
+                player_value: playerData?.fc_value || null,
+                player_data: playerData || null,
+            };
+        });
+
+    return { teams, freeAgents: freeAgentsWithZap, format, rankingsVintage, redraftVintage, keeperCount, customRankingsMap: customRankingsData, keeperPicks };
 }

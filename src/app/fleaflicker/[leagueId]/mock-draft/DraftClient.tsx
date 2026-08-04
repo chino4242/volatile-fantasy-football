@@ -77,6 +77,7 @@ interface DraftPick {
     playerPosition?: string;
     playerValue?: number;
     pickReason?: string;
+    isKeeper?: boolean;
 }
 
 interface DraftClientProps {
@@ -92,11 +93,12 @@ interface DraftClientProps {
     mode?: 'mock' | 'live';
     defaultUserTeamId?: number;
     customRankingsMap?: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]>;
+    keeperPicks?: { round: number; pick_no: number; overall: number; roster_id: number; draft_slot: number; player_id: string; player_name: string; player_position: string | null; player_value: number | null; player_data?: any }[];
 }
 
 const DEFAULT_ROUNDS = 5;
 
-export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock', defaultUserTeamId, customRankingsMap }: DraftClientProps) {
+export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock', defaultUserTeamId, customRankingsMap, keeperPicks }: DraftClientProps) {
     const { sleeperUsername, fleaflickerUsername } = useAuth();
     const userId = sleeperUsername || fleaflickerUsername || null;
 
@@ -202,6 +204,62 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [picks, setPicks] = useState<DraftPick[]>(draftOrder);
     const [currentPickIndex, setCurrentPickIndex] = useState(0);
     const [availablePlayers, setAvailablePlayers] = useState<Player[]>(freeAgents);
+
+    // Apply keeper picks (pre-draft picks from Sleeper) to the draft board
+    const keeperPicksApplied = useRef(false);
+    useEffect(() => {
+        if (keeperPicksApplied.current || !keeperPicks || keeperPicks.length === 0) return;
+        keeperPicksApplied.current = true;
+
+        // Store keeper player data in draftedPlayerMap so roster display works
+        for (const kp of keeperPicks) {
+            if ((kp as any).player_data) {
+                draftedPlayerMap.current.set(kp.player_id, (kp as any).player_data as Player);
+            } else {
+                draftedPlayerMap.current.set(kp.player_id, {
+                    id: kp.player_id,
+                    full_name: kp.player_name,
+                    position: kp.player_position,
+                    fc_value: kp.player_value,
+                } as Player);
+            }
+        }
+
+        setPicks(prev => {
+            const updated = [...prev];
+            for (const kp of keeperPicks) {
+                // Find the matching slot in the draft order by pick_no (overall pick number)
+                const idx = updated.findIndex(p => {
+                    const overall = (p.round - 1) * teams.length + p.pick;
+                    return overall === kp.pick_no;
+                });
+                if (idx >= 0) {
+                    updated[idx] = {
+                        ...updated[idx],
+                        playerId: kp.player_id,
+                        playerName: kp.player_name,
+                        playerPosition: kp.player_position || undefined,
+                        playerValue: kp.player_value || undefined,
+                        pickReason: 'Keeper',
+                        isKeeper: true,
+                    };
+                }
+            }
+            return updated;
+        });
+
+        // Remove keeper players from available pool
+        const keeperPlayerIds = new Set(keeperPicks.map(kp => kp.player_id));
+        setAvailablePlayers(prev => prev.filter(p => !keeperPlayerIds.has(p.id)));
+
+        // Advance currentPickIndex past any initial keeper picks
+        setPicks(prev => {
+            let startIdx = 0;
+            while (startIdx < prev.length && prev[startIdx].isKeeper) startIdx++;
+            if (startIdx > 0) setCurrentPickIndex(startIdx);
+            return prev;
+        });
+    }, [keeperPicks, teams.length]);
 
     // Live draft persistence key
     const liveDraftKey = `live_draft_${leagueId}`;
@@ -583,15 +641,22 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const pickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const speedDelay = draftSpeed === 'instant' ? 50 : draftSpeed === 'fast' ? 800 : 2500;
     useEffect(() => {
-        if (!isLive && draftStarted && !isDraftComplete && currentPick && !isUserPick && userTeamId !== null && availablePlayers.length > 0) {
-            if (pickTimerRef.current) return; // already scheduled
-            pickTimerRef.current = setTimeout(() => {
-                pickTimerRef.current = null;
-                const result = simulatePick(currentPick.teamId);
-                if (result) {
-                    makePick(result.player.id, result.reason);
-                }
-            }, speedDelay);
+        if (!isLive && draftStarted && !isDraftComplete && currentPick && userTeamId !== null && availablePlayers.length > 0) {
+            // Skip keeper picks (already filled)
+            if (currentPick.isKeeper) {
+                setCurrentPickIndex(prev => prev + 1);
+                return;
+            }
+            if (!isUserPick) {
+                if (pickTimerRef.current) return; // already scheduled
+                pickTimerRef.current = setTimeout(() => {
+                    pickTimerRef.current = null;
+                    const result = simulatePick(currentPick.teamId);
+                    if (result) {
+                        makePick(result.player.id, result.reason);
+                    }
+                }, speedDelay);
+            }
         }
         return () => {
             if (pickTimerRef.current) { clearTimeout(pickTimerRef.current); pickTimerRef.current = null; }
@@ -687,7 +752,12 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const scorePlayer = (player: Player, teamId: number): { score: number; tags: string[] } => {
         const style = getTeamStyle(teamId);
         const w = style.weights;
-        let value = player.fc_value || 0;
+        // In redraft leagues (no keepers), use redraft value as primary scoring
+        // This makes CPU picks follow ADP-like behavior (proven producers go early)
+        const isRedraft = !keeperCount || keeperCount === 0;
+        let value = isRedraft
+            ? (player.redraft_auction_value || 0) * 100 // scale auction $ to comparable range
+            : (player.fc_value || 0);
         const tags: string[] = [];
 
         // Draft Supply/Demand Adjustments based on roster slots
@@ -755,8 +825,9 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         if (availablePlayers.length === 0) return null;
 
         const needs = calculatePositionalNeed(teamId);
+        const isRedraft = !keeperCount || keeperCount === 0;
         const scoredPlayers = availablePlayers.map(p => {
-            const value = p.fc_value || 0;
+            const value = isRedraft ? (p.redraft_auction_value || 0) * 100 : (p.fc_value || 0);
             const posNeed = needs[p.position || ''] || 0;
             const { score, tags } = scorePlayer(p, teamId);
             return { player: p, score, value, posNeed, tags };
