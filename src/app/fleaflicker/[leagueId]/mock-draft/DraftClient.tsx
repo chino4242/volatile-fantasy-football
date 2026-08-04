@@ -263,6 +263,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
     // Live draft persistence key
     const liveDraftKey = `live_draft_${leagueId}`;
+    const mockDraftKey = `mock_draft_${leagueId}`;
     const [activeTeams, setActiveTeams] = useState<Team[]>(teams);
     const [userTeamId, setUserTeamId] = useState<number | null>(defaultUserTeamId ?? null);
     const [draftStarted, setDraftStarted] = useState(false);
@@ -285,12 +286,39 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         } catch {}
     }, []);
 
+    // Mock draft persistence — restore on mount
+    useEffect(() => {
+        if (mode !== 'mock') return;
+        try {
+            const saved = localStorage.getItem(mockDraftKey);
+            if (saved) {
+                const { picks: savedPicks, currentPickIndex: savedIdx, draftedPlayerIds, userTeamId: savedTeam, activeTeams: savedTeams } = JSON.parse(saved);
+                if (savedPicks?.length > 0 && savedIdx > 0) {
+                    setPicks(savedPicks);
+                    setCurrentPickIndex(savedIdx || 0);
+                    setDraftStarted(true);
+                    if (savedTeam) setUserTeamId(savedTeam);
+                    if (savedTeams) setActiveTeams(savedTeams);
+                    const draftedIds = new Set(draftedPlayerIds || []);
+                    setAvailablePlayers(freeAgents.filter(p => !draftedIds.has(p.id)));
+                }
+            }
+        } catch {}
+    }, []);
+
     // Live draft persistence — save on every pick
     useEffect(() => {
         if (mode !== 'live' || !draftStarted) return;
         const draftedPlayerIds = picks.filter(p => p.playerId).map(p => p.playerId);
         localStorage.setItem(liveDraftKey, JSON.stringify({ picks, currentPickIndex, draftedPlayerIds }));
     }, [picks, currentPickIndex, draftStarted, mode, liveDraftKey]);
+
+    // Mock draft persistence — save on every pick
+    useEffect(() => {
+        if (mode !== 'mock' || !draftStarted) return;
+        const draftedPlayerIds = picks.filter(p => p.playerId).map(p => p.playerId);
+        localStorage.setItem(mockDraftKey, JSON.stringify({ picks, currentPickIndex, draftedPlayerIds, userTeamId, activeTeams }));
+    }, [picks, currentPickIndex, draftStarted, mode, mockDraftKey, userTeamId]);
 
     // Team Health before/after snapshot
     const computeHealthSnapshot = (teamPlayers: Player[]) => {
@@ -913,6 +941,9 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         setSetupComplete(!isSleeper || hasDraftOrder);
         setDraftStarted(false);
         setPlanChoice('pending');
+        // Clear persisted draft state
+        localStorage.removeItem(mockDraftKey);
+        localStorage.removeItem(liveDraftKey);
     };
 
     const sf = format === 'sf';
