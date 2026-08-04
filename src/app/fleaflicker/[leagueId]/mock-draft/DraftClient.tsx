@@ -2234,19 +2234,25 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 });
 
                                 // --- Draft Efficiency ---
-                                // Theoretical max: if you always took BPA at each pick
+                                // For each of your picks, BPA = best player that was actually available at that point
+                                // We approximate by using the pick's overall position (how many picks happened before)
                                 let theoreticalMax = 0;
-                                let simPoolIdx = 0;
                                 const sortedFreeAgents = [...freeAgents].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
                                 const effBreakdown: { player: typeof draftedPlayers[0]; bpa: Player | null; bpaValue: number; actualValue: number; delta: number }[] = [];
+                                
+                                // Build a set of all players taken before each of your picks
+                                const allPicksInOrder = picks.filter(p => p.playerId);
                                 for (const dp of draftedPlayers) {
-                                    const bpaPlayer = sortedFreeAgents[Math.min(simPoolIdx, sortedFreeAgents.length - 1)] || null;
+                                    // How many picks happened before this one?
+                                    const picksBefore = allPicksInOrder.filter(p => picks.indexOf(p) < dp.pickIndex).length;
+                                    // BPA at this point = the best player from the pool after removing `picksBefore` players
+                                    // Since other teams took from the same pool, the Nth best player is roughly at index N
+                                    const bpaPlayer = sortedFreeAgents[Math.min(picksBefore, sortedFreeAgents.length - 1)] || null;
                                     const bpaValue = bpaPlayer?.fc_value || 0;
                                     const actualValue = dp.fc_value || 0;
                                     const delta = actualValue - bpaValue;
                                     theoreticalMax += bpaValue;
                                     effBreakdown.push({ player: dp, bpa: bpaPlayer, bpaValue, actualValue, delta });
-                                    simPoolIdx++;
                                 }
                                 const efficiency = theoreticalMax > 0 ? Math.round((totalDraftedValue / theoreticalMax) * 100) : 100;
                                 const effGrade = efficiency >= 90 ? 'A+' : efficiency >= 80 ? 'A' : efficiency >= 70 ? 'B+' : efficiency >= 60 ? 'B' : efficiency >= 50 ? 'C+' : 'C';
