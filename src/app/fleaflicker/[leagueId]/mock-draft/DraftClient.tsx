@@ -854,6 +854,40 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
         const needs = calculatePositionalNeed(teamId);
         const isRedraft = !keeperCount || keeperCount === 0;
+
+        // Roster floor: force QB/TE if team is running out of picks without one
+        const team = activeTeams.find(t => t.id === teamId);
+        const teamDraftedPositions: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+        const teamKeptPositions: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+        if (team) team.players.forEach(p => { if (p.position && p.position in teamKeptPositions) teamKeptPositions[p.position as keyof typeof teamKeptPositions]++; });
+        picks.filter(p => p.teamId === teamId && p.playerPosition).forEach(p => { if (p.playerPosition && p.playerPosition in teamDraftedPositions) teamDraftedPositions[p.playerPosition as keyof typeof teamDraftedPositions]++; });
+
+        const totalQB = teamKeptPositions.QB + teamDraftedPositions.QB;
+        const totalTE = teamKeptPositions.TE + teamDraftedPositions.TE;
+        const remainingPicks = picks.filter(p => p.teamId === teamId && !p.playerId && !p.isKeeper).length;
+
+        // Must-have floors: at least 1 QB and 1 TE by end of draft
+        let forcedPosition: string | null = null;
+        if (totalQB === 0 && totalTE === 0 && remainingPicks <= 2) {
+            // Need both — take QB first (more important for scoring)
+            forcedPosition = 'QB';
+        } else if (totalQB === 0 && remainingPicks <= 3) {
+            forcedPosition = 'QB';
+        } else if (totalTE === 0 && remainingPicks <= 3) {
+            forcedPosition = 'TE';
+        }
+
+        if (forcedPosition) {
+            const forced = availablePlayers.filter(p => p.position === forcedPosition).sort((a, b) => {
+                const av = isRedraft ? (a.redraft_auction_value || 0) : (a.fc_value || 0);
+                const bv = isRedraft ? (b.redraft_auction_value || 0) : (b.fc_value || 0);
+                return bv - av;
+            })[0];
+            if (forced) {
+                return { player: forced, reason: `Roster Floor | Must start ${forcedPosition} — ${remainingPicks} picks left` };
+            }
+        }
+
         const scoredPlayers = availablePlayers.map(p => {
             const value = isRedraft ? (p.redraft_auction_value || 0) * 100 : (p.fc_value || 0);
             const posNeed = needs[p.position || ''] || 0;
