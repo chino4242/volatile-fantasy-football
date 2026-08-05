@@ -293,7 +293,9 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             const saved = localStorage.getItem(mockDraftKey);
             if (saved) {
                 const { picks: savedPicks, currentPickIndex: savedIdx, draftedPlayerIds, userTeamId: savedTeam, activeTeams: savedTeams } = JSON.parse(saved);
-                if (savedPicks?.length > 0 && savedIdx > 0) {
+                // Only restore if draft is in progress (not complete)
+                const isComplete = savedIdx >= (savedPicks?.length || 0);
+                if (savedPicks?.length > 0 && savedIdx > 0 && !isComplete) {
                     setPicks(savedPicks);
                     setCurrentPickIndex(savedIdx || 0);
                     setDraftStarted(true);
@@ -301,6 +303,9 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                     if (savedTeams) setActiveTeams(savedTeams);
                     const draftedIds = new Set(draftedPlayerIds || []);
                     setAvailablePlayers(freeAgents.filter(p => !draftedIds.has(p.id)));
+                } else if (isComplete) {
+                    // Clear completed draft state
+                    localStorage.removeItem(mockDraftKey);
                 }
             }
         } catch {}
