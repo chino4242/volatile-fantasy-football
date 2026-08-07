@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { ArrowRightLeft, X, ChevronDown } from 'lucide-react';
 import { BasePlayer as Player } from '@/types/player';
+import { analyzeTradeAdvisor } from '@/lib/trade-advisor';
 
 interface Props {
     myPlayers: Player[];
@@ -370,6 +371,137 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
                         )}
                     </div>
                 )}
+
+                {/* Trade Advisor */}
+                {(mySend.size > 0 && theirSend.size > 0) && (() => {
+                    const sendPlayers = Array.from(mySend).map(id => myPlayers.find(p => p.sleeper_id === id)).filter(Boolean) as Player[];
+                    const receivePlayers = Array.from(theirSend).map(id => theirPlayers.find(p => p.sleeper_id === id)).filter(Boolean) as Player[];
+                    
+                    const result = analyzeTradeAdvisor({
+                        myRoster: myPlayers.filter(p => p.position !== 'PICK').map(p => ({
+                            position: p.position || '',
+                            dynastyValue: p.fc_value || 0,
+                            auctionValue: p.redraft_auction_value || 0,
+                            age: p.age || null,
+                        })),
+                        sending: sendPlayers.filter(p => p.position !== 'PICK').map(p => ({
+                            position: p.position || '',
+                            dynastyValue: p.fc_value || 0,
+                            auctionValue: p.redraft_auction_value || 0,
+                            age: p.age || null,
+                            name: p.full_name,
+                            signal: null,
+                        })),
+                        receiving: receivePlayers.filter(p => p.position !== 'PICK').map(p => ({
+                            position: p.position || '',
+                            dynastyValue: p.fc_value || 0,
+                            auctionValue: p.redraft_auction_value || 0,
+                            age: p.age || null,
+                            name: p.full_name,
+                            signal: null,
+                        })),
+                        sendingPickValue: sendPlayers.filter(p => p.position === 'PICK').reduce((s, p) => s + (p.fc_value || 0), 0),
+                        receivingPickValue: receivePlayers.filter(p => p.position === 'PICK').reduce((s, p) => s + (p.fc_value || 0), 0),
+                    });
+
+                    return (
+                        <div className={`mt-3 p-3 rounded-lg border ${
+                            result.verdict === 'strong-accept' || result.verdict === 'accept' ? 'bg-green-50 dark:bg-green-950/10 border-green-200 dark:border-green-800' :
+                            result.verdict === 'strong-decline' || result.verdict === 'decline' ? 'bg-red-50 dark:bg-red-950/10 border-red-200 dark:border-red-800' :
+                            'bg-zinc-50 dark:bg-zinc-800/30 border-zinc-200 dark:border-zinc-700'
+                        }`}>
+                            <div className="text-[10px] font-bold text-zinc-500 uppercase mb-1">🧠 Trade Advisor</div>
+                            <div className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{result.summary}</div>
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
+                                {result.reasons.map((reason, i) => (
+                                    <span key={i} className="text-[9px] text-zinc-500">{reason}</span>
+                                ))}
+                            </div>
+                            {result.pitch && (
+                                <div className="mt-2 pt-2 border-t border-zinc-200/50 dark:border-zinc-700/50">
+                                    <div className="text-[9px] font-bold text-zinc-400 uppercase mb-0.5">Negotiation angle</div>
+                                    <div className="text-[10px] text-zinc-600 dark:text-zinc-400 italic">&ldquo;{result.pitch}&rdquo;</div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
+
+                {/* Roster Impact */}
+                {(mySend.size > 0 || theirSend.size > 0) && (() => {
+                    const positions = ['QB', 'RB', 'WR', 'TE'] as const;
+                    const before: Record<string, { dynasty: number; auction: number }> = {};
+                    let beforeTotal = { dynasty: 0, auction: 0 };
+                    positions.forEach(pos => { before[pos] = { dynasty: 0, auction: 0 }; });
+                    myPlayers.filter(p => p.position !== 'PICK').forEach(p => {
+                        if (p.position && p.position in before) {
+                            before[p.position].dynasty += p.fc_value || 0;
+                            before[p.position].auction += p.redraft_auction_value || 0;
+                        }
+                        beforeTotal.dynasty += p.fc_value || 0;
+                        beforeTotal.auction += p.redraft_auction_value || 0;
+                    });
+
+                    const after: Record<string, { dynasty: number; auction: number }> = {};
+                    positions.forEach(pos => { after[pos] = { dynasty: before[pos].dynasty, auction: before[pos].auction }; });
+                    let afterTotal = { dynasty: beforeTotal.dynasty, auction: beforeTotal.auction };
+
+                    // Remove what you send
+                    mySend.forEach(id => {
+                        const p = myPlayers.find(pl => pl.sleeper_id === id);
+                        if (p && p.position && p.position in after) {
+                            after[p.position].dynasty -= p.fc_value || 0;
+                            after[p.position].auction -= p.redraft_auction_value || 0;
+                            afterTotal.dynasty -= p.fc_value || 0;
+                            afterTotal.auction -= p.redraft_auction_value || 0;
+                        }
+                    });
+                    // Add what you receive
+                    theirSend.forEach(id => {
+                        const p = theirPlayers.find(pl => pl.sleeper_id === id);
+                        if (p && p.position && p.position in after) {
+                            after[p.position].dynasty += p.fc_value || 0;
+                            after[p.position].auction += p.redraft_auction_value || 0;
+                            afterTotal.dynasty += p.fc_value || 0;
+                            afterTotal.auction += p.redraft_auction_value || 0;
+                        }
+                    });
+
+                    return (
+                        <div className="mt-3 p-3 bg-zinc-50 dark:bg-zinc-800/30 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                            <div className="text-[10px] font-bold text-zinc-500 uppercase mb-2">Roster Impact (Before → After)</div>
+                            <div className="flex gap-4 mb-2 text-[10px]">
+                                <div>
+                                    <span className="text-zinc-400">Dynasty: </span>
+                                    <span className="font-mono text-zinc-600 dark:text-zinc-400">{beforeTotal.dynasty.toLocaleString()}</span>
+                                    <span className="text-zinc-400"> → </span>
+                                    <span className={`font-mono font-medium ${afterTotal.dynasty >= beforeTotal.dynasty ? 'text-green-600' : 'text-red-500'}`}>{afterTotal.dynasty.toLocaleString()}</span>
+                                </div>
+                                <div>
+                                    <span className="text-zinc-400">Auction: </span>
+                                    <span className="font-mono text-zinc-600 dark:text-zinc-400">${beforeTotal.auction}</span>
+                                    <span className="text-zinc-400"> → </span>
+                                    <span className={`font-mono font-medium ${afterTotal.auction >= beforeTotal.auction ? 'text-green-600' : 'text-red-500'}`}>${afterTotal.auction}</span>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-4 gap-2">
+                                {positions.map(pos => {
+                                    const b = before[pos];
+                                    const a = after[pos];
+                                    const dynDelta = a.dynasty - b.dynasty;
+                                    return (
+                                        <div key={pos} className="text-center bg-white dark:bg-zinc-900 rounded-lg p-1.5 border border-zinc-100 dark:border-zinc-800">
+                                            <div className="text-[9px] font-bold text-zinc-400">{pos}</div>
+                                            <div className="text-[10px] font-mono text-zinc-500">{b.dynasty.toLocaleString()}</div>
+                                            {dynDelta !== 0 && <div className={`text-[9px] font-mono font-bold ${dynDelta > 0 ? 'text-green-600' : 'text-red-500'}`}>{dynDelta > 0 ? '+' : ''}{dynDelta.toLocaleString()}</div>}
+                                            <div className={`text-[10px] font-mono font-medium ${dynDelta > 0 ? 'text-green-700 dark:text-green-400' : dynDelta < 0 ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-300'}`}>{a.dynasty.toLocaleString()}</div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* Selected assets summary */}
                 {(mySend.size > 0 || theirSend.size > 0) && (

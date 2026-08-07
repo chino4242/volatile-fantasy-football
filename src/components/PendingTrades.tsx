@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ArrowRightLeft, Settings, ThumbsUp, ThumbsDown, Minus, AlertCircle } from 'lucide-react';
+import { analyzeTradeAdvisor } from '@/lib/trade-advisor';
 
 interface EnrichedPlayer {
     name: string;
@@ -239,6 +240,7 @@ function CookieInput({ cookieValue, setCookieValue, onSave }: { cookieValue: str
 
 function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator }: { trade: EnrichedTrade; allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string; sleeper_id?: string }[]; allLeaguePicks?: { season: number; round: number; slot: number; teamName: string; estimatedValue: number; sleeper_id?: string }[]; onOpenInEvaluator?: (trade: { myAssets: string[]; theirAssets: string[]; theirPlayerId?: string }) => void }) {
     const [showCounter, setShowCounter] = useState(false);
+    const [showImpact, setShowImpact] = useState(false);
     const sendTotal = trade.youSend.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youSend.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const receiveTotal = trade.youReceive.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youReceive.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const sendAuction = trade.youSend.players.reduce((s, p) => s + (p.auctionValue || 0), 0);
@@ -246,6 +248,71 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator 
     const diff = receiveTotal - sendTotal;
     const pct = sendTotal > 0 ? (diff / sendTotal) * 100 : 0;
     const verdict = pct >= 10 ? 'accept' : pct <= -10 ? 'decline' : 'even';
+
+    // Roster impact: before/after by position
+    const rosterImpact = useMemo(() => {
+        const myPlayers = allLeaguePlayers?.filter(p => p.teamName === trade.yourTeamName) || [];
+        const positions = ['QB', 'RB', 'WR', 'TE'] as const;
+        
+        // Before: current roster
+        const before: Record<string, { dynasty: number; auction: number; count: number }> = {};
+        let beforeTotal = { dynasty: 0, auction: 0 };
+        positions.forEach(pos => { before[pos] = { dynasty: 0, auction: 0, count: 0 }; });
+        myPlayers.forEach(p => {
+            if (p.position && p.position in before) {
+                before[p.position].dynasty += p.dynastyValue;
+                before[p.position].auction += p.auctionValue || 0;
+                before[p.position].count++;
+            }
+            beforeTotal.dynasty += p.dynastyValue;
+            beforeTotal.auction += p.auctionValue || 0;
+        });
+
+        // After: remove what you send, add what you receive
+        const after: Record<string, { dynasty: number; auction: number; count: number }> = {};
+        positions.forEach(pos => { after[pos] = { ...before[pos] }; });
+        let afterTotal = { ...beforeTotal };
+
+        trade.youSend.players.forEach(p => {
+            const pos = p.position as string;
+            if (pos in after) {
+                after[pos].dynasty -= p.dynastyValue;
+                after[pos].auction -= (p.auctionValue || 0);
+                after[pos].count--;
+            }
+            afterTotal.dynasty -= p.dynastyValue;
+            afterTotal.auction -= (p.auctionValue || 0);
+        });
+
+        trade.youReceive.players.forEach(p => {
+            const pos = p.position as string;
+            if (pos in after) {
+                after[pos].dynasty += p.dynastyValue;
+                after[pos].auction += (p.auctionValue || 0);
+                after[pos].count++;
+            }
+            afterTotal.dynasty += p.dynastyValue;
+            afterTotal.auction += (p.auctionValue || 0);
+        });
+
+        // Picks impact on total
+        afterTotal.dynasty -= trade.youSend.picks.reduce((s, pk) => s + pk.estimatedValue, 0);
+        afterTotal.dynasty += trade.youReceive.picks.reduce((s, pk) => s + pk.estimatedValue, 0);
+
+        return { before, after, beforeTotal, afterTotal, positions };
+    }, [allLeaguePlayers, trade]);
+
+    // Trade advisor recommendation
+    const advisorResult = useMemo(() => {
+        const myPlayers = allLeaguePlayers?.filter(p => p.teamName === trade.yourTeamName) || [];
+        return analyzeTradeAdvisor({
+            myRoster: myPlayers.map(p => ({ position: p.position, dynastyValue: p.dynastyValue, auctionValue: p.auctionValue || 0, age: null })),
+            sending: trade.youSend.players.map(p => ({ position: p.position, dynastyValue: p.dynastyValue, auctionValue: p.auctionValue || 0, age: null, name: p.name, signal: null })),
+            receiving: trade.youReceive.players.map(p => ({ position: p.position, dynastyValue: p.dynastyValue, auctionValue: p.auctionValue || 0, age: null, name: p.name, signal: null })),
+            sendingPickValue: trade.youSend.picks.reduce((s, pk) => s + pk.estimatedValue, 0),
+            receivingPickValue: trade.youReceive.picks.reduce((s, pk) => s + pk.estimatedValue, 0),
+        });
+    }, [allLeaguePlayers, trade]);
 
     // Get the other team's assets for counter suggestions
     const otherTeamPlayers = allLeaguePlayers?.filter(p => p.teamName === trade.otherTeamName) || [];
@@ -374,6 +441,26 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator 
                 </span>
             </div>
 
+            {/* Advisor Recommendation */}
+            <div className={`px-3 py-2 border-b border-zinc-100 dark:border-zinc-800 ${
+                advisorResult.verdict === 'strong-accept' || advisorResult.verdict === 'accept' ? 'bg-green-50/50 dark:bg-green-950/10' :
+                advisorResult.verdict === 'strong-decline' || advisorResult.verdict === 'decline' ? 'bg-red-50/50 dark:bg-red-950/10' :
+                'bg-zinc-50/50 dark:bg-zinc-800/10'
+            }`}>
+                <div className="text-[11px] font-medium text-zinc-800 dark:text-zinc-200">{advisorResult.summary}</div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                    {advisorResult.reasons.slice(0, 4).map((reason, i) => (
+                        <span key={i} className="text-[9px] text-zinc-500">{reason}</span>
+                    ))}
+                </div>
+                {advisorResult.pitch && (
+                    <div className="mt-1.5 pt-1.5 border-t border-zinc-200/50 dark:border-zinc-700/50">
+                        <div className="text-[9px] font-bold text-zinc-400 uppercase mb-0.5">Negotiation angle</div>
+                        <div className="text-[10px] text-zinc-600 dark:text-zinc-400 italic">&ldquo;{advisorResult.pitch}&rdquo;</div>
+                    </div>
+                )}
+            </div>
+
             {/* Two columns */}
             <div className="grid grid-cols-2 divide-x divide-zinc-200 dark:divide-zinc-700">
                 {/* You Send */}
@@ -420,15 +507,68 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator 
             </div>
 
             {/* Value summary */}
-            <div className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 text-[10px] text-zinc-500 flex items-center gap-3">
+            <div className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 text-[10px] text-zinc-500 flex items-center gap-3 flex-wrap">
                 <span>Net: <span className={`font-mono font-bold ${diff >= 0 ? 'text-green-600' : 'text-red-500'}`}>{diff >= 0 ? '+' : ''}{diff.toLocaleString()}</span> dynasty value</span>
                 {sendAuction > 0 || receiveAuction > 0 ? (
                     <span>Auction: <span className={`font-mono font-bold ${receiveAuction >= sendAuction ? 'text-green-600' : 'text-red-500'}`}>{receiveAuction >= sendAuction ? '+' : ''}{receiveAuction - sendAuction > 0 ? `$${receiveAuction - sendAuction}` : `-$${sendAuction - receiveAuction}`}</span></span>
                 ) : null}
-                <button onClick={() => setShowCounter(!showCounter)} className="ml-auto text-[10px] text-indigo-600 dark:text-indigo-400 font-medium hover:underline">
-                    {showCounter ? 'Hide Counter' : 'Counter →'}
-                </button>
+                <div className="ml-auto flex gap-2">
+                    <button onClick={() => setShowImpact(!showImpact)} className="text-[10px] text-zinc-600 dark:text-zinc-400 font-medium hover:underline">
+                        {showImpact ? 'Hide Impact' : 'Impact ↕'}
+                    </button>
+                    <button onClick={() => setShowCounter(!showCounter)} className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium hover:underline">
+                        {showCounter ? 'Hide Counter' : 'Counter →'}
+                    </button>
+                </div>
             </div>
+
+            {/* Roster Impact */}
+            {showImpact && (
+                <div className="px-3 py-3 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/20">
+                    <div className="text-[10px] font-bold text-zinc-500 uppercase mb-2">Team Impact (Before → After)</div>
+                    {/* Totals */}
+                    <div className="flex gap-4 mb-2 text-[10px]">
+                        <div>
+                            <span className="text-zinc-400">Dynasty: </span>
+                            <span className="font-mono text-zinc-600 dark:text-zinc-400">{rosterImpact.beforeTotal.dynasty.toLocaleString()}</span>
+                            <span className="text-zinc-400"> → </span>
+                            <span className={`font-mono font-medium ${rosterImpact.afterTotal.dynasty >= rosterImpact.beforeTotal.dynasty ? 'text-green-600' : 'text-red-500'}`}>{rosterImpact.afterTotal.dynasty.toLocaleString()}</span>
+                        </div>
+                        <div>
+                            <span className="text-zinc-400">Auction: </span>
+                            <span className="font-mono text-zinc-600 dark:text-zinc-400">${rosterImpact.beforeTotal.auction}</span>
+                            <span className="text-zinc-400"> → </span>
+                            <span className={`font-mono font-medium ${rosterImpact.afterTotal.auction >= rosterImpact.beforeTotal.auction ? 'text-green-600' : 'text-red-500'}`}>${rosterImpact.afterTotal.auction}</span>
+                        </div>
+                    </div>
+                    {/* Position breakdown */}
+                    <div className="grid grid-cols-4 gap-2">
+                        {rosterImpact.positions.map(pos => {
+                            const b = rosterImpact.before[pos];
+                            const a = rosterImpact.after[pos];
+                            const dynDelta = a.dynasty - b.dynasty;
+                            const aucDelta = a.auction - b.auction;
+                            return (
+                                <div key={pos} className="text-center bg-white dark:bg-zinc-900 rounded-lg p-1.5 border border-zinc-100 dark:border-zinc-800">
+                                    <div className="text-[9px] font-bold text-zinc-400">{pos}</div>
+                                    <div className="text-[10px] font-mono text-zinc-600 dark:text-zinc-400">{b.dynasty.toLocaleString()}</div>
+                                    {dynDelta !== 0 && (
+                                        <div className={`text-[9px] font-mono font-bold ${dynDelta > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                            {dynDelta > 0 ? '+' : ''}{dynDelta.toLocaleString()}
+                                        </div>
+                                    )}
+                                    <div className={`text-[10px] font-mono font-medium ${dynDelta > 0 ? 'text-green-700 dark:text-green-400' : dynDelta < 0 ? 'text-red-600' : 'text-zinc-700 dark:text-zinc-300'}`}>{a.dynasty.toLocaleString()}</div>
+                                    {aucDelta !== 0 && (
+                                        <div className={`text-[8px] font-mono ${aucDelta > 0 ? 'text-amber-600' : 'text-amber-500'}`}>
+                                            {aucDelta > 0 ? '+' : ''}${aucDelta}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* Counter section */}
             {showCounter && (
