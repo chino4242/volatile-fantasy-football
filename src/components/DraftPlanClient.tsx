@@ -59,6 +59,7 @@ interface DraftPlanClientProps {
     freeAgents: Player[];
     keeperCount?: number;
     keeperPicks?: { round: number; pick_no: number; overall: number; roster_id: number; draft_slot: number; player_id: string; player_name: string; player_position: string | null; player_value: number | null; player_data?: any }[];
+    adpMap?: Record<string, number>;
     customRankingsMap?: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]>;
     statsBoostMap?: Record<string, number>;
 }
@@ -85,6 +86,7 @@ export function DraftPlanClient({
     freeAgents,
     keeperCount,
     keeperPicks,
+    adpMap,
     customRankingsMap,
     statsBoostMap,
 }: DraftPlanClientProps) {
@@ -468,7 +470,11 @@ export function DraftPlanClient({
                     { key: 'board' as const, label: 'Draft Board', icon: ClipboardList },
                     { key: 'results' as const, label: 'Results', icon: Target },
                     { key: 'notes' as const, label: 'Notes', icon: StickyNote },
-                ].map(({ key, label, icon: Icon }) => (
+                ].filter(tab => {
+                    // Hide Keepers tab when keepers are pre-set from Sleeper (already locked)
+                    if (tab.key === 'keepers' && keeperPicks && keeperPicks.length > 0) return false;
+                    return true;
+                }).map(({ key, label, icon: Icon }) => (
                     <button
                         key={key}
                         onClick={() => setActiveSection(key)}
@@ -545,6 +551,8 @@ export function DraftPlanClient({
                         posColor={posColor}
                         onBranchFromPick={branchFromPick}
                         tierSource={tierSource}
+                        adpMap={adpMap}
+                        keeperPicks={keeperPicks}
                     />
                 )}
                 {activeSection === 'results' && (
@@ -577,6 +585,8 @@ function DraftBoardSection({
     posColor,
     onBranchFromPick,
     tierSource,
+    adpMap,
+    keeperPicks,
 }: {
     activeTeam: TeamData | null;
     keeperIds: string[];
@@ -594,6 +604,8 @@ function DraftBoardSection({
     posColor: (pos: string | null) => string;
     onBranchFromPick: (pickIdx: number) => void;
     tierSource: 'dynasty' | 'redraft' | 'zap';
+    adpMap?: Record<string, number>;
+    keeperPicks?: { round: number; pick_no: number; overall: number; roster_id: number; draft_slot: number; player_id: string; player_name: string; player_position: string | null; player_value: number | null; player_data?: any }[];
 }) {
     if (!activeTeam) {
         return (
@@ -765,10 +777,46 @@ function DraftBoardSection({
     };
 
     // Simulate other teams' picks (they just take BPA by raw value)
+    // Compute league-wide keeper position saturation for CPU demand
+    const leagueKeeperCounts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    if (keeperPicks && keeperPicks.length > 0) {
+        keeperPicks.forEach(kp => {
+            if (kp.player_position && kp.player_position in leagueKeeperCounts) {
+                leagueKeeperCounts[kp.player_position as keyof typeof leagueKeeperCounts]++;
+            }
+        });
+    } else {
+        // Fallback: estimate from teams' existing rosters
+        allTeams.forEach(team => {
+            if (team.id === activeTeam?.id) return;
+            team.players.forEach(p => {
+                if (p.position && p.position in leagueKeeperCounts) {
+                    leagueKeeperCounts[p.position as keyof typeof leagueKeeperCounts]++;
+                }
+            });
+        });
+    }
+
     const scoreForCPU = (player: Player) => {
         let value = player.fc_value || 0;
-        if (player.position === 'QB' && !sf) value *= 0.55;
-        if (player.position === 'TE') value *= 0.85;
+        if (player.position === 'QB' && !sf) {
+            // Reduce QB demand based on how many teams already have a QB keeper
+            const qbSaturation = leagueKeeperCounts.QB / numTeams;
+            value *= 0.55 + qbSaturation * 0.3; // less discount if few teams have QB
+        }
+        if (player.position === 'TE') {
+            const teSaturation = leagueKeeperCounts.TE / numTeams;
+            value *= 0.85 + teSaturation * 0.1;
+        }
+        // If many teams kept RBs, remaining demand is lower
+        if (player.position === 'RB') {
+            const rbSaturation = leagueKeeperCounts.RB / (numTeams * 2); // normalize to ~2 RBs per team
+            value *= 1 - rbSaturation * 0.15;
+        }
+        if (player.position === 'WR') {
+            const wrSaturation = leagueKeeperCounts.WR / (numTeams * 3); // normalize to ~3 WRs per team
+            value *= 1 - wrSaturation * 0.1;
+        }
         return value;
     };
 
@@ -1244,6 +1292,8 @@ function DraftBoardSection({
                 customRankingsMap={customRankingsMap}
                 title="Draft Pool Scarcity"
                 defaultCollapsed={false}
+                defaultView={(!keeperCount || keeperCount <= 3) ? 'redraft' : 'dynasty'}
+                useAuctionValue={!keeperCount || keeperCount <= 3}
             />
 
             {/* Watchlist: starred players with availability across all picks */}
@@ -1401,8 +1451,14 @@ function DraftBoardSection({
                                                 <td className={`px-2 py-1.5 font-bold text-[10px] ${posColor(pos)}`}>{pos}</td>
                                                 {tierByPick.map((tier, i) => {
                                                     const prevTier = i > 0 ? tierByPick[i - 1] : null;
-                                                    const isCliff = prevTier && prevTier.bestVal >= 2500 && tier.bestVal < prevTier.bestVal * 0.65;
-                                                    const isLastChance = tier.count <= 2 && tier.bestVal >= 1500;
+                                                    const isCliff = prevTier && (
+                                                        tierSource === 'redraft'
+                                                            ? prevTier.bestVal >= 15 && tier.bestVal < prevTier.bestVal * 0.6
+                                                            : prevTier.bestVal >= 2500 && tier.bestVal < prevTier.bestVal * 0.65
+                                                    );
+                                                    const isLastChance = tierSource === 'redraft'
+                                                        ? tier.count <= 2 && tier.bestVal >= 15
+                                                        : tier.count <= 2 && tier.bestVal >= 1500;
                                                     const cellKey = `${pos}-${i}`;
                                                     const isExpanded = expandedTierCell === cellKey;
 
@@ -1412,11 +1468,23 @@ function DraftBoardSection({
                                                                 onClick={() => setExpandedTierCell(isExpanded ? null : cellKey)}
                                                                 className="w-full"
                                                             >
-                                                                <div className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${getTierColor(tier.bestVal)}`}>
-                                                                    {getTierLabel(tier.bestVal)}
-                                                                    {(isCliff || isLastChance) && <span title="Cliff — tier dries up after this">⚠</span>}
-                                                                </div>
-                                                                <div className="text-[8px] text-zinc-400 mt-0.5">{tier.count} left</div>
+                                                                {tierSource === 'redraft' ? (
+                                                                    <>
+                                                                        <div className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${getTierColor(tier.bestVal)}`}>
+                                                                            ${tier.bestVal}
+                                                                            {(isCliff || isLastChance) && <span title="Cliff — value drops after this">⚠</span>}
+                                                                        </div>
+                                                                        <div className="text-[8px] text-zinc-400 mt-0.5">{tier.count} avail</div>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <div className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${getTierColor(tier.bestVal)}`}>
+                                                                            {getTierLabel(tier.bestVal)}
+                                                                            {(isCliff || isLastChance) && <span title="Cliff — tier dries up after this">⚠</span>}
+                                                                        </div>
+                                                                        <div className="text-[8px] text-zinc-400 mt-0.5">{tier.count} left</div>
+                                                                    </>
+                                                                )}
                                                             </button>
                                                             {isExpanded && tier.players.length > 0 && (
                                                                 <div className="absolute z-50 left-1/2 -translate-x-1/2 top-full mt-1 w-44 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg p-2 text-left">
@@ -1578,24 +1646,42 @@ function DraftBoardSection({
                                         {/* Simple ranked list — 30 players around this pick's range */}
                                         <div className="space-y-0.5 max-h-72 overflow-y-auto">
                                             {(() => {
-                                                // Show players ranked around this pick position
+                                                // Show players ranked around this pick position, filtered by availability
                                                 const pickPosition = pick.pickNumber || ((pick.round - 1) * numTeams + pick.slot);
+                                                // Redraft/keeper leagues with ADP: sort by ADP
+                                                // Dynasty leagues: sort by dynasty value
+                                                const isRedraft = !keeperCount || keeperCount <= 3;
+                                                const sortedPool = isRedraft && adpMap && Object.keys(adpMap).length > 0
+                                                    ? [...draftPool].sort((a, b) => (adpMap[a.id] || 999) - (adpMap[b.id] || 999))
+                                                    : isRedraft
+                                                        ? [...draftPool].sort((a, b) => (b.redraft_auction_value || 0) - (a.redraft_auction_value || 0))
+                                                        : draftPool;
                                                 const startIdx = Math.max(0, pickPosition - 30);
-                                                const endIdx = Math.min(draftPool.length, pickPosition + 30);
-                                                const playersInRange = draftPool.slice(startIdx, endIdx);
+                                                const endIdx = Math.min(sortedPool.length, pickPosition + 30);
+                                                const playersInRange = sortedPool.slice(startIdx, endIdx)
+                                                    .filter(player => getAvailability(player, pickOverall) >= 10);
                                                 return playersInRange.map((player, i) => {
                                                     const avail = getAvailability(player, pickOverall);
+                                                    const playerAdp = adpMap?.[player.id];
+                                                    // Value gap: if their ADP is higher than this pick position, they're a value
+                                                    const valueGap = playerAdp ? Math.round(playerAdp - pickPosition) : null;
                                                     return (
                                                         <button
                                                             key={player.id}
                                                             onClick={() => selectPlayerForPick(idx, player)}
                                                             className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs"
                                                         >
-                                                            <span className="text-zinc-400 font-mono w-4">{startIdx + i + 1}</span>
+                                                            {playerAdp ? (
+                                                                <span className="text-zinc-400 font-mono w-8 text-[9px]">ADP {Math.round(playerAdp)}</span>
+                                                            ) : (
+                                                                <span className="text-zinc-300 font-mono w-8 text-[9px]">—</span>
+                                                            )}
                                                             <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${posColor(player.position)}`}>{player.position}</span>
                                                             <span className="text-zinc-900 dark:text-zinc-100 flex-1 truncate">{player.full_name}</span>
-                                                            <span className="font-mono text-zinc-500 text-[10px]">{(player.fc_value || 0).toLocaleString()}</span>
                                                             {player.redraft_auction_value ? <span className="font-mono text-amber-600 text-[10px]">${player.redraft_auction_value}</span> : null}
+                                                            {valueGap !== null && valueGap > 3 && (
+                                                                <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300">+{valueGap} value</span>
+                                                            )}
                                                             <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${avail >= 80 ? 'bg-green-100 dark:bg-green-900/20 text-green-600' : avail >= 50 ? 'bg-amber-100 dark:bg-amber-900/20 text-amber-600' : 'bg-red-100 dark:bg-red-900/20 text-red-500'}`}>{avail}%</span>
                                                         </button>
                                                     );

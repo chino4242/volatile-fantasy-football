@@ -3,6 +3,7 @@ import { players, playerValues, leagues } from '@/db/schema';
 import { getLeagueData, getAllDraftPicks, getCurrentSeasonDraft, getDraftTradedPicks, getDraftPicks } from '@/lib/sleeper';
 import { eq, inArray, notInArray, not, like, desc, and } from 'drizzle-orm';
 import { DraftPlanClient } from '@/components/DraftPlanClient';
+import { getSleeperADP } from '@/lib/sleeper-adp';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -182,6 +183,16 @@ export default async function SleeperDraftPlanPage({
             .orderBy(desc(valueCol))
             .limit(200);
 
+        // Fetch Sleeper ADP for draft ordering
+        const adpData = await getSleeperADP();
+        // Convert to a simple Record<sleeperId, adpValue> for the component
+        const adpMap: Record<string, number> = {};
+        adpData.forEach((adp, playerId) => {
+            // Use half PPR ADP as default, fall back to PPR
+            const val = adp.adp_half_ppr || adp.adp_ppr || adp.adp_std || null;
+            if (val) adpMap[playerId] = val;
+        });
+
         return (
             <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
                 <div className="max-w-4xl mx-auto">
@@ -194,6 +205,7 @@ export default async function SleeperDraftPlanPage({
                         freeAgents={freeAgents}
                         keeperCount={keeperCount}
                         keeperPicks={keeperPicks}
+                        adpMap={adpMap}
                     />
                 </div>
             </div>

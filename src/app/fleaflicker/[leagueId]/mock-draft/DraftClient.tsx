@@ -785,9 +785,9 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const scorePlayer = (player: Player, teamId: number): { score: number; tags: string[] } => {
         const style = getTeamStyle(teamId);
         const w = style.weights;
-        // In redraft leagues (no keepers), use redraft value as primary scoring
+        // In redraft leagues (no keepers or few keepers), use redraft value as primary scoring
         // This makes CPU picks follow ADP-like behavior (proven producers go early)
-        const isRedraft = !keeperCount || keeperCount === 0;
+        const isRedraft = !keeperCount || keeperCount <= 3;
         let value = isRedraft
             ? (player.redraft_auction_value || 0) * 100 // scale auction $ to comparable range
             : (player.fc_value || 0);
@@ -850,7 +850,33 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         const posNeed = needs[player.position || ''] || 0;
         if (posNeed >= 0.5) tags.push('Need');
 
-        const score = (adjustedValue * w.value) + (posNeed * adjustedValue * w.need);
+        // Tier scarcity: boost if this is one of the last at this position in this value tier
+        // Depress if there's plenty more of this position available at similar value
+        let tierScarcityBoost = 0;
+        if (player.position) {
+            const playerValue = isRedraft ? (player.redraft_auction_value || 0) : (player.fc_value || 0);
+            const tierFloor = playerValue * 0.7; // same tier = within 30% of this player's value
+            const samePosSameTier = availablePlayers.filter(p =>
+                p.position === player.position &&
+                p.id !== player.id &&
+                (isRedraft ? (p.redraft_auction_value || 0) : (p.fc_value || 0)) >= tierFloor
+            ).length;
+
+            if (samePosSameTier === 0) {
+                // Last one in this tier at this position — critical pick
+                tierScarcityBoost = 0.25;
+                tags.push('Last in tier');
+            } else if (samePosSameTier <= 2) {
+                // Tier is drying up — boost
+                tierScarcityBoost = 0.12;
+                tags.push('Tier ending');
+            } else if (samePosSameTier >= 8) {
+                // Deep position — can wait
+                tierScarcityBoost = -0.08;
+            }
+        }
+
+        const score = (adjustedValue * (1 + tierScarcityBoost) * w.value) + (posNeed * adjustedValue * w.need);
         return { score, tags };
     };
 
@@ -858,7 +884,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         if (availablePlayers.length === 0) return null;
 
         const needs = calculatePositionalNeed(teamId);
-        const isRedraft = !keeperCount || keeperCount === 0;
+        const isRedraft = !keeperCount || keeperCount <= 3;
 
         // Roster floor: force QB/TE if team is running out of picks without one
         const team = activeTeams.find(t => t.id === teamId);
@@ -2604,6 +2630,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             format={format}
                             onPlayerClick={setSelectedDraftPlayer}
                             customRankingsMap={customRankingsMap}
+                            defaultView={(!keeperCount || keeperCount === 0) ? 'redraft' : 'dynasty'}
+                            useAuctionValue={!keeperCount || keeperCount === 0}
                         />
                         {userTeamId !== null && (
                             <PositionScarcityChart
@@ -2614,6 +2642,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 topN={30}
                                 emptyMessage="Draft players to build your roster"
                                 customRankingsMap={customRankingsMap}
+                                defaultView={(!keeperCount || keeperCount === 0) ? 'redraft' : 'dynasty'}
+                                useAuctionValue={!keeperCount || keeperCount === 0}
                             />
                         )}
                         {userTeamId !== null && myRosterPlayers.length > 0 && (

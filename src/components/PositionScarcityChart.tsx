@@ -13,6 +13,8 @@ interface Props {
     title?: string;
     emptyMessage?: string;
     defaultCollapsed?: boolean;
+    defaultView?: ViewMode;
+    useAuctionValue?: boolean;
     customRankingsMap?: Map<string, any[]> | Record<string, any[]>;
 }
 
@@ -94,10 +96,10 @@ const QUALITY_MAX_TIER = 9;
 
 export function PositionScarcityChart({
     players, format, onPlayerClick, topN = 15,
-    title = 'Position Scarcity', emptyMessage, defaultCollapsed = false, customRankingsMap,
+    title = 'Position Scarcity', emptyMessage, defaultCollapsed = false, defaultView, useAuctionValue = false, customRankingsMap,
 }: Props) {
     const [tooltip, setTooltip] = useState<{ player: any; x: number; y: number } | null>(null);
-    const [view, setView] = useState<ViewMode>('dynasty');
+    const [view, setView] = useState<ViewMode>(defaultView || 'dynasty');
     const [collapsed, setCollapsed] = useState(defaultCollapsed);
     const tooltipTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -123,10 +125,10 @@ export function PositionScarcityChart({
         const sf = format === 'sf';
         const byPos = POSITIONS.map(pos => {
             const posPlayers = players
-                .filter(p => p.position === pos && (p.fc_value || 0) > 0)
-                .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0))
+                .filter(p => p.position === pos && ((useAuctionValue ? (p.redraft_auction_value || 0) : (p.fc_value || 0)) > 0))
+                .sort((a, b) => (useAuctionValue ? (b.redraft_auction_value || 0) - (a.redraft_auction_value || 0) : (b.fc_value || 0) - (a.fc_value || 0)))
                 .slice(0, topN);
-            const total = posPlayers.reduce((s, p) => s + (p.fc_value || 0), 0);
+            const total = posPlayers.reduce((s, p) => s + (useAuctionValue ? (p.redraft_auction_value || 0) : (p.fc_value || 0)), 0);
             const qualityCount = posPlayers.filter(p => {
                 const tier = sf ? p.rank_sf_tier : p.rank_1qb_tier;
                 return tier && tier <= QUALITY_MAX_TIER;
@@ -136,7 +138,7 @@ export function PositionScarcityChart({
                 const lrTier = getLateRoundTier(p.id || p.sleeper_id, customRankingsMap);
                 return {
                     player: p,
-                    value: p.fc_value || 0,
+                    value: useAuctionValue ? (p.redraft_auction_value || 0) : (p.fc_value || 0),
                     dynastyBucket: getDynastyBucket(dynastyTier),
                     dynastyTier,
                     zapBucket: getZapBucket(p.zap_category),
@@ -149,7 +151,7 @@ export function PositionScarcityChart({
         });
         const maxTotal = Math.max(...byPos.map(d => d.total), 1);
         return { byPos, maxTotal };
-    }, [players, format, topN, customRankingsMap]);
+    }, [players, format, topN, customRankingsMap, useAuctionValue]);
 
     const legend = view === 'dynasty' ? TIER_BUCKETS : view === 'redraft' ? REDRAFT_BUCKETS : ZAP_LEGEND;
     const hasPlayers = data.byPos.some(d => d.segments.length > 0);
