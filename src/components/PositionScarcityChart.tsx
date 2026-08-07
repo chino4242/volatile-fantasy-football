@@ -214,12 +214,12 @@ export function PositionScarcityChart({
                                     </div>
                                     {/* Bar */}
                                     <div className="flex-1 flex h-7 sm:h-7 rounded overflow-hidden bg-zinc-100 dark:bg-zinc-800 gap-px">
-                                        {segments.filter(seg => (seg.value / data.maxTotal) * 100 >= 0.3).map((seg) => {
+                                        {segments.filter(seg => (seg.value / data.maxTotal) * 100 >= 0.3).map((seg, segIdx) => {
                                             const widthPct = (seg.value / data.maxTotal) * 100;
                                             const bg = view === 'dynasty' ? seg.dynastyBucket.bg : view === 'redraft' ? seg.redraftBucket.bg : seg.zapBucket.bg;
                                             return (
                                                 <div
-                                                    key={seg.player.id}
+                                                    key={seg.player.id || `${seg.player.full_name}-${segIdx}`}
                                                     className={`${bg} cursor-pointer hover:brightness-110 active:brightness-90 transition-all duration-500 ease-out rounded-sm`}
                                                     style={{ width: `${widthPct}%` }}
                                                     onClick={(e) => { e.stopPropagation(); onPlayerClick(seg.player); }}

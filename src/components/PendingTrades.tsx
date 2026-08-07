@@ -14,6 +14,7 @@ interface EnrichedPlayer {
 interface EnrichedPick {
     season: number;
     round: number;
+    slot: number;
     originalOwnerName: string;
     estimatedValue: number;
 }
@@ -35,9 +36,10 @@ interface Props {
     playerValueMap: Record<string, { dynastyValue: number; auctionValue: number | null; position: string }>;
     allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string }[];
     allLeaguePicks?: { season: number; round: number; slot: number; teamName: string; estimatedValue: number }[];
+    onOpenInEvaluator?: (trade: { myAssets: string[]; theirAssets: string[]; theirPlayerId?: string }) => void;
 }
 
-export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allLeaguePlayers, allLeaguePicks }: Props) {
+export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator }: Props) {
     const [trades, setTrades] = useState<EnrichedTrade[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -115,12 +117,21 @@ export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allL
                     return { name, position: pos || data?.position || '', team, dynastyValue: data?.dynastyValue || 0, auctionValue: data?.auctionValue || null };
                 };
 
-                const enrichPick = (pk: any) => ({
-                    season: pk.season || 0,
-                    round: pk.slot?.round || 0,
-                    originalOwnerName: pk.originalOwner?.name || '',
-                    estimatedValue: pk.slot?.round === 1 ? 3000 : pk.slot?.round === 2 ? 1500 : 800,
-                });
+                const enrichPick = (pk: any) => {
+                    const season = pk.season || 0;
+                    const round = pk.slot?.round || 0;
+                    const slot = pk.slot?.slot || 0;
+                    // Try to find specific value from allLeaguePicks
+                    const matchedPick = allLeaguePicks?.find(lp => lp.season === season && lp.round === round && lp.slot === slot);
+                    const estimatedValue = matchedPick?.estimatedValue || (round === 1 ? 3000 : round === 2 ? 1500 : 800);
+                    return {
+                        season,
+                        round,
+                        slot,
+                        originalOwnerName: pk.originalOwner?.name || '',
+                        estimatedValue,
+                    };
+                };
 
                 return {
                     id: t.id,
@@ -199,7 +210,7 @@ export function PendingTrades({ leagueId, teamId, teamName, playerValueMap, allL
                 <p className="text-xs text-zinc-500 text-center py-2">No pending trades</p>
             )}
 
-            {trades.map(trade => <TradeCard key={trade.id} trade={trade} allLeaguePlayers={allLeaguePlayers} allLeaguePicks={allLeaguePicks} />)}
+            {trades.map(trade => <TradeCard key={trade.id} trade={trade} allLeaguePlayers={allLeaguePlayers} allLeaguePicks={allLeaguePicks} onOpenInEvaluator={onOpenInEvaluator} />)}
         </div>
     );
 }
@@ -226,7 +237,7 @@ function CookieInput({ cookieValue, setCookieValue, onSave }: { cookieValue: str
     );
 }
 
-function TradeCard({ trade, allLeaguePlayers, allLeaguePicks }: { trade: EnrichedTrade; allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string }[]; allLeaguePicks?: { season: number; round: number; slot: number; teamName: string; estimatedValue: number }[] }) {
+function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator }: { trade: EnrichedTrade; allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string; sleeper_id?: string }[]; allLeaguePicks?: { season: number; round: number; slot: number; teamName: string; estimatedValue: number; sleeper_id?: string }[]; onOpenInEvaluator?: (trade: { myAssets: string[]; theirAssets: string[]; theirPlayerId?: string }) => void }) {
     const [showCounter, setShowCounter] = useState(false);
     const sendTotal = trade.youSend.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youSend.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const receiveTotal = trade.youReceive.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youReceive.picks.reduce((s, p) => s + p.estimatedValue, 0);
@@ -376,8 +387,8 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks }: { trade: Enriche
                     ))}
                     {trade.youSend.picks.map((pk, i) => (
                         <div key={`pk${i}`} className="flex items-center justify-between text-xs py-0.5">
-                            <span className="text-zinc-900 dark:text-zinc-100">{pk.season} Rd {pk.round}</span>
-                            <span className="font-mono text-zinc-500">~{pk.estimatedValue.toLocaleString()}</span>
+                            <span className="text-zinc-900 dark:text-zinc-100">{pk.season} Rd {pk.round}{pk.slot ? `.${String(pk.slot).padStart(2, '0')}` : ''}</span>
+                            <span className="font-mono text-zinc-500">{pk.estimatedValue.toLocaleString()}</span>
                         </div>
                     ))}
                     <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1.5 pt-1.5 text-[10px] text-zinc-500">
@@ -397,8 +408,8 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks }: { trade: Enriche
                     ))}
                     {trade.youReceive.picks.map((pk, i) => (
                         <div key={`pk${i}`} className="flex items-center justify-between text-xs py-0.5">
-                            <span className="text-zinc-900 dark:text-zinc-100">{pk.season} Rd {pk.round}</span>
-                            <span className="font-mono text-zinc-500">~{pk.estimatedValue.toLocaleString()}</span>
+                            <span className="text-zinc-900 dark:text-zinc-100">{pk.season} Rd {pk.round}{pk.slot ? `.${String(pk.slot).padStart(2, '0')}` : ''}</span>
+                            <span className="font-mono text-zinc-500">{pk.estimatedValue.toLocaleString()}</span>
                         </div>
                     ))}
                     <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1.5 pt-1.5 text-[10px] text-zinc-500">
@@ -438,8 +449,25 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks }: { trade: Enriche
                                     </span>
                                 ))}
                             </div>
-                            <div className="text-[9px] text-zinc-500 mt-1">
-                                Gap: {Math.abs(diff).toLocaleString()} → With counter: <span className={newDiff >= 0 ? 'text-green-600 font-medium' : 'text-amber-600 font-medium'}>{newDiff >= 0 ? '+' : ''}{newDiff.toLocaleString()}</span> for you
+                            <div className="flex items-center justify-between mt-1.5">
+                                <div className="text-[9px] text-zinc-500">
+                                    Gap: {Math.abs(diff).toLocaleString()} → With counter: <span className={newDiff >= 0 ? 'text-green-600 font-medium' : 'text-amber-600 font-medium'}>{newDiff >= 0 ? '+' : ''}{newDiff.toLocaleString()}</span> for you
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        // Build asset IDs for the counter: original trade + suggested additions
+                                        const myAssetIds = trade.youSend.players.map(p => allLeaguePlayers?.find(lp => lp.name === p.name)?.sleeper_id).filter(Boolean) as string[];
+                                        const theirAssetIds = [
+                                            ...trade.youReceive.players.map(p => allLeaguePlayers?.find(lp => lp.name === p.name)?.sleeper_id).filter(Boolean) as string[],
+                                            ...suggestedAsk.players.map(p => allLeaguePlayers?.find(lp => lp.name === p.name)?.sleeper_id).filter(Boolean) as string[],
+                                        ];
+                                        window.dispatchEvent(new CustomEvent('vff:open-trade-evaluator', { detail: { myAssets: myAssetIds, theirAssets: theirAssetIds } }));
+                                        document.getElementById('trade-evaluator')?.scrollIntoView({ behavior: 'smooth' });
+                                    }}
+                                    className="text-[9px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                                >
+                                    Open in Evaluator →
+                                </button>
                             </div>
                         </div>
                     )}
@@ -472,6 +500,18 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks }: { trade: Enriche
                                     </div>
                                 ))}
                             </div>
+                            <button
+                                onClick={() => {
+                                    // Open evaluator with the original trade's assets as starting point
+                                    const myAssetIds = trade.youSend.players.map(p => allLeaguePlayers?.find(lp => lp.name === p.name)?.sleeper_id).filter(Boolean) as string[];
+                                    const theirAssetIds = trade.youReceive.players.map(p => allLeaguePlayers?.find(lp => lp.name === p.name)?.sleeper_id).filter(Boolean) as string[];
+                                    window.dispatchEvent(new CustomEvent('vff:open-trade-evaluator', { detail: { myAssets: myAssetIds, theirAssets: theirAssetIds } }));
+                                    document.getElementById('trade-evaluator')?.scrollIntoView({ behavior: 'smooth' });
+                                }}
+                                className="mt-2 text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                            >
+                                Open in Evaluator →
+                            </button>
                         </div>
                     )}
 

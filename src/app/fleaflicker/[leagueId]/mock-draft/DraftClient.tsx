@@ -1030,9 +1030,11 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                 const [, r, s] = assetId.split('_');
                 total += estimatePickValue(parseInt(r), parseInt(s));
             } else if (assetId.startsWith('pick_')) {
-                // Future pick: pick_season_round
-                const r = parseInt(assetId.split('_')[2]);
-                total += estimateFuturePickValue(r);
+                // Future pick: pick_season_round_slot
+                const parts = assetId.split('_');
+                const r = parseInt(parts[2]);
+                const s = parts[3] ? parseInt(parts[3]) : undefined;
+                total += estimateFuturePickValue(r, s, sf);
             }
         });
         return total;
@@ -2828,7 +2830,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                         .filter((p, idx) => p.teamId === userTeamId && idx > currentPickIndex && !p.playerId)
                                                         .map(p => ({ aid: `draftpick_${p.round}_${p.pick}`, label: `${p.round}.${String(p.pick).padStart(2, '0')}`, value: estimatePickValue(p.round, p.pick) }));
                                                     const fp = userTeam.draftPicks.filter(p => p.season > new Date().getFullYear())
-                                                        .map(p => ({ aid: `pick_${p.season}_${p.round}`, label: `${p.season} R${p.round}`, value: estimateFuturePickValue(p.round) }));
+                                                        .map(p => ({ aid: `pick_${p.season}_${p.round}_${p.slot || 0}`, label: `${p.season} R${p.round}${p.slot ? '.' + String(p.slot).padStart(2, '0') : ''}`, value: estimateFuturePickValue(p.round, p.slot || undefined, sf) }));
                                                     const allPicks = [...myCurrentPicks, ...fp];
                                                     return allPicks.length > 0 && (
                                                         <>
@@ -2884,7 +2886,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                     // Future picks
                                                     const theirFuturePicks = theirTeam.draftPicks
                                                         .filter(p => p.season > new Date().getFullYear())
-                                                        .map(p => ({ round: p.round, slot: 0, aid: `pick_${p.season}_${p.round}`, label: `${p.season} R${p.round}`, value: estimateFuturePickValue(p.round) }));
+                                                        .map(p => ({ round: p.round, slot: p.slot || 0, aid: `pick_${p.season}_${p.round}_${p.slot || 0}`, label: `${p.season} R${p.round}${p.slot ? '.' + String(p.slot).padStart(2, '0') : ''}`, value: estimateFuturePickValue(p.round, p.slot || undefined, sf) }));
                                                     const allPicks = [...theirCurrentPicks, ...theirFuturePicks];
                                                     return allPicks.length > 0 && (
                                                         <>

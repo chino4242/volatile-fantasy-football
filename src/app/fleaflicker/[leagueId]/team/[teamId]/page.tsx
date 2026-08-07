@@ -54,11 +54,12 @@ export default async function FleaflickerTeamPage({
         .map(p => normalizeName(p.full_name))
         .filter(Boolean);
 
-    // Get pick IDs - try both specific slot and round-level
-    const specificPickIds = roster.draftPicks.map(pick =>
-        `FP_${pick.season}_${pick.round}.${pick.slot.toString().padStart(2, '0')}`
+    // Get pick IDs - try both specific slot and round-level (for ALL teams, not just current)
+    const allRosterPicks = fleaflickerData.rosters.flatMap(r => r.draftPicks || []);
+    const specificPickIds = allRosterPicks.map(pick =>
+        `FP_${pick.season}_${pick.round}.${String(pick.slot).padStart(2, '0')}`
     );
-    const roundPickIds = roster.draftPicks.map(pick =>
+    const roundPickIds = allRosterPicks.map(pick =>
         getPickFantasyCalcId(pick.season.toString(), pick.round)
     );
     const pickIds = [...new Set([...specificPickIds, ...roundPickIds])];
@@ -268,6 +269,8 @@ export default async function FleaflickerTeamPage({
             redraft_rank_pos: playerValues.redraft_rank_pos,
             redraft_rank_tier: playerValues.redraft_rank_tier,
             redraft_auction_value: playerValues.redraft_auction_value,
+            years_exp: players.years_exp,
+            age: players.age,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -295,13 +298,17 @@ export default async function FleaflickerTeamPage({
     for (const r of fleaflickerData.rosters) {
         if (r.id === parseInt(teamId)) continue; // skip current team's picks (already in myPlayers)
         for (const pick of r.draftPicks) {
-            const pickId = getPickFantasyCalcId(pick.season.toString(), pick.round);
-            const pickValue = values.find(v => v.sleeper_id === pickId);
+            // Try specific pick slot first, fall back to generic round
+            const specificPickId = `FP_${pick.season}_${pick.round}.${String(pick.slot).padStart(2, '0')}`;
+            const roundPickId = getPickFantasyCalcId(pick.season.toString(), pick.round);
+            const specificValue = values.find(v => v.sleeper_id === specificPickId);
+            const roundValue = values.find(v => v.sleeper_id === roundPickId);
+            const pickValue = specificValue || roundValue;
             const fcVal = pickValue ? (format === 'sf' ? pickValue.fc_value_sf : pickValue.fc_value_1qb) : null;
             if (!fcVal) continue;
             const ownerName = rosterToOwnerMap.get(r.id) || '';
             otherTeamsPicks.push({
-                sleeper_id: `${pickId}_${r.id}`,
+                sleeper_id: `${specificPickId}_${r.id}`,
                 full_name: `${pick.season} Round ${pick.round}${pick.slot ? `.${String(pick.slot).padStart(2, '0')}` : ''} (${ownerName})`,
                 position: 'PICK',
                 team: null,
@@ -325,7 +332,7 @@ export default async function FleaflickerTeamPage({
                 redraft_rank_tier: null,
                 redraft_auction_value: null,
             });
-            playerOwnershipMap.set(`${pickId}_${r.id}`, r.id);
+            playerOwnershipMap.set(`${specificPickId}_${r.id}`, r.id);
         }
     }
     const allLeagueValuesWithPicks = [...allLeagueValues, ...otherTeamsPicks];
@@ -346,6 +353,7 @@ export default async function FleaflickerTeamPage({
                                 leagueId={leagueId}
                                 platform="fleaflicker"
                                 keeperCount={keeperCount}
+                                customRankingsMap={rankingsMap}
                             />
                         </div>
                     </div>
@@ -403,15 +411,18 @@ export default async function FleaflickerTeamPage({
                             const norm = normalizeName(p.full_name || '');
                             const allData = [...allAssetsWithWriteups, ...allLeagueValuesWithPicks] as any[];
                             const match = allData.find(ap => normalizeName(ap.full_name || '') === norm);
-                            return { name: p.full_name || '', position: match?.position || '', dynastyValue: match?.fc_value || 0, auctionValue: match?.redraft_auction_value || null, teamName: r.name || '' };
+                            return { name: p.full_name || '', position: match?.position || '', dynastyValue: match?.fc_value || 0, auctionValue: match?.redraft_auction_value || null, teamName: r.name || '', sleeper_id: match?.sleeper_id || null };
                         })
                     )}
                     allLeaguePicks={fleaflickerData.rosters.flatMap(r =>
                         r.draftPicks.filter(pk => pk.season >= new Date().getFullYear()).map(pk => {
-                            const pickId = getPickFantasyCalcId(String(pk.season), pk.round);
-                            const pickValue = values.find(v => v.sleeper_id === pickId);
+                            const specificPickId = `FP_${pk.season}_${pk.round}.${String(pk.slot).padStart(2, '0')}`;
+                            const roundPickId = getPickFantasyCalcId(String(pk.season), pk.round);
+                            const specificValue = values.find(v => v.sleeper_id === specificPickId);
+                            const roundValue = values.find(v => v.sleeper_id === roundPickId);
+                            const pickValue = specificValue || roundValue;
                             const fcVal = pickValue ? (format === 'sf' ? pickValue.fc_value_sf : pickValue.fc_value_1qb) : null;
-                            return { season: pk.season, round: pk.round, slot: pk.slot || 0, teamName: r.name || '', estimatedValue: fcVal || (pk.round === 1 ? 3000 : pk.round === 2 ? 1500 : 800) };
+                            return { season: pk.season, round: pk.round, slot: pk.slot || 0, teamName: r.name || '', estimatedValue: fcVal || (pk.round === 1 ? 3000 : pk.round === 2 ? 1500 : 800), sleeper_id: specificPickId };
                         })
                     )}
                 />
