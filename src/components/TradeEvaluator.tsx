@@ -390,7 +390,7 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
                             auctionValue: p.redraft_auction_value || 0,
                             age: p.age || null,
                             name: p.full_name,
-                            signal: null,
+                            signal: customRankingsMap?.get(p.sleeper_id)?.[0]?.signal || null,
                         })),
                         receiving: receivePlayers.filter(p => p.position !== 'PICK').map(p => ({
                             position: p.position || '',
@@ -398,7 +398,7 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
                             auctionValue: p.redraft_auction_value || 0,
                             age: p.age || null,
                             name: p.full_name,
-                            signal: null,
+                            signal: customRankingsMap?.get(p.sleeper_id)?.[0]?.signal || null,
                         })),
                         sendingPickValue: sendPlayers.filter(p => p.position === 'PICK').reduce((s, p) => s + (p.fc_value || 0), 0),
                         receivingPickValue: receivePlayers.filter(p => p.position === 'PICK').reduce((s, p) => s + (p.fc_value || 0), 0),

@@ -411,7 +411,8 @@ export default async function FleaflickerTeamPage({
                             const norm = normalizeName(p.full_name || '');
                             const allData = [...allAssetsWithWriteups, ...allLeagueValuesWithPicks] as any[];
                             const match = allData.find(ap => normalizeName(ap.full_name || '') === norm);
-                            return { name: p.full_name || '', position: match?.position || '', dynastyValue: match?.fc_value || 0, auctionValue: match?.redraft_auction_value || null, teamName: r.name || '', sleeper_id: match?.sleeper_id || null };
+                            const signal = match?.sleeper_id && rankingsMap.has(match.sleeper_id) ? rankingsMap.get(match.sleeper_id)?.[0]?.signal || null : null;
+                            return { name: p.full_name || '', position: match?.position || '', dynastyValue: match?.fc_value || 0, auctionValue: match?.redraft_auction_value || null, teamName: r.name || '', sleeper_id: match?.sleeper_id || null, age: match?.age || null, signal };
                         })
                     )}
                     allLeaguePicks={fleaflickerData.rosters.flatMap(r =>

@@ -35,7 +35,7 @@ interface Props {
     teamId: string;
     teamName: string;
     playerValueMap: Record<string, { dynastyValue: number; auctionValue: number | null; position: string }>;
-    allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string }[];
+    allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string; sleeper_id?: string | null; age?: number | null; signal?: string | null }[];
     allLeaguePicks?: { season: number; round: number; slot: number; teamName: string; estimatedValue: number }[];
     onOpenInEvaluator?: (trade: { myAssets: string[]; theirAssets: string[]; theirPlayerId?: string }) => void;
 }
@@ -238,7 +238,7 @@ function CookieInput({ cookieValue, setCookieValue, onSave }: { cookieValue: str
     );
 }
 
-function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator }: { trade: EnrichedTrade; allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string; sleeper_id?: string }[]; allLeaguePicks?: { season: number; round: number; slot: number; teamName: string; estimatedValue: number; sleeper_id?: string }[]; onOpenInEvaluator?: (trade: { myAssets: string[]; theirAssets: string[]; theirPlayerId?: string }) => void }) {
+function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator }: { trade: EnrichedTrade; allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string; sleeper_id?: string | null; age?: number | null; signal?: string | null }[]; allLeaguePicks?: { season: number; round: number; slot: number; teamName: string; estimatedValue: number; sleeper_id?: string }[]; onOpenInEvaluator?: (trade: { myAssets: string[]; theirAssets: string[]; theirPlayerId?: string }) => void }) {
     const [showCounter, setShowCounter] = useState(false);
     const [showImpact, setShowImpact] = useState(false);
     const sendTotal = trade.youSend.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youSend.picks.reduce((s, p) => s + p.estimatedValue, 0);
@@ -305,10 +305,17 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator 
     // Trade advisor recommendation
     const advisorResult = useMemo(() => {
         const myPlayers = allLeaguePlayers?.filter(p => p.teamName === trade.yourTeamName) || [];
+        const findPlayer = (name: string) => allLeaguePlayers?.find(p => p.name.toLowerCase() === name.toLowerCase());
         return analyzeTradeAdvisor({
-            myRoster: myPlayers.map(p => ({ position: p.position, dynastyValue: p.dynastyValue, auctionValue: p.auctionValue || 0, age: null })),
-            sending: trade.youSend.players.map(p => ({ position: p.position, dynastyValue: p.dynastyValue, auctionValue: p.auctionValue || 0, age: null, name: p.name, signal: null })),
-            receiving: trade.youReceive.players.map(p => ({ position: p.position, dynastyValue: p.dynastyValue, auctionValue: p.auctionValue || 0, age: null, name: p.name, signal: null })),
+            myRoster: myPlayers.map(p => ({ position: p.position, dynastyValue: p.dynastyValue, auctionValue: p.auctionValue || 0, age: p.age || null })),
+            sending: trade.youSend.players.map(p => {
+                const match = findPlayer(p.name);
+                return { position: p.position, dynastyValue: p.dynastyValue, auctionValue: p.auctionValue || 0, age: match?.age || null, name: p.name, signal: match?.signal || null };
+            }),
+            receiving: trade.youReceive.players.map(p => {
+                const match = findPlayer(p.name);
+                return { position: p.position, dynastyValue: p.dynastyValue, auctionValue: p.auctionValue || 0, age: match?.age || null, name: p.name, signal: match?.signal || null };
+            }),
             sendingPickValue: trade.youSend.picks.reduce((s, pk) => s + pk.estimatedValue, 0),
             receivingPickValue: trade.youReceive.picks.reduce((s, pk) => s + pk.estimatedValue, 0),
         });
