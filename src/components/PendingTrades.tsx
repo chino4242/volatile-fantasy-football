@@ -241,6 +241,9 @@ function CookieInput({ cookieValue, setCookieValue, onSave }: { cookieValue: str
 function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator }: { trade: EnrichedTrade; allLeaguePlayers?: { name: string; position: string; dynastyValue: number; auctionValue: number | null; teamName: string; sleeper_id?: string | null; age?: number | null; signal?: string | null }[]; allLeaguePicks?: { season: number; round: number; slot: number; teamName: string; estimatedValue: number; sleeper_id?: string }[]; onOpenInEvaluator?: (trade: { myAssets: string[]; theirAssets: string[]; theirPlayerId?: string }) => void }) {
     const [showCounter, setShowCounter] = useState(false);
     const [showImpact, setShowImpact] = useState(false);
+    const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiError, setAiError] = useState<string | null>(null);
     const sendTotal = trade.youSend.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youSend.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const receiveTotal = trade.youReceive.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youReceive.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const sendAuction = trade.youSend.players.reduce((s, p) => s + (p.auctionValue || 0), 0);
@@ -325,6 +328,51 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator 
     const otherTeamPlayers = allLeaguePlayers?.filter(p => p.teamName === trade.otherTeamName) || [];
     const otherTeamSorted = [...otherTeamPlayers].sort((a, b) => b.dynastyValue - a.dynastyValue);
     const otherTeamPicks = allLeaguePicks?.filter(p => p.teamName === trade.otherTeamName)?.sort((a, b) => a.round - b.round || a.season - b.season) || [];
+
+    const fetchAi = async () => {
+        setAiLoading(true);
+        setAiError(null);
+        const myPlayers = allLeaguePlayers?.filter(p => p.teamName === trade.yourTeamName) || [];
+        const positions = ['QB', 'RB', 'WR', 'TE'];
+        const rosterByPos: Record<string, { count: number; value: number; auction: number }> = {};
+        positions.forEach(pos => { rosterByPos[pos] = { count: 0, value: 0, auction: 0 }; });
+        myPlayers.forEach(p => { if (p.position in rosterByPos) { rosterByPos[p.position].count++; rosterByPos[p.position].value += p.dynastyValue; rosterByPos[p.position].auction += p.auctionValue || 0; } });
+
+        const formatP = (p: { name: string; position: string; dynastyValue: number; auctionValue: number | null; age?: number | null; signal?: string | null }) =>
+            `- ${p.name}, ${p.position}, Age ${p.age || '?'}, Dynasty: ${p.dynastyValue.toLocaleString()}, Auction: $${p.auctionValue || 0}${p.signal ? `, Film: ${p.signal}` : ''}`;
+
+        const tradeContext = `LEAGUE: ${(allLeaguePlayers?.length || 0) > 100 ? '10-12' : '8-10'} teams, keeper league
+
+MY ROSTER DEPTH:
+${positions.map(pos => `${pos}: ${rosterByPos[pos].count} players, ${rosterByPos[pos].value.toLocaleString()} dynasty, $${rosterByPos[pos].auction} auction`).join('\n')}
+
+THE TRADE:
+I send to ${trade.otherTeamName}:
+${trade.youSend.players.map(p => formatP({ ...p, age: allLeaguePlayers?.find(lp => lp.name === p.name)?.age, signal: allLeaguePlayers?.find(lp => lp.name === p.name)?.signal })).join('\n')}
+${trade.youSend.picks.map(pk => `- ${pk.season} Rd ${pk.round}${pk.slot ? `.${String(pk.slot).padStart(2, '0')}` : ''} (PICK) — value: ${pk.estimatedValue.toLocaleString()}`).join('\n')}
+
+I receive from ${trade.otherTeamName}:
+${trade.youReceive.players.map(p => formatP({ ...p, age: allLeaguePlayers?.find(lp => lp.name === p.name)?.age, signal: allLeaguePlayers?.find(lp => lp.name === p.name)?.signal })).join('\n')}
+${trade.youReceive.picks.map(pk => `- ${pk.season} Rd ${pk.round}${pk.slot ? `.${String(pk.slot).padStart(2, '0')}` : ''} (PICK) — value: ${pk.estimatedValue.toLocaleString()}`).join('\n')}
+
+VALUE SUMMARY:
+I send: ${sendTotal.toLocaleString()} dynasty, $${sendAuction} auction
+I receive: ${receiveTotal.toLocaleString()} dynasty, $${receiveAuction} auction
+Net: ${diff >= 0 ? '+' : ''}${diff.toLocaleString()} dynasty, ${receiveAuction - sendAuction >= 0 ? '+' : ''}$${receiveAuction - sendAuction} auction`;
+
+        try {
+            const userId = typeof window !== 'undefined' ? localStorage.getItem('vff_user') || 'anonymous' : 'anonymous';
+            const res = await fetch('/api/trade-analysis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, tradeContext }),
+            });
+            const data = await res.json();
+            if (!res.ok) setAiError(data.error || 'Failed');
+            else setAiAnalysis(data.analysis);
+        } catch { setAiError('Network error'); }
+        finally { setAiLoading(false); }
+    };
 
     // Suggest a counter: prefer pick upgrades/additions for small gaps, players for large gaps
     const suggestedAsk = (() => {
@@ -520,6 +568,9 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator 
                     <span>Auction: <span className={`font-mono font-bold ${receiveAuction >= sendAuction ? 'text-green-600' : 'text-red-500'}`}>{receiveAuction >= sendAuction ? '+' : ''}{receiveAuction - sendAuction > 0 ? `$${receiveAuction - sendAuction}` : `-$${sendAuction - receiveAuction}`}</span></span>
                 ) : null}
                 <div className="ml-auto flex gap-2">
+                    <button onClick={fetchAi} disabled={aiLoading || !!aiAnalysis} className="text-[10px] text-purple-600 dark:text-purple-400 font-medium hover:underline disabled:opacity-50">
+                        {aiLoading ? 'Analyzing...' : aiAnalysis ? '✓ AI' : '🤖 AI'}
+                    </button>
                     <button onClick={() => setShowImpact(!showImpact)} className="text-[10px] text-zinc-600 dark:text-zinc-400 font-medium hover:underline">
                         {showImpact ? 'Hide Impact' : 'Impact ↕'}
                     </button>
@@ -528,6 +579,20 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator 
                     </button>
                 </div>
             </div>
+
+            {/* AI Analysis */}
+            {(aiAnalysis !== null || aiError) && (
+                <div className="px-3 py-3 border-t border-zinc-200 dark:border-zinc-700">
+                    <div className="text-[9px] font-bold text-purple-600 dark:text-purple-400 uppercase mb-1.5">🤖 AI Analysis</div>
+                    {aiError ? (
+                        <div className="text-[10px] text-red-500">{aiError}</div>
+                    ) : (
+                        <div className="text-[10px] text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed bg-purple-50 dark:bg-purple-950/10 border border-purple-200 dark:border-purple-800 rounded-lg p-2.5">
+                            {aiAnalysis}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Roster Impact */}
             {showImpact && (

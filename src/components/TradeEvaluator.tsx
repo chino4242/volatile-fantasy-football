@@ -144,6 +144,106 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
     const [comparing, setComparing] = useState(false);
     const [comparisonData, setComparisonData] = useState<Record<string, any> | null>(null);
 
+    // AI analysis state
+    const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiRemaining, setAiRemaining] = useState<number | null>(null);
+    const [aiError, setAiError] = useState<string | null>(null);
+
+    const fetchAiAnalysis = async () => {
+        setAiLoading(true);
+        setAiError(null);
+
+        // Build context string with all available data
+        const sendPlayers = Array.from(mySend).map(id => myPlayers.find(p => p.sleeper_id === id)).filter(Boolean) as Player[];
+        const receivePlayers = Array.from(theirSend).map(id => theirPlayers.find(p => p.sleeper_id === id)).filter(Boolean) as Player[];
+        const positions = ['QB', 'RB', 'WR', 'TE'] as const;
+
+        // My roster summary
+        const rosterByPos: Record<string, { count: number; totalValue: number; totalAuction: number }> = {};
+        positions.forEach(pos => { rosterByPos[pos] = { count: 0, totalValue: 0, totalAuction: 0 }; });
+        myPlayers.filter(p => p.position !== 'PICK').forEach(p => {
+            if (p.position && p.position in rosterByPos) {
+                rosterByPos[p.position].count++;
+                rosterByPos[p.position].totalValue += p.fc_value || 0;
+                rosterByPos[p.position].totalAuction += p.redraft_auction_value || 0;
+            }
+        });
+
+        const formatPlayer = (p: Player) => {
+            const age = p.age || (p.years_exp != null ? p.years_exp + 22 : null);
+            const stats = comparisonData?.[p.sleeper_id];
+            const latest = stats?.stats?.[0];
+            const rankings = customRankingsMap?.get(p.sleeper_id);
+            const signal = rankings?.[0];
+
+            let line = `- ${p.full_name}, ${p.position}, ${p.team || '?'}`;
+            if (age) line += `, Age ${age}`;
+            line += `\n  Dynasty: ${(p.fc_value || 0).toLocaleString()} | Auction: $${p.redraft_auction_value || 0}`;
+            if (p.fc_trend_30_day) line += ` | 30d trend: ${p.fc_trend_30_day > 0 ? '+' : ''}${p.fc_trend_30_day}`;
+            if (latest) {
+                const statParts: string[] = [];
+                if (latest.target_share) statParts.push(`Tgt Share: ${(parseFloat(latest.target_share) * 100).toFixed(1)}%`);
+                if (latest.avg_separation) statParts.push(`Sep: ${parseFloat(latest.avg_separation).toFixed(1)}`);
+                if (latest.rush_yards_over_expected_per_att) statParts.push(`RYOE: ${parseFloat(latest.rush_yards_over_expected_per_att).toFixed(2)}`);
+                if (latest.offense_snap_pct) statParts.push(`Snap: ${(parseFloat(latest.offense_snap_pct) * 100).toFixed(0)}%`);
+                if (latest.fantasy_points_ppr) statParts.push(`PPR: ${parseFloat(latest.fantasy_points_ppr).toFixed(0)}`);
+                if (statParts.length > 0) line += `\n  Stats: ${statParts.join(', ')}`;
+            }
+            if (stats?.breakout?.score > 30) line += `\n  📈 Breakout (score: ${stats.breakout.score})`;
+            if (stats?.regression?.length > 0) line += `\n  ⚠️ Regression: ${stats.regression.map((r: any) => r.type).join(', ')}`;
+            if (signal) line += `\n  Film: #${signal.rank} ${signal.signal || ''} — ${signal.notes || ''}`;
+            return line;
+        };
+
+        const selectedTeamName = selectedTeamId ? (rosterToOwnerMap.get(selectedTeamId) || 'Other Team') : 'Other Team';
+
+        const tradeContext = `LEAGUE: ${rosterToOwnerMap.size + 1} teams, ${sf ? 'Superflex' : '1QB'}, ${keeperCount || 0} keepers
+
+MY ROSTER DEPTH:
+${positions.map(pos => `${pos}: ${rosterByPos[pos].count} players, ${rosterByPos[pos].totalValue.toLocaleString()} dynasty, $${rosterByPos[pos].totalAuction} auction`).join('\n')}
+
+THE TRADE:
+I send to ${selectedTeamName}:
+${sendPlayers.map(formatPlayer).join('\n')}
+${Array.from(mySend).filter(id => myPlayers.find(p => p.sleeper_id === id)?.position === 'PICK').map(id => {
+    const p = myPlayers.find(pl => pl.sleeper_id === id);
+    return `- ${p?.full_name} (PICK) — value: ${(p?.fc_value || 0).toLocaleString()}`;
+}).join('\n')}
+
+I receive from ${selectedTeamName}:
+${receivePlayers.map(formatPlayer).join('\n')}
+${Array.from(theirSend).filter(id => theirPlayers.find(p => p.sleeper_id === id)?.position === 'PICK').map(id => {
+    const p = theirPlayers.find(pl => pl.sleeper_id === id);
+    return `- ${p?.full_name} (PICK) — value: ${(p?.fc_value || 0).toLocaleString()}`;
+}).join('\n')}
+
+VALUE SUMMARY:
+I send: ${myTotal.toLocaleString()} dynasty, $${myAuction} auction
+I receive: ${theirTotal.toLocaleString()} dynasty, $${theirAuction} auction
+Net: ${diff > 0 ? '+' : ''}${diff.toLocaleString()} dynasty, ${theirAuction - myAuction >= 0 ? '+' : ''}$${theirAuction - myAuction} auction`;
+
+        try {
+            const userId = typeof window !== 'undefined' ? localStorage.getItem('vff_user') || 'anonymous' : 'anonymous';
+            const res = await fetch('/api/trade-analysis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, tradeContext }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setAiError(data.error || 'Analysis failed');
+            } else {
+                setAiAnalysis(data.analysis);
+                setAiRemaining(data.remaining);
+            }
+        } catch {
+            setAiError('Network error');
+        } finally {
+            setAiLoading(false);
+        }
+    };
+
     const fetchComparison = async () => {
         setComparing(true);
         const playerIds = [
@@ -536,6 +636,15 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
                                 {comparing ? 'Loading...' : '📊 Deep Comparison'}
                             </button>
                         )}
+                        {(mySend.size > 0 && theirSend.size > 0) && (
+                            <button
+                                onClick={fetchAiAnalysis}
+                                disabled={aiLoading}
+                                className="px-3 py-1.5 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 hover:bg-purple-200 dark:hover:bg-purple-800/30 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                                {aiLoading ? 'Analyzing...' : '🤖 AI Analysis'}
+                            </button>
+                        )}
                         <button
                             onClick={() => { setOpen(false); reset(); }}
                             className="px-4 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg"
@@ -671,6 +780,23 @@ export default function TradeEvaluator({ myPlayers, allLeaguePlayers, playerOwne
                                 })}
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {/* AI Analysis Panel */}
+                {(aiAnalysis || aiError) && (
+                    <div className="mt-4 border-t border-zinc-200 dark:border-zinc-700 pt-4">
+                        <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase">🤖 AI Analysis</h4>
+                            {aiRemaining !== null && <span className="text-[9px] text-zinc-400">{aiRemaining} analyses remaining today</span>}
+                        </div>
+                        {aiError ? (
+                            <div className="text-xs text-red-500">{aiError}</div>
+                        ) : (
+                            <div className="text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed bg-purple-50 dark:bg-purple-950/10 border border-purple-200 dark:border-purple-800 rounded-lg p-3">
+                                {aiAnalysis}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
