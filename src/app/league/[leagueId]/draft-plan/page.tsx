@@ -179,7 +179,7 @@ export default async function SleeperDraftPlanPage({
         const freeAgents = await db.select(playerSelect)
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
-            .where(and(notInArray(players.sleeper_id, excludeIds), not(like(players.sleeper_id, '%pick%')), inArray(players.position, ['QB', 'RB', 'WR', 'TE'])))
+            .where(and(notInArray(players.sleeper_id, excludeIds), not(like(players.sleeper_id, '%pick%')), inArray(players.position, ['QB', 'RB', 'WR', 'TE', 'DEF'])))
             .orderBy(desc(valueCol))
             .limit(200);
 
