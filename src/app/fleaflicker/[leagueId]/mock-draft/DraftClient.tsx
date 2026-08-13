@@ -2335,7 +2335,15 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 // For each of your picks, BPA = best player that was actually available at that point
                                 // We approximate by using the pick's overall position (how many picks happened before)
                                 let theoreticalMax = 0;
-                                const sortedFreeAgents = [...freeAgents].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                // Apply the same position adjustments as the scoring system
+                                const isRedraftEff = !keeperCount || keeperCount <= 3;
+                                const getEffBpaValue = (p: Player): number => {
+                                    let val = isRedraftEff ? (p.redraft_auction_value || 0) * 100 : (p.fc_value || 0);
+                                    if (p.position === 'QB' && !sf) val *= 0.55;
+                                    if (p.position === 'TE') val *= 0.85;
+                                    return val;
+                                };
+                                const sortedFreeAgents = [...freeAgents].sort((a, b) => getEffBpaValue(b) - getEffBpaValue(a));
                                 const effBreakdown: { player: typeof draftedPlayers[0]; bpa: Player | null; bpaValue: number; actualValue: number; delta: number }[] = [];
                                 
                                 // Build a set of all players taken before each of your picks
@@ -2344,15 +2352,15 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                     // How many picks happened before this one?
                                     const picksBefore = allPicksInOrder.filter(p => picks.indexOf(p) < dp.pickIndex).length;
                                     // BPA at this point = the best player from the pool after removing `picksBefore` players
-                                    // Since other teams took from the same pool, the Nth best player is roughly at index N
                                     const bpaPlayer = sortedFreeAgents[Math.min(picksBefore, sortedFreeAgents.length - 1)] || null;
-                                    const bpaValue = bpaPlayer?.fc_value || 0;
-                                    const actualValue = dp.fc_value || 0;
+                                    const bpaValue = bpaPlayer ? getEffBpaValue(bpaPlayer) : 0;
+                                    const actualValue = getEffBpaValue(dp);
                                     const delta = actualValue - bpaValue;
                                     theoreticalMax += bpaValue;
-                                    effBreakdown.push({ player: dp, bpa: bpaPlayer, bpaValue, actualValue, delta });
+                                    effBreakdown.push({ player: dp, bpa: bpaPlayer, bpaValue: Math.round(bpaValue), actualValue: Math.round(actualValue), delta: Math.round(delta) });
                                 }
-                                const efficiency = theoreticalMax > 0 ? Math.round((totalDraftedValue / theoreticalMax) * 100) : 100;
+                                const totalAdjustedValue = effBreakdown.reduce((s, e) => s + e.actualValue, 0);
+                                const efficiency = theoreticalMax > 0 ? Math.round((totalAdjustedValue / theoreticalMax) * 100) : 100;
                                 const effGrade = efficiency >= 90 ? 'A+' : efficiency >= 80 ? 'A' : efficiency >= 70 ? 'B+' : efficiency >= 60 ? 'B' : efficiency >= 50 ? 'C+' : 'C';
                                 const biggestMisses = [...effBreakdown].sort((a, b) => a.delta - b.delta).filter(e => e.delta < -200);
 
@@ -2454,7 +2462,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                             <div className="flex items-center gap-4">
                                                 <div className="flex-1">
                                                     <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
-                                                        <span>Actual: {totalDraftedValue.toLocaleString()}</span>
+                                                        <span>Actual: {totalAdjustedValue.toLocaleString()}</span>
                                                         <span>Theoretical Max: {theoreticalMax.toLocaleString()}</span>
                                                     </div>
                                                     <div className="h-3 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">

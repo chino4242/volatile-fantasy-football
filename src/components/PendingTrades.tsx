@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { ArrowRightLeft, Settings, ThumbsUp, ThumbsDown, Minus, AlertCircle } from 'lucide-react';
 import { analyzeTradeAdvisor } from '@/lib/trade-advisor';
 
@@ -242,8 +242,39 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator 
     const [showCounter, setShowCounter] = useState(false);
     const [showImpact, setShowImpact] = useState(false);
     const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+    const [aiMessages, setAiMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState<string | null>(null);
+    const [aiInput, setAiInput] = useState('');
+    const tradeContextRef = useRef<string>('');
+
+    const sendFollowUp = async () => {
+        if (!aiInput.trim() || aiLoading) return;
+        const userMsg = aiInput.trim();
+        setAiInput('');
+        const newMessages = [...aiMessages, { role: 'user' as const, content: userMsg }];
+        setAiMessages(newMessages);
+        setAiLoading(true);
+
+        try {
+            const userId = typeof window !== 'undefined' ? localStorage.getItem('vff_user') || 'anonymous' : 'anonymous';
+            const res = await fetch('/api/trade-analysis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, tradeContext: tradeContextRef.current, messages: newMessages }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                setAiMessages([...newMessages, { role: 'assistant', content: `Error: ${data.error || 'Failed'}` }]);
+            } else {
+                setAiMessages([...newMessages, { role: 'assistant', content: data.analysis }]);
+            }
+        } catch {
+            setAiMessages([...newMessages, { role: 'assistant', content: 'Network error — try again.' }]);
+        } finally {
+            setAiLoading(false);
+        }
+    };
     const sendTotal = trade.youSend.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youSend.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const receiveTotal = trade.youReceive.players.reduce((s, p) => s + p.dynastyValue, 0) + trade.youReceive.picks.reduce((s, p) => s + p.estimatedValue, 0);
     const sendAuction = trade.youSend.players.reduce((s, p) => s + (p.auctionValue || 0), 0);
@@ -360,6 +391,8 @@ I send: ${sendTotal.toLocaleString()} dynasty, $${sendAuction} auction
 I receive: ${receiveTotal.toLocaleString()} dynasty, $${receiveAuction} auction
 Net: ${diff >= 0 ? '+' : ''}${diff.toLocaleString()} dynasty, ${receiveAuction - sendAuction >= 0 ? '+' : ''}$${receiveAuction - sendAuction} auction`;
 
+        tradeContextRef.current = tradeContext;
+
         try {
             const userId = typeof window !== 'undefined' ? localStorage.getItem('vff_user') || 'anonymous' : 'anonymous';
             const res = await fetch('/api/trade-analysis', {
@@ -369,7 +402,10 @@ Net: ${diff >= 0 ? '+' : ''}${diff.toLocaleString()} dynasty, ${receiveAuction -
             });
             const data = await res.json();
             if (!res.ok) setAiError(data.error || 'Failed');
-            else setAiAnalysis(data.analysis);
+            else {
+                setAiAnalysis(data.analysis);
+                setAiMessages([{ role: 'assistant', content: data.analysis }]);
+            }
         } catch { setAiError('Network error'); }
         finally { setAiLoading(false); }
     };
@@ -587,8 +623,39 @@ Net: ${diff >= 0 ? '+' : ''}${diff.toLocaleString()} dynasty, ${receiveAuction -
                     {aiError ? (
                         <div className="text-[10px] text-red-500">{aiError}</div>
                     ) : (
-                        <div className="text-[10px] text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed bg-purple-50 dark:bg-purple-950/10 border border-purple-200 dark:border-purple-800 rounded-lg p-2.5">
-                            {aiAnalysis}
+                        <div className="space-y-2">
+                            {/* Message thread */}
+                            <div className="space-y-2 max-h-64 overflow-y-auto">
+                                {aiMessages.map((msg, i) => (
+                                    <div key={i} className={`text-[10px] whitespace-pre-wrap leading-relaxed rounded-lg p-2.5 ${
+                                        msg.role === 'assistant'
+                                            ? 'bg-purple-50 dark:bg-purple-950/10 border border-purple-200 dark:border-purple-800 text-zinc-700 dark:text-zinc-300'
+                                            : 'bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200'
+                                    }`}>
+                                        {msg.role === 'user' && <span className="text-[8px] font-bold text-zinc-400 uppercase block mb-0.5">You</span>}
+                                        {msg.content}
+                                    </div>
+                                ))}
+                                {aiLoading && <div className="text-[10px] text-purple-400 animate-pulse">Thinking...</div>}
+                            </div>
+                            {/* Follow-up input */}
+                            <div className="flex gap-1.5">
+                                <input
+                                    type="text"
+                                    value={aiInput}
+                                    onChange={e => setAiInput(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') sendFollowUp(); }}
+                                    placeholder="Ask a follow-up..."
+                                    className="flex-1 text-[10px] px-2 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                                />
+                                <button
+                                    onClick={sendFollowUp}
+                                    disabled={aiLoading || !aiInput.trim()}
+                                    className="px-2 py-1.5 text-[9px] font-medium bg-purple-600 hover:bg-purple-700 text-white rounded-md disabled:opacity-50"
+                                >
+                                    Send
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>

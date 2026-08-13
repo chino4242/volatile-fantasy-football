@@ -29,18 +29,20 @@ RULES:
 - Base your analysis ONLY on: the stats, rankings, signals, roster context, and values given
 - Be direct and opinionated — give a clear recommendation, not a wishy-washy "it depends"
 - Write like you're texting a friend who's in the league, not a formal report
-- Keep the main take to 3-5 sentences
+- Keep responses concise (3-5 sentences for follow-ups, full format for initial analysis)
 
-OUTPUT FORMAT (use these exact headers):
+For the INITIAL analysis, use this format:
 **Verdict:** (one clear sentence — accept, decline, or counter)
 **Why:**
 - (2-4 bullets referencing specific data points)
 **Counter suggestion:** (if declining or if there's a better deal structure — one sentence describing what to propose instead)
-**Negotiation angle:** (one sentence you could text to the other owner to pitch this trade)`;
+**Negotiation angle:** (one sentence you could text to the other owner to pitch this trade)
+
+For FOLLOW-UP questions, respond conversationally in 2-4 sentences. Stay direct and opinionated.`;
 
 export async function POST(request: NextRequest) {
     const body = await request.json();
-    const { userId, tradeContext } = body;
+    const { userId, tradeContext, messages } = body;
 
     if (!userId || !tradeContext) {
         return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -60,16 +62,27 @@ export async function POST(request: NextRequest) {
     try {
         const client = new Anthropic({ apiKey });
 
+        // Build message history: first message is always the trade context,
+        // followed by any conversation history
+        const apiMessages: { role: 'user' | 'assistant'; content: string }[] = [
+            { role: 'user', content: tradeContext },
+        ];
+
+        // Append conversation history if this is a follow-up
+        if (messages && Array.isArray(messages) && messages.length > 0) {
+            for (const msg of messages) {
+                apiMessages.push({ role: msg.role, content: msg.content });
+            }
+        }
+
         const message = await client.messages.create({
             model: 'claude-sonnet-5',
             max_tokens: 1200,
             system: SYSTEM_PROMPT,
-            messages: [{ role: 'user', content: tradeContext }],
+            messages: apiMessages,
         });
 
         const text = message.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n') || '';
-        console.log('Claude response content types:', message.content.map((c: any) => c.type));
-        if (!text) console.log('Full response:', JSON.stringify(message.content));
 
         return NextResponse.json({ analysis: text, remaining });
     } catch (error: any) {
