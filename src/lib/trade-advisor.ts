@@ -24,40 +24,75 @@ export function analyzeTradeAdvisor(input: TradeAdvisorInput): TradeAdvisorResul
     const reasons: string[] = [];
     let score = 0;
 
-    // --- 1. Position depth analysis ---
+    // --- 1. Position depth + caliber analysis ---
     const posCounts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
-    myRoster.forEach(p => { if (p.position in posCounts) posCounts[p.position]++; });
+    const posValues: Record<string, number[]> = { QB: [], RB: [], WR: [], TE: [] };
+    myRoster.forEach(p => {
+        if (p.position in posCounts) {
+            posCounts[p.position]++;
+            posValues[p.position].push(p.dynastyValue);
+        }
+    });
+    // Sort each position's values descending
+    Object.values(posValues).forEach(arr => arr.sort((a, b) => b - a));
 
     const idealMinimums: Record<string, number> = { QB: 1, RB: 3, WR: 4, TE: 1 };
-    const surplusThresholds: Record<string, number> = { QB: 2, RB: 5, WR: 6, TE: 2 };
 
     // What positions are you sending vs receiving?
-    const sendPositions: Record<string, number> = {};
-    sending.forEach(p => { sendPositions[p.position] = (sendPositions[p.position] || 0) + 1; });
-    const receivePositions: Record<string, number> = {};
-    receiving.forEach(p => { receivePositions[p.position] = (receivePositions[p.position] || 0) + 1; });
+    const sendPositions: Record<string, { count: number; totalValue: number; isStarter: boolean }> = {};
+    sending.forEach(p => {
+        if (!sendPositions[p.position]) sendPositions[p.position] = { count: 0, totalValue: 0, isStarter: false };
+        sendPositions[p.position].count++;
+        sendPositions[p.position].totalValue += p.dynastyValue;
+        // Is this player a top-3 asset at their position? (starter caliber)
+        const posVals = posValues[p.position] || [];
+        if (posVals.length > 0 && p.dynastyValue >= (posVals[Math.min(2, posVals.length - 1)] || 0)) {
+            sendPositions[p.position].isStarter = true;
+        }
+    });
+    const receivePositions: Record<string, { count: number; totalValue: number }> = {};
+    receiving.forEach(p => {
+        if (!receivePositions[p.position]) receivePositions[p.position] = { count: 0, totalValue: 0 };
+        receivePositions[p.position].count++;
+        receivePositions[p.position].totalValue += p.dynastyValue;
+    });
 
-    // Check: trading FROM surplus?
-    Object.entries(sendPositions).forEach(([pos, count]) => {
+    // Check: trading FROM surplus vs trading a starter
+    Object.entries(sendPositions).forEach(([pos, data]) => {
         const current = posCounts[pos] || 0;
-        if (current > surplusThresholds[pos]) {
-            score += 15;
-            reasons.push(`Trading from ${pos} surplus (have ${current})`);
-        } else if (current - count < idealMinimums[pos]) {
+        const posTotal = posValues[pos]?.reduce((s, v) => s + v, 0) || 1;
+        const valuePctLeaving = data.totalValue / posTotal;
+
+        if (data.isStarter) {
+            // Sending a top-3 player at this position — this is costly
+            if (valuePctLeaving > 0.4) {
+                score -= 15;
+                reasons.push(`⚠️ Sending a core ${pos} asset (${Math.round(valuePctLeaving * 100)}% of your ${pos} value)`);
+            } else if (valuePctLeaving > 0.2) {
+                score -= 5;
+                reasons.push(`Trading a starting ${pos} (${Math.round(valuePctLeaving * 100)}% of position value)`);
+            }
+        } else if (current > idealMinimums[pos] + 3) {
+            // True depth piece from a surplus position
+            score += 10;
+            reasons.push(`Trading ${pos} depth (have ${current}, keeping starters)`);
+        }
+
+        if (current - data.count < idealMinimums[pos]) {
             score -= 20;
-            reasons.push(`⚠️ Leaves you thin at ${pos} (${current} → ${current - count})`);
+            reasons.push(`⚠️ Leaves you thin at ${pos} (${current} → ${current - data.count})`);
         }
     });
 
     // Check: receiving INTO need?
-    Object.entries(receivePositions).forEach(([pos, count]) => {
+    Object.entries(receivePositions).forEach(([pos, data]) => {
         const current = posCounts[pos] || 0;
         if (current < idealMinimums[pos]) {
             score += 20;
             reasons.push(`Fills ${pos} need (have ${current}, need ${idealMinimums[pos]}+)`);
-        } else if (current < surplusThresholds[pos]) {
+        } else if (current < idealMinimums[pos] + 2) {
             score += 8;
-            reasons.push(`Adds ${pos} depth (${current} → ${current + count})`);
+            reasons.push(`Adds ${pos} depth (${current} → ${current + data.count})`);
         }
     });
 
@@ -76,7 +111,7 @@ export function analyzeTradeAdvisor(input: TradeAdvisorInput): TradeAdvisorResul
     } else if (valuePct >= -5) {
         reasons.push('Value is even');
     } else if (valuePct >= -15) {
-        score -= 10;
+        score -= 15;
         reasons.push(`Slight overpay (${Math.round(valuePct)}%)`);
     } else {
         score -= 20;
@@ -94,6 +129,22 @@ export function analyzeTradeAdvisor(input: TradeAdvisorInput): TradeAdvisorResul
     } else if (auctionDiff < -10) {
         score -= 5;
         reasons.push(`Redraft downgrade: -$${Math.abs(auctionDiff)} auction`);
+    }
+
+    // --- 3b. Filler detection — are you getting real players or junk? ---
+    const receivingFillerCount = receiving.filter(p => p.auctionValue <= 1 && p.dynastyValue < 1000).length;
+    const receivingRealCount = receiving.filter(p => p.auctionValue > 5 || p.dynastyValue >= 2000).length;
+    if (receivingFillerCount >= 2 && receivingFillerCount > receivingRealCount) {
+        score -= 12;
+        reasons.push(`⚠️ Receiving ${receivingFillerCount} filler pieces ($1 or less auction)`);
+    }
+
+    // --- 3c. Star-for-parts penalty — sending 1-2 studs for many lesser pieces ---
+    const sendingStars = sending.filter(p => p.dynastyValue >= 4000).length;
+    const receivingStars = receiving.filter(p => p.dynastyValue >= 4000).length;
+    if (sendingStars >= 1 && receivingStars === 0 && receiving.length >= 3) {
+        score -= 15;
+        reasons.push(`⚠️ Trading a star for parts — no equivalent piece coming back`);
     }
 
     // --- 4. Age / trajectory ---

@@ -369,13 +369,48 @@ function TradeCard({ trade, allLeaguePlayers, allLeaguePicks, onOpenInEvaluator 
         positions.forEach(pos => { rosterByPos[pos] = { count: 0, value: 0, auction: 0 }; });
         myPlayers.forEach(p => { if (p.position in rosterByPos) { rosterByPos[p.position].count++; rosterByPos[p.position].value += p.dynastyValue; rosterByPos[p.position].auction += p.auctionValue || 0; } });
 
-        const formatP = (p: { name: string; position: string; dynastyValue: number; auctionValue: number | null; age?: number | null; signal?: string | null }) =>
-            `- ${p.name}, ${p.position}, Age ${p.age || '?'}, Dynasty: ${p.dynastyValue.toLocaleString()}, Auction: $${p.auctionValue || 0}${p.signal ? `, Film: ${p.signal}` : ''}`;
+        const formatP = (p: { name: string; position: string; dynastyValue: number; auctionValue: number | null; age?: number | null; signal?: string | null }) => {
+            const signalNote = p.signal ? ` | Signal: ${p.signal}` : '';
+            // Look up full custom rankings notes (film analysis)
+            const match = allLeaguePlayers?.find(lp => lp.name === p.name);
+            const sleeperId = match?.sleeper_id;
+            let filmNote = '';
+            if (sleeperId && allLeaguePlayers) {
+                // Find the player in our data to check for any rankings notes
+                const playerMatch = allLeaguePlayers.find(lp => lp.sleeper_id === sleeperId);
+                if (playerMatch?.signal) filmNote = ` | Film: ${playerMatch.signal}`;
+            }
+            return `- ${p.name}, ${p.position}, Age ${p.age || '?'}, Dynasty: ${p.dynastyValue.toLocaleString()}, Auction: $${p.auctionValue || 0}${signalNote}${filmNote}`;
+        };
 
         const tradeContext = `LEAGUE: ${(allLeaguePlayers?.length || 0) > 100 ? '10-12' : '8-10'} teams, keeper league
 
-MY ROSTER DEPTH:
-${positions.map(pos => `${pos}: ${rosterByPos[pos].count} players, ${rosterByPos[pos].value.toLocaleString()} dynasty, $${rosterByPos[pos].auction} auction`).join('\n')}
+IMPORTANT CONTEXT FOR YOUR ANALYSIS:
+- Use ONLY the dynasty values, auction values, ages, and signals provided below
+- "Signal" reflects a film-first WR evaluation: Super Buy = significantly undervalued by market, Buy = undervalued, Hold = fairly valued, Sell = overvalued, Super Sell = significantly overvalued
+- Auction $ reflects redraft/win-now value (what they produce THIS year)
+- Dynasty value reflects long-term asset value
+- A player can be a dynasty "Sell" but still produce well this year (high auction, declining dynasty)
+
+MY ROSTER (${trade.yourTeamName}):
+${positions.map(pos => {
+    const posPlayers = myPlayers.filter(p => p.position === pos).sort((a, b) => b.dynastyValue - a.dynastyValue);
+    return `${pos} (${posPlayers.length}): ${posPlayers.slice(0, 6).map(p => `${p.name} (${p.dynastyValue.toLocaleString()}, $${p.auctionValue || 0}${p.signal ? ', ' + p.signal : ''}${p.age ? ', age ' + p.age : ''})`).join(', ')}`;
+}).join('\n')}
+Total: ${myPlayers.reduce((s, p) => s + p.dynastyValue, 0).toLocaleString()} dynasty, $${myPlayers.reduce((s, p) => s + (p.auctionValue || 0), 0)} auction
+
+${trade.otherTeamName}'s ROSTER:
+${(() => {
+    const theirPlayers = allLeaguePlayers?.filter(p => p.teamName === trade.otherTeamName) || [];
+    return positions.map(pos => {
+        const posPlayers = theirPlayers.filter(p => p.position === pos).sort((a, b) => b.dynastyValue - a.dynastyValue);
+        return `${pos} (${posPlayers.length}): ${posPlayers.slice(0, 6).map(p => `${p.name} (${p.dynastyValue.toLocaleString()}, $${p.auctionValue || 0}${p.signal ? ', ' + p.signal : ''}${p.age ? ', age ' + p.age : ''})`).join(', ')}`;
+    }).join('\n');
+})()}
+${(() => {
+    const theirPicks = allLeaguePicks?.filter(p => p.teamName === trade.otherTeamName)?.sort((a, b) => a.season - b.season || a.round - b.round).slice(0, 8) || [];
+    return theirPicks.length > 0 ? `Picks: ${theirPicks.map(pk => `${pk.season} ${pk.round}.${String(pk.slot).padStart(2, '0')} (~${pk.estimatedValue.toLocaleString()})`).join(', ')}` : '';
+})()}
 
 THE TRADE:
 I send to ${trade.otherTeamName}:

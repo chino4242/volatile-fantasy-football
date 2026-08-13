@@ -467,8 +467,8 @@ Net: ${diff > 0 ? '+' : ''}${diff.toLocaleString()} dynasty, ${theirAuction - my
                         </div>
                         <div className="space-y-0.5 max-h-64 overflow-y-auto border border-zinc-200 dark:border-zinc-700 rounded-lg p-1.5">
                             {selectedTeamId ? (
-                                filterPlayers(theirPlayers).map(p => (
-                                    <AssetRow key={p.sleeper_id} player={p} selected={theirSend.has(p.sleeper_id)} onToggle={() => toggleTheir(p.sleeper_id)} />
+                                filterPlayers(theirPlayers).map((p, i) => (
+                                    <AssetRow key={`${p.sleeper_id}_${i}`} player={p} selected={theirSend.has(p.sleeper_id)} onToggle={() => toggleTheir(p.sleeper_id)} />
                                 ))
                             ) : (
                                 <div className="text-center text-xs text-zinc-400 py-8">Select a team above</div>
