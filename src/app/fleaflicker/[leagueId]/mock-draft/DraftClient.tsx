@@ -547,6 +547,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const [tradePosFilter, setTradePosFilter] = useState<string>('ALL');
     const [tradeForPick, setTradeForPick] = useState(false); // true when trading TO ACQUIRE the current pick
     const [selectedDraftPlayer, setSelectedDraftPlayer] = useState<Player | null>(null);
+    const [comparePlayers, setComparePlayers] = useState<[Player, Player] | null>(null);
     const [advancedStats, setAdvancedStats] = useState<any[] | null>(null);
     const [playerBreakout, setPlayerBreakout] = useState<any | null>(null);
     const [playerRegression, setPlayerRegression] = useState<any[] | null>(null);
@@ -600,6 +601,18 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     const currentPick = picks[currentPickIndex];
     const isUserPick = currentPick && userTeamId !== null && currentPick.teamId === userTeamId;
     const isDraftComplete = currentPickIndex >= picks.length;
+
+    // On-clock team's roster (for live draft "step into their shoes")
+    const onClockRosterPlayers = useMemo(() => {
+        if (!isLive || !currentPick) return myRosterPlayers;
+        const teamId = currentPick.teamId;
+        const team = activeTeams.find(t => t.id === teamId);
+        const drafted = picks
+            .filter(p => p.teamId === teamId && p.playerId)
+            .map(p => draftedPlayerMap.current.get(p.playerId!))
+            .filter(Boolean);
+        return [...(team?.players || []), ...drafted];
+    }, [isLive, currentPick, activeTeams, picks, myRosterPlayers]);
 
     const makePick = (playerId: string, reason?: string) => {
         const player = availablePlayers.find(p => p.id === playerId);
@@ -863,16 +876,42 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             ).length;
 
             if (samePosSameTier === 0) {
-                // Last one in this tier at this position — critical pick
                 tierScarcityBoost = 0.25;
                 tags.push('Last in tier');
             } else if (samePosSameTier <= 2) {
-                // Tier is drying up — boost
                 tierScarcityBoost = 0.12;
                 tags.push('Tier ending');
             } else if (samePosSameTier >= 8) {
-                // Deep position — can wait
                 tierScarcityBoost = -0.08;
+            }
+
+            // Relative scarcity: will this tier survive until your next pick?
+            // Count picks between now and your next turn
+            const picksUntilNextTurn = (() => {
+                if (!currentPick || !userTeamId) return 12; // fallback
+                for (let i = currentPickIndex + 1; i < picks.length; i++) {
+                    if (picks[i].teamId === teamId && !picks[i].playerId) {
+                        return i - currentPickIndex;
+                    }
+                }
+                return 24; // no more picks
+            })();
+
+            // How many teams between now and next pick likely want this position?
+            // Rough estimate: demand = picks * position allocation rate
+            const positionDemandRate = player.position === 'RB' ? 0.30 : player.position === 'WR' ? 0.35 : player.position === 'QB' ? 0.12 : 0.10;
+            const estimatedDemand = Math.round(picksUntilNextTurn * positionDemandRate);
+
+            if (samePosSameTier > 0 && estimatedDemand >= samePosSameTier) {
+                // This tier will likely be gone by your next pick — urgency!
+                tierScarcityBoost += 0.15;
+                if (!tags.includes('Last in tier') && !tags.includes('Tier ending')) {
+                    tags.push('Now or never');
+                }
+            } else if (samePosSameTier > estimatedDemand * 2) {
+                // Plenty of supply — safe to wait
+                tierScarcityBoost -= 0.05;
+                if (tierScarcityBoost < -0.05) tags.push('Safe to wait');
             }
         }
 
@@ -1699,6 +1738,60 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             <div className="text-lg sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
                                 {currentPick.teamName} is on the clock
                             </div>
+
+                            {/* On-clock team banner: needs + mini roster (live draft, viewing another team) */}
+                            {isLive && (() => {
+                                const teamId = currentPick.teamId;
+                                const roster = onClockRosterPlayers;
+                                const posCounts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+                                const posValues: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+                                roster.forEach(p => {
+                                    if (p.position && p.position in posCounts) {
+                                        posCounts[p.position]++;
+                                        posValues[p.position] += p.fc_value || 0;
+                                    }
+                                });
+                                const startReqs: Record<string, number> = { QB: Math.round(effectiveSlots.QB), RB: Math.round(effectiveSlots.RB), WR: Math.round(effectiveSlots.WR), TE: Math.round(effectiveSlots.TE) };
+                                const positions = ['QB', 'RB', 'WR', 'TE'] as const;
+
+                                // Determine win window from age/redraft profile
+                                const totalDyn = Object.values(posValues).reduce((s, v) => s + v, 0);
+                                const totalRedraft = roster.reduce((s, p) => s + (p.redraft_auction_value || 0), 0);
+
+                                return (
+                                    <div className="mb-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
+                                        {/* Needs badges */}
+                                        <div className="flex items-center justify-center gap-2 mb-2 flex-wrap">
+                                            <span className="text-[10px] text-zinc-400 uppercase font-bold">Needs:</span>
+                                            {positions.map(pos => {
+                                                const have = posCounts[pos];
+                                                const need = startReqs[pos] - have;
+                                                if (need > 0) {
+                                                    return <span key={pos} className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${need >= 2 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'}`}>{pos} ({have}/{startReqs[pos]})</span>;
+                                                }
+                                                return <span key={pos} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">{pos} ✓</span>;
+                                            })}
+                                        </div>
+                                        {/* Mini roster by position */}
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {positions.map(pos => {
+                                                const posPlayers = roster.filter(p => p.position === pos).sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                                return (
+                                                    <div key={pos} className="text-center">
+                                                        <div className={`text-[9px] font-bold inline-block px-1 rounded ${pos === 'QB' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : pos === 'RB' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : pos === 'WR' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'}`}>{pos} ({posPlayers.length})</div>
+                                                        <div className="mt-0.5 space-y-0.5">
+                                                            {posPlayers.slice(0, 3).map(p => (
+                                                                <div key={p.id} className="text-[9px] text-zinc-600 dark:text-zinc-400 truncate">{p.full_name}</div>
+                                                            ))}
+                                                            {posPlayers.length === 0 && <div className="text-[9px] text-zinc-300 dark:text-zinc-600">—</div>}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                             {/* On-deck indicator */}
                             {userTeamId !== null && !isUserPick && (() => {
                                 const nextIdx = picks.findIndex((p, i) => i > currentPickIndex && p.teamId === userTeamId && !p.playerId);
@@ -1707,16 +1800,17 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 const away = nextIdx - currentPickIndex;
                                 return <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">Your next pick: <span className="font-semibold text-indigo-600 dark:text-indigo-400">{next.round}.{String(next.pick).padStart(2, '0')}</span> ({away} pick{away !== 1 ? 's' : ''} away)</div>;
                             })()}
-                            {isUserPick && (
+                            {(isUserPick || isLive) && (
                                 <div className="space-y-3">
                                     {(() => {
-                                        const needs = calculatePositionalNeed(userTeamId!);
-                                        const userTeam = activeTeams.find(t => t.id === userTeamId);
+                                        const onClockTeamId = currentPick.teamId;
+                                        const needs = calculatePositionalNeed(onClockTeamId);
+                                        const onClockTeam = activeTeams.find(t => t.id === onClockTeamId);
 
                                         // Count current roster + drafted at each position
                                         const rosterCounts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
-                                        userTeam?.players.forEach(p => { if (p.position && p.position in rosterCounts) rosterCounts[p.position]++; });
-                                        picks.filter(p => p.teamId === userTeamId && p.playerPosition).forEach(p => { if (p.playerPosition && p.playerPosition in rosterCounts) rosterCounts[p.playerPosition]++; });
+                                        onClockTeam?.players.forEach(p => { if (p.position && p.position in rosterCounts) rosterCounts[p.position]++; });
+                                        picks.filter(p => p.teamId === onClockTeamId && p.playerPosition).forEach(p => { if (p.playerPosition && p.playerPosition in rosterCounts) rosterCounts[p.playerPosition]++; });
 
                                         const startReqs: Record<string, number> = {
                                             QB: Math.round(effectiveSlots.QB),
@@ -1730,7 +1824,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                             .map(p => {
                                                 const value = p.fc_value || 0;
                                                 const posNeed = needs[p.position || ''] || 0;
-                                                const { score, tags } = scorePlayer(p, userTeamId!);
+                                                const { score, tags } = scorePlayer(p, onClockTeamId);
                                                 return { player: p, score, value, posNeed, tags };
                                             })
                                             .sort((a, b) => b.score - a.score);
@@ -1795,8 +1889,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
                                         return (
                                             <>
-                                                {/* Draft Plan suggestion */}
-                                                {draftPlan && draftPlan.picks.length > 0 && (() => {
+                                                {/* Draft Plan suggestion — only show on YOUR picks */}
+                                                {isUserPick && draftPlan && draftPlan.picks.length > 0 && (() => {
                                                     // Find the plan's suggestion for this pick based on round/pick
                                                     const currentPick = picks[currentPickIndex];
                                                     const planPick = draftPlan.picks.find(pp =>
@@ -1886,7 +1980,19 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                 <div className="mt-3">
                                                     <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-2">Alternatives</div>
                                                     <div className="space-y-1">
-                                                        {alternatives.map((c, i) => (
+                                                        {alternatives.map((c, i) => {
+                                                            // "Good for you" — this player wouldn't be YOUR pick
+                                                            const isGoodForYou = !isUserPick && isLive && userTeamId && (() => {
+                                                                // Score this player for YOUR team
+                                                                const { score: myScore } = scorePlayer(c.player, userTeamId);
+                                                                // Compare to the top player's score for YOUR team
+                                                                const topForMe = scored[0] ? scorePlayer(scored[0].player, userTeamId).score : 0;
+                                                                // Good for you if this player scores <60% of your top pick
+                                                                // AND is not on your watchlist
+                                                                const isWatched = watchList.has(c.player.id);
+                                                                return myScore < topForMe * 0.6 && !isWatched;
+                                                            })();
+                                                            return (
                                                             <div key={c.player.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
                                                                 <div className="flex items-center gap-3 min-w-0">
                                                                     <span className="text-[10px] text-zinc-400 font-mono w-4">#{i + 2}</span>
@@ -1894,6 +2000,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                         <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{c.player.full_name}</span>
                                                                         <span className={`ml-1.5 text-xs ${c.player.position === 'QB' ? 'text-green-600' : c.player.position === 'RB' ? 'text-blue-600' : c.player.position === 'WR' ? 'text-red-600' : 'text-orange-600'}`}>{c.player.position}</span>
                                                                         <span className="ml-2 text-xs text-zinc-400">— {getAltReason(c)}</span>
+                                                                        {isGoodForYou && <span className="ml-2 text-[9px] font-bold px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">👍 Good for you</span>}
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -1904,6 +2011,12 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                         ✓
                                                                     </button>
                                                                     <button
+                                                                        onClick={() => { if (top) setComparePlayers([top.player, c.player]); }}
+                                                                        className="px-2 py-1 text-[9px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded"
+                                                                    >
+                                                                        vs
+                                                                    </button>
+                                                                    <button
                                                                         onClick={() => setSelectedDraftPlayer(c.player)}
                                                                         className="px-2 py-1 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded"
                                                                     >
@@ -1911,12 +2024,50 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                     </button>
                                                                 </div>
                                                             </div>
-                                                        ))}
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             </>
                                         );
                                     })()}
+
+                                    {/* Quick Compare Panel */}
+                                    {comparePlayers && (
+                                        <div className="mt-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-[10px] font-bold text-zinc-500 uppercase">Quick Compare</span>
+                                                <button onClick={() => setComparePlayers(null)} className="text-[9px] text-zinc-400 hover:text-zinc-600">✕</button>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {comparePlayers.map((p, idx) => {
+                                                    const age = p.years_exp != null ? p.years_exp + 22 : null;
+                                                    return (
+                                                        <div key={p.id} className={`p-2 rounded-lg border ${idx === 0 ? 'border-zinc-300 dark:border-zinc-600' : 'border-indigo-300 dark:border-indigo-700'}`}>
+                                                            <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 mb-1">{p.full_name}</div>
+                                                            <div className="space-y-0.5 text-[10px]">
+                                                                <div className="flex justify-between"><span className="text-zinc-500">Position</span><span className="font-medium">{p.position} · {p.team}</span></div>
+                                                                {age && <div className="flex justify-between"><span className="text-zinc-500">Age</span><span className="font-medium">{age}</span></div>}
+                                                                <div className="flex justify-between"><span className="text-zinc-500">Dynasty</span><span className="font-mono font-medium">{(p.fc_value || 0).toLocaleString()}</span></div>
+                                                                {p.redraft_auction_value != null && <div className="flex justify-between"><span className="text-zinc-500">Auction</span><span className="font-mono font-medium text-amber-600">${p.redraft_auction_value}</span></div>}
+                                                                {p.fc_trend_30_day != null && p.fc_trend_30_day !== 0 && <div className="flex justify-between"><span className="text-zinc-500">30d Trend</span><span className={`font-mono font-medium ${p.fc_trend_30_day > 0 ? 'text-green-600' : 'text-red-500'}`}>{p.fc_trend_30_day > 0 ? '+' : ''}{p.fc_trend_30_day}</span></div>}
+                                                                {p.zap_score != null && !p.zap_stale && <div className="flex justify-between"><span className="text-zinc-500">ZAP</span><span className="font-medium">{p.zap_score} {p.zap_category ? `· ${p.zap_category}` : ''}</span></div>}
+                                                                {p.rookie_rank && <div className="flex justify-between"><span className="text-zinc-500">Rookie Rank</span><span className="font-medium">#{p.rookie_rank}</span></div>}
+                                                                {p.rookie_tier && <div className="flex justify-between"><span className="text-zinc-500">Rookie Tier</span><span className="font-medium">T{p.rookie_tier}</span></div>}
+                                                                {(sf ? p.rank_sf_tier : p.rank_1qb_tier) && <div className="flex justify-between"><span className="text-zinc-500">Dynasty Tier</span><span className="font-medium">T{sf ? p.rank_sf_tier : p.rank_1qb_tier}</span></div>}
+                                                            </div>
+                                                            {p.zap_ai?.summary && <div className="mt-1.5 text-[9px] text-zinc-500 italic border-t border-zinc-200 dark:border-zinc-700 pt-1">{p.zap_ai.summary}</div>}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div className="mt-2 flex gap-2 justify-center">
+                                                <button onClick={() => makePick(comparePlayers[0].id)} className="px-3 py-1 text-xs font-medium bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-800 dark:text-zinc-200 rounded-md">Draft {comparePlayers[0].full_name.split(' ').pop()}</button>
+                                                <button onClick={() => makePick(comparePlayers[1].id)} className="px-3 py-1 text-xs font-medium bg-indigo-100 dark:bg-indigo-900/30 hover:bg-indigo-200 dark:hover:bg-indigo-800/30 text-indigo-700 dark:text-indigo-300 rounded-md">Draft {comparePlayers[1].full_name.split(' ').pop()}</button>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Trade This Pick suggestions */}
                                     {(() => {
                                         if (!currentPick || !userTeamId) return null;
@@ -2045,49 +2196,25 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 </div>
                             )}
                             {!isUserPick && isLive && (
-                                <div className="space-y-3">
-                                    <div className="text-sm text-zinc-500">Select the player they drafted from the table below</div>
-                                    {/* Suggested picks for this team */}
-                                    {(() => {
-                                        const needs = calculatePositionalNeed(currentPick.teamId);
-                                        const top3 = availablePlayers
-                                            .map(p => { const { score, tags } = scorePlayer(p, currentPick.teamId); return { player: p, score, value: p.fc_value || 0, posNeed: needs[p.position || ''] || 0, tags }; })
-                                            .sort((a, b) => b.score - a.score)
-                                            .slice(0, 3);
-                                        return (
-                                            <div className="flex flex-col sm:flex-row gap-2 justify-center mt-2">
-                                                {top3.map((c, i) => (
-                                                    <div key={c.player.id} onClick={() => makePick(c.player.id)} className={`text-left px-3 py-2 rounded-lg border-2 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors ${i === 0 ? 'border-zinc-300 dark:border-zinc-600' : 'border-zinc-200 dark:border-zinc-700'}`}>
-                                                        <div className="text-xs text-zinc-400">Projected #{i + 1}</div>
-                                                        <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">{c.player.full_name} <span className="text-zinc-400">{c.player.position}</span></div>
-                                                        <div className="text-[10px] text-zinc-500">Value: {c.value} | Score: {c.score.toFixed(0)}</div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        );
-                                    })()}
-                                    <div className="flex gap-2 justify-center">
-                                        <button
-                                            onClick={() => setShowTradeModal(true)}
-                                            className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium transition-colors"
-                                        >
-                                            Execute Trade
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                if (!userTeamId) return;
-                                                const targetTeam = activeTeams.find(t => t.id === currentPick.teamId);
-                                                if (!targetTeam) return;
-                                                setTradeForPick(true);
-                                                setTradeTargetPlayer(null);
-                                                setTradeSearch('');
-                                                setShowTradeModal(true);
-                                            }}
-                                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition-colors"
-                                        >
-                                            Suggest Trade
-                                        </button>
-                                    </div>
+                                <div className="flex gap-2 justify-center mt-3">
+                                    <button
+                                        onClick={() => setShowTradeModal(true)}
+                                        className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium transition-colors"
+                                    >
+                                        Execute Trade
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (!userTeamId) return;
+                                            setTradeForPick(true);
+                                            setTradeTargetPlayer(null);
+                                            setTradeSearch('');
+                                            setShowTradeModal(true);
+                                        }}
+                                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition-colors"
+                                    >
+                                        Trade Up Into This Spot
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -2643,10 +2770,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                         />
                         {userTeamId !== null && (
                             <PositionScarcityChart
-                                players={myRosterPlayers}
+                                players={isLive ? onClockRosterPlayers : myRosterPlayers}
                                 format={format}
                                 onPlayerClick={setSelectedDraftPlayer}
-                                title="My Roster"
+                                title={isLive && currentPick && currentPick.teamId !== userTeamId ? `${currentPick.teamName}'s Roster` : 'My Roster'}
                                 topN={30}
                                 emptyMessage="Draft players to build your roster"
                                 customRankingsMap={customRankingsMap}
@@ -2654,16 +2781,16 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                 useAuctionValue={!keeperCount || keeperCount === 0}
                             />
                         )}
-                        {userTeamId !== null && myRosterPlayers.length > 0 && (
+                        {userTeamId !== null && (isLive ? onClockRosterPlayers : myRosterPlayers).length > 0 && (
                             <div className="mt-4">
                                 <div className="flex items-center justify-between mb-2">
-                                    <h4 className="text-xs font-bold text-zinc-500 uppercase">Roster ({myRosterPlayers.length})</h4>
+                                    <h4 className="text-xs font-bold text-zinc-500 uppercase">Roster ({(isLive ? onClockRosterPlayers : myRosterPlayers).length})</h4>
                                     <span className="text-[10px] text-zinc-400">
-                                        ${myRosterPlayers.reduce((s, p) => s + (p.redraft_auction_value || 0), 0)} total auction
+                                        ${(isLive ? onClockRosterPlayers : myRosterPlayers).reduce((s, p) => s + (p.redraft_auction_value || 0), 0)} total auction
                                     </span>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
-                                    {[...myRosterPlayers].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)).map(p => (
+                                    {[...(isLive ? onClockRosterPlayers : myRosterPlayers)].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0)).map(p => (
                                         <div key={p.id} className="flex items-center gap-1.5 text-xs py-0.5">
                                             <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${
                                                 p.position === 'QB' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
