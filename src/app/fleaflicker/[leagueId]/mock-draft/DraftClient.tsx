@@ -534,7 +534,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         return order;
     }, [pickAssignments, teams]);
     const [showTradeModal, setShowTradeModal] = useState(false);
-    const [draftBottomTab, setDraftBottomTab] = useState<'board' | 'roster' | 'needs'>('board');
+    const [draftBottomTab, setDraftBottomTab] = useState<'board' | 'scarcity' | 'roster' | 'needs'>('scarcity');
     const [draftSpeed, setDraftSpeed] = useState<'instant' | 'fast' | 'realistic'>('fast');
 
     // Value mode: 0 = pure dynasty, 100 = pure redraft
@@ -618,6 +618,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         const player = availablePlayers.find(p => p.id === playerId);
         if (!player) return;
 
+        setComparePlayers(null);
         draftedPlayerMap.current.set(player.id, player);
 
         const updatedPicks = [...picks];
@@ -795,6 +796,99 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         return needs;
     };
 
+    // --- Roster-aware CPU helpers ---
+
+    /** Get kept + drafted position counts for a team */
+    const getPositionCounts = (teamId: number): Record<string, number> => {
+        const team = activeTeams.find(t => t.id === teamId);
+        const counts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+        if (team) {
+            team.players.forEach(p => {
+                if (p.position && p.position in counts) counts[p.position]++;
+            });
+        }
+        picks.filter(p => p.teamId === teamId && p.playerPosition).forEach(p => {
+            const pos = p.playerPosition as string;
+            if (pos in counts) counts[pos]++;
+        });
+        return counts;
+    };
+
+    /** Check if team has an elite player at a position (top-5 value at position among all teams) */
+    const hasEliteAtPosition = (teamId: number, position: string): boolean => {
+        const team = activeTeams.find(t => t.id === teamId);
+        if (!team) return false;
+        // Get the team's best player at this position (kept + drafted)
+        const teamPlayers = [...team.players];
+        picks.filter(p => p.teamId === teamId && p.playerPosition === position && p.playerId).forEach(p => {
+            const drafted = availablePlayers.find(ap => ap.id === p.playerId) || 
+                (draftedPlayerMap.current.get(p.playerId!) as Player | undefined);
+            if (drafted) teamPlayers.push(drafted);
+        });
+        const bestValue = Math.max(...teamPlayers.filter(p => p.position === position).map(p => p.fc_value || 0), 0);
+        if (bestValue === 0) return false;
+        // Compare against all teams' best at this position
+        const allBestValues = activeTeams.map(t => 
+            Math.max(...t.players.filter(p => p.position === position).map(p => p.fc_value || 0), 0)
+        ).sort((a, b) => b - a);
+        // Top-5 threshold
+        const threshold = allBestValues[Math.min(4, allBestValues.length - 1)] || 0;
+        return bestValue >= threshold;
+    };
+
+    /**
+     * Roster cap penalty: returns a multiplier (0.0 - 1.0) based on how stocked
+     * a team is at a position. Factors in team's draft style:
+     * - BPA Purist: only hard caps trigger penalty (max tolerance)
+     * - Need-Based: tighter thresholds (penalties kick in earlier)
+     * - Others: standard thresholds from draft plan
+     */
+    const getRosterCapPenalty = (position: string, teamId: number): number => {
+        const counts = getPositionCounts(teamId);
+        const have = counts[position] || 0;
+        const style = getTeamStyle(teamId);
+        const slots = rosterSlots || { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
+
+        // Roster caps: absolute max you'd ever roster at a position
+        const rosterCaps: Record<string, number> = (slots.QB >= 2)
+            ? { QB: 3, RB: 7, WR: 8, TE: 3 }
+            : { QB: 2, RB: 7, WR: 8, TE: 2 };
+
+        // Elite player adjustment: if team has a top-5 QB/TE, lower their cap by 1
+        let maxAtPos = rosterCaps[position] || 5;
+        if ((position === 'QB' || position === 'TE') && hasEliteAtPosition(teamId, position)) {
+            maxAtPos = Math.max(1, maxAtPos - 1);
+        }
+
+        // Ideal starters (target count before penalty starts)
+        const idealStarters: Record<string, number> = (slots.QB >= 2)
+            ? { QB: 2, RB: 3, WR: 4, TE: 2 }
+            : { QB: 1, RB: 3, WR: 4, TE: 2 };
+        const target = idealStarters[position] || 2;
+
+        // Style-aware thresholds
+        if (style.style === 'bpa') {
+            // BPA Purist: only hard cap matters, very tolerant of overstocking
+            if (have >= maxAtPos) return 0.0;
+            if (have >= maxAtPos - 1) return 0.6;
+            return 1.0;
+        } else if (style.style === 'need') {
+            // Need-Based: aggressive penalties, starts penalizing at target
+            if (have >= maxAtPos) return 0.0;
+            if (have >= target + 2) return 0.3;
+            if (have >= target + 1) return 0.55;
+            if (have >= target) return 0.75;
+            return 1.0;
+        } else {
+            // Balanced / Win Now / Prospect Chaser: standard thresholds
+            if (have >= maxAtPos) return 0.0;
+            if (have >= target + 3) return 0.5;
+            if (have >= target + 1) return 0.75;
+            if (have >= target) return 0.85;
+            return 1.0;
+        }
+    };
+
     const scorePlayer = (player: Player, teamId: number): { score: number; tags: string[] } => {
         const style = getTeamStyle(teamId);
         const w = style.weights;
@@ -915,7 +1009,15 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             }
         }
 
-        const score = (adjustedValue * (1 + tierScarcityBoost) * w.value) + (posNeed * adjustedValue * w.need);
+        const rawScore = (adjustedValue * (1 + tierScarcityBoost) * w.value) + (posNeed * adjustedValue * w.need);
+
+        // Roster cap penalty: penalizes overstocked positions, style-aware
+        const rosterPenalty = getRosterCapPenalty(player.position || '', teamId);
+        if (rosterPenalty === 0) tags.push('Capped');
+        else if (rosterPenalty <= 0.5) tags.push('Overstocked');
+        else if (rosterPenalty < 1.0) tags.push('Depth filled');
+
+        const score = rawScore * rosterPenalty;
         return { score, tags };
     };
 
@@ -2760,6 +2862,24 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                 {/* Position Scarcity (always visible during draft) */}
                 {draftStarted && !isDraftComplete && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-lg p-4 sm:p-6 mb-6">
+                        {/* Tab buttons */}
+                        <div className="flex gap-1 mb-4 bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-lg">
+                            {([
+                                { key: 'scarcity', label: 'Pool Scarcity' },
+                                { key: 'roster', label: isLive && currentPick && currentPick.teamId !== userTeamId ? 'Their Roster' : 'My Roster' },
+                            ] as const).map(tab => (
+                                <button
+                                    key={tab.key}
+                                    onClick={() => setDraftBottomTab(tab.key as any)}
+                                    className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                                        draftBottomTab === tab.key
+                                            ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
+                                            : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                                    }`}
+                                >{tab.label}</button>
+                            ))}
+                        </div>
+                        {draftBottomTab === 'scarcity' && (
                         <PositionScarcityChart
                             players={availablePlayers}
                             format={format}
@@ -2768,7 +2888,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             defaultView={(!keeperCount || keeperCount === 0) ? 'redraft' : 'dynasty'}
                             useAuctionValue={!keeperCount || keeperCount === 0}
                         />
-                        {userTeamId !== null && (
+                        )}
+                        {draftBottomTab === 'roster' && userTeamId !== null && (
                             <PositionScarcityChart
                                 players={isLive ? onClockRosterPlayers : myRosterPlayers}
                                 format={format}
