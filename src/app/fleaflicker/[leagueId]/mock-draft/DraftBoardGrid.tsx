@@ -6,8 +6,8 @@ interface DraftBoardGridProps {
     picks: any[];
     teams: any[];
     activeTeams: any[];
-    draftBottomTab: 'board' | 'roster' | 'needs';
-    setDraftBottomTab: (tab: 'board' | 'roster' | 'needs') => void;
+    draftBottomTab: 'board' | 'roster' | 'needs' | 'scarcity';
+    setDraftBottomTab: (tab: 'board' | 'roster' | 'needs' | 'scarcity') => void;
     currentPickIndex: number;
     userTeamId: number | null;
     draftStarted: boolean;

@@ -1009,7 +1009,19 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             }
         }
 
-        const rawScore = (adjustedValue * (1 + tierScarcityBoost) * w.value) + (posNeed * adjustedValue * w.need);
+        // Dampen need contribution for depth picks (non-starter slots)
+        // If you already have enough starters at this position, the "need" signal should be much weaker
+        const counts = getPositionCounts(teamId);
+        const have = counts[player.position || ''] || 0;
+        const idealStarters: Record<string, number> = (rosterSlots?.QB ?? 1) >= 2
+            ? { QB: 2, RB: 3, WR: 4, TE: 2 }
+            : { QB: 1, RB: 3, WR: 4, TE: 2 };
+        const starterTarget = idealStarters[player.position || ''] || 2;
+        const isDepthPick = have >= starterTarget;
+        // Depth picks get 25% of the need signal; starter holes get full need signal
+        const effectiveNeed = isDepthPick ? posNeed * 0.25 : posNeed;
+
+        const rawScore = (adjustedValue * (1 + tierScarcityBoost) * w.value) + (effectiveNeed * adjustedValue * w.need);
 
         // Roster cap penalty: penalizes overstocked positions, style-aware
         const rosterPenalty = getRosterCapPenalty(player.position || '', teamId);
@@ -1931,8 +1943,56 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                             })
                                             .sort((a, b) => b.score - a.score);
 
+                                        // Diversify: ensure top 5 shows multiple positions
+                                        // Take #1 as-is, then fill 2-5 ensuring at least 3 different positions appear
                                         const top = scored[0];
-                                        const alternatives = scored.slice(1, 5);
+                                        const alternatives: typeof scored = [];
+                                        if (top) {
+                                            const positionsShown = new Set([top.player.position]);
+                                            const used = new Set([top.player.id]);
+
+                                            // First pass: fill from top of scored list, but cap same-position entries
+                                            const maxSamePos = 2; // max 2 of any single position in top 5 (including #1)
+                                            const posCounts: Record<string, number> = { [top.player.position || '']: 1 };
+
+                                            for (const c of scored.slice(1)) {
+                                                if (alternatives.length >= 4) break;
+                                                const cPos = c.player.position || '';
+                                                const count = posCounts[cPos] || 0;
+                                                if (count >= maxSamePos) continue; // skip if already have 2 of this position
+                                                alternatives.push(c);
+                                                used.add(c.player.id);
+                                                posCounts[cPos] = count + 1;
+                                                positionsShown.add(cPos);
+                                            }
+
+                                            // Second pass: if we still have fewer than 3 positions, force diversity
+                                            if (positionsShown.size < 3 && alternatives.length < 4) {
+                                                const missingPositions = ['QB', 'RB', 'WR', 'TE'].filter(p => !positionsShown.has(p));
+                                                for (const missPos of missingPositions) {
+                                                    if (alternatives.length >= 4) break;
+                                                    const best = scored.find(c => c.player.position === missPos && !used.has(c.player.id));
+                                                    if (best) {
+                                                        // Replace the lowest-scored same-position duplicate
+                                                        const duplicatePos = Object.entries(posCounts).find(([, cnt]) => cnt >= 2)?.[0];
+                                                        if (duplicatePos) {
+                                                            const dupIdx = alternatives.findLastIndex(a => a.player.position === duplicatePos);
+                                                            if (dupIdx >= 0) {
+                                                                alternatives.splice(dupIdx, 1);
+                                                                posCounts[duplicatePos]--;
+                                                            }
+                                                        }
+                                                        alternatives.push(best);
+                                                        used.add(best.player.id);
+                                                        posCounts[missPos] = (posCounts[missPos] || 0) + 1;
+                                                        positionsShown.add(missPos);
+                                                    }
+                                                }
+                                            }
+
+                                            // Sort alternatives by score (highest first)
+                                            alternatives.sort((a, b) => b.score - a.score);
+                                        }
 
                                         if (!top) return <div className="text-sm text-zinc-500">No players available.</div>;
 
@@ -2031,8 +2091,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                     );
                                                 })()}
 
-                                                {/* Primary recommendation */}
-                                                <div className="bg-indigo-50 dark:bg-indigo-950/30 border-2 border-indigo-200 dark:border-indigo-800 rounded-xl p-4">
+                                                {/* Primary recommendation — expanded context */}
+                                                <div className="bg-indigo-50 dark:bg-indigo-950/30 border-2 border-indigo-200 dark:border-indigo-800 rounded-xl p-4 mb-3">
                                                     <div className="flex items-start justify-between gap-3">
                                                         <div className="flex-1">
                                                             <div className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-1">🎯 Recommended</div>
@@ -2078,58 +2138,372 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                     </div>
                                                 </div>
 
-                                                {/* Alternatives */}
-                                                <div className="mt-3">
-                                                    <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider mb-2">Alternatives</div>
-                                                    <div className="space-y-1">
+                                                {/* Recommendations table (desktop) */}
+                                                {(() => {
+                                                    // Pre-compute enrichments for all 5 candidates
+                                                    const allCandidates = [top, ...alternatives];
+                                                    const maxScore = Math.max(...allCandidates.map(c => c.score));
+
+                                                    // Auction rank by position among remaining players
+                                                    const auctionRankByPos = (p: Player) => {
+                                                        if (p.redraft_auction_value == null || !p.position) return null;
+                                                        const samePos = availablePlayers.filter(ap => ap.position === p.position && ap.redraft_auction_value != null);
+                                                        const sorted = samePos.sort((a, b) => (b.redraft_auction_value || 0) - (a.redraft_auction_value || 0));
+                                                        const rank = sorted.findIndex(ap => ap.id === p.id) + 1;
+                                                        return { rank, total: sorted.length };
+                                                    };
+
+                                                    // Tier drop warning: is this player last at their tier for their position?
+                                                    const getTierWarning = (p: Player) => {
+                                                        const tier = sf ? p.rank_sf_tier : p.rank_1qb_tier;
+                                                        if (!tier || !p.position) return null;
+                                                        const sameTierSamePos = availablePlayers.filter(ap =>
+                                                            ap.position === p.position &&
+                                                            ap.id !== p.id &&
+                                                            (sf ? ap.rank_sf_tier : ap.rank_1qb_tier) === tier
+                                                        );
+                                                        if (sameTierSamePos.length === 0) return { tier, pos: p.position, isLast: true };
+                                                        if (sameTierSamePos.length <= 2) return { tier, pos: p.position, isLast: false, remaining: sameTierSamePos.length };
+                                                        return null;
+                                                    };
+
+                                                    // "Will they be there?" — estimate survival probability to user's next pick
+                                                    const getSurvivalProbability = (p: Player) => {
+                                                        if (!userTeamId) return null;
+                                                        // Find user's next pick after current
+                                                        let nextUserPickIdx = -1;
+                                                        for (let i = currentPickIndex + 1; i < picks.length; i++) {
+                                                            if (picks[i].teamId === userTeamId && !picks[i].playerId) {
+                                                                nextUserPickIdx = i;
+                                                                break;
+                                                            }
+                                                        }
+                                                        if (nextUserPickIdx === -1) return null; // no more picks
+
+                                                        // For each team picking between now and our next pick, score this player for them
+                                                        let survivalCount = 0;
+                                                        const simulations = 1; // deterministic estimate
+                                                        const picksBetween: number[] = [];
+                                                        for (let i = currentPickIndex + 1; i < nextUserPickIdx; i++) {
+                                                            if (!picks[i].playerId) picksBetween.push(picks[i].teamId);
+                                                        }
+                                                        if (picksBetween.length === 0) return 100; // no picks between = guaranteed available
+
+                                                        // For each team in between, check if this player would be their top pick
+                                                        let takenProbability = 0;
+                                                        for (const teamId of picksBetween) {
+                                                            const { score: playerScoreForTeam } = scorePlayer(p, teamId);
+                                                            // Compare to BPA for that team (approximate: score top 5 available for them)
+                                                            const topForTeam = availablePlayers.slice(0, 10)
+                                                                .map(ap => scorePlayer(ap, teamId).score)
+                                                                .sort((a, b) => b - a);
+                                                            const bestForTeam = topForTeam[0] || 0;
+                                                            // If this player is within top 3 picks for that team, there's a chance they take them
+                                                            if (bestForTeam > 0 && playerScoreForTeam >= bestForTeam * 0.85) {
+                                                                // Probability this team takes this specific player
+                                                                // Higher if they're #1 for that team, lower if #2-3
+                                                                const rank = topForTeam.filter(s => s > playerScoreForTeam).length + 1;
+                                                                if (rank === 1) takenProbability += 0.7;
+                                                                else if (rank === 2) takenProbability += 0.2;
+                                                                else if (rank === 3) takenProbability += 0.1;
+                                                            }
+                                                        }
+                                                        // Cap at 95% taken probability
+                                                        const survivalPct = Math.max(5, Math.round((1 - Math.min(takenProbability, 0.95)) * 100));
+                                                        return survivalPct;
+                                                    };
+
+                                                    // Value Over Replacement Pick (VOR): how much better is this player
+                                                    // vs the best player at this position likely available at your next pick?
+                                                    const getVOR = (p: Player) => {
+                                                        if (!p.position || !userTeamId) return null;
+                                                        // Find user's next pick index
+                                                        let nextUserPickIdx = -1;
+                                                        for (let i = currentPickIndex + 1; i < picks.length; i++) {
+                                                            if (picks[i].teamId === userTeamId && !picks[i].playerId) {
+                                                                nextUserPickIdx = i;
+                                                                break;
+                                                            }
+                                                        }
+                                                        if (nextUserPickIdx === -1) return null;
+
+                                                        // Count picks between now and next turn
+                                                        const picksBetween: number[] = [];
+                                                        for (let i = currentPickIndex + 1; i < nextUserPickIdx; i++) {
+                                                            if (!picks[i].playerId) picksBetween.push(picks[i].teamId);
+                                                        }
+
+                                                        // Estimate how many players at this position will be taken before our next pick
+                                                        // Use position demand rate (same logic as scorePlayer tier scarcity)
+                                                        const demandRate = p.position === 'RB' ? 0.30 : p.position === 'WR' ? 0.35 : p.position === 'QB' ? 0.12 : 0.10;
+                                                        const estimatedTaken = Math.round(picksBetween.length * demandRate);
+
+                                                        // Get same-position players sorted by dynasty value (excluding this player)
+                                                        const samePosAvailable = availablePlayers
+                                                            .filter(ap => ap.position === p.position && ap.id !== p.id)
+                                                            .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+
+                                                        // The "replacement" is the best player at this position after estimated picks are taken
+                                                        const replacementIdx = Math.min(estimatedTaken, samePosAvailable.length - 1);
+                                                        if (replacementIdx < 0 || samePosAvailable.length === 0) return { vor: p.fc_value || 0, replacement: null };
+
+                                                        const replacement = samePosAvailable[replacementIdx];
+                                                        const vor = (p.fc_value || 0) - (replacement?.fc_value || 0);
+                                                        return { vor, replacement: replacement?.full_name || null };
+                                                    };
+
+                                                    return (
+                                                    <div className="hidden sm:block overflow-x-auto">
+                                                        <table className="w-full text-xs border-collapse">
+                                                            <thead>
+                                                                <tr className="border-b border-zinc-200 dark:border-zinc-700">
+                                                                    <th className="text-left py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-6">#</th>
+                                                                    <th className="text-left py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Player</th>
+                                                                    <th className="text-left py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-10">Pos</th>
+                                                                    <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-12">Score</th>
+                                                                    <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-16">Dynasty</th>
+                                                                    <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-20">Auction</th>
+                                                                    <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-14">ZAP</th>
+                                                                    <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-16" title="Value over replacement: dynasty value gained vs best option at this position on your next pick">VOR</th>
+                                                                    <th className="text-center py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-14" title="Probability this player is still available at your next pick">Avail?</th>
+                                                                    <th className="text-left py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Why</th>
+                                                                    <th className="py-1.5 px-2 w-24"></th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {allCandidates.map((c, i) => {
+                                                                    const p = c.player;
+                                                                    const reason = i === 0
+                                                                        ? (c.tags[0] || (isStarterSlot ? 'Fills starter' : 'Best value'))
+                                                                        : getAltReason(c);
+                                                                    const isGoodForYou = i > 0 && !isUserPick && isLive && userTeamId && (() => {
+                                                                        const { score: myScore } = scorePlayer(p, userTeamId);
+                                                                        const topForMe = scored[0] ? scorePlayer(scored[0].player, userTeamId).score : 0;
+                                                                        const isWatched = watchList.has(p.id);
+                                                                        return myScore < topForMe * 0.6 && !isWatched;
+                                                                    })();
+                                                                    const auctionRank = auctionRankByPos(p);
+                                                                    const tierWarn = getTierWarning(p);
+                                                                    const survival = getSurvivalProbability(p);
+                                                                    const vorData = getVOR(p);
+                                                                    const scoreDisplay = Math.round(c.score);
+                                                                    const scoreGap = maxScore > 0 ? Math.round((c.score / maxScore) * 100) : 100;
+
+                                                                    return (
+                                                                        <tr key={p.id} className={`border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${i === 0 ? 'bg-indigo-50/50 dark:bg-indigo-950/20' : ''}`}>
+                                                                            <td className="py-1.5 px-2 text-zinc-400 font-mono">{i + 1}</td>
+                                                                            <td className="py-1.5 px-2 font-medium text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
+                                                                                {p.full_name}
+                                                                                {tierWarn && (
+                                                                                    <span className={`ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded ${tierWarn.isLast ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                                                                                        {tierWarn.isLast ? `⚠️ Last T${tierWarn.tier} ${tierWarn.pos}` : `T${tierWarn.tier} ending (${tierWarn.remaining} left)`}
+                                                                                    </span>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className={`py-1.5 px-2 font-medium ${p.position === 'QB' ? 'text-green-600' : p.position === 'RB' ? 'text-blue-600' : p.position === 'WR' ? 'text-red-600' : 'text-orange-600'}`}>{p.position}</td>
+                                                                            <td className="py-1.5 px-2 text-right font-mono">
+                                                                                <span className={`${i === 0 ? 'text-indigo-600 dark:text-indigo-400 font-bold' : scoreGap >= 90 ? 'text-zinc-700 dark:text-zinc-300' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                                                                                    {scoreDisplay.toLocaleString()}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td className="py-1.5 px-2 text-right font-mono text-zinc-700 dark:text-zinc-300">{(p.fc_value || 0).toLocaleString()}</td>
+                                                                            <td className="py-1.5 px-2 text-right font-mono text-amber-600 dark:text-amber-400">
+                                                                                {p.redraft_auction_value != null ? (
+                                                                                    <span>${p.redraft_auction_value}{auctionRank ? <span className="text-[9px] text-zinc-400 ml-0.5">({p.position}{auctionRank.rank})</span> : ''}</span>
+                                                                                ) : '—'}
+                                                                            </td>
+                                                                            <td className="py-1.5 px-2 text-right font-mono">{p.zap_score != null && !p.zap_stale ? <span className="text-emerald-600 dark:text-emerald-400">{p.zap_score}</span> : <span className="text-zinc-300 dark:text-zinc-600">—</span>}</td>
+                                                                            <td className="py-1.5 px-2 text-right font-mono" title={vorData?.replacement ? `vs ${vorData.replacement} on next pick` : undefined}>
+                                                                                {vorData != null ? (
+                                                                                    <span className={`font-medium ${vorData.vor > 500 ? 'text-emerald-600 dark:text-emerald-400' : vorData.vor > 200 ? 'text-sky-600 dark:text-sky-400' : vorData.vor > 0 ? 'text-zinc-600 dark:text-zinc-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                                                                                        +{vorData.vor.toLocaleString()}
+                                                                                    </span>
+                                                                                ) : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                                                                            </td>
+                                                                            <td className="py-1.5 px-2 text-center">
+                                                                                {survival != null ? (
+                                                                                    <span className={`font-mono font-medium ${survival <= 20 ? 'text-red-600 dark:text-red-400' : survival <= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                                                                                        {survival}%
+                                                                                    </span>
+                                                                                ) : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                                                                            </td>
+                                                                            <td className="py-1.5 px-2 text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
+                                                                                {reason}
+                                                                                {isGoodForYou && <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">👍</span>}
+                                                                            </td>
+                                                                            <td className="py-1.5 px-2">
+                                                                                <div className="flex items-center gap-1 justify-end">
+                                                                                    <button
+                                                                                        onClick={() => { makePick(p.id); }}
+                                                                                        className={`px-2 py-1 text-xs font-bold text-white rounded active:scale-95 transition-all ${i === 0 ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-green-600 hover:bg-green-700'}`}
+                                                                                    >
+                                                                                        {i === 0 ? 'Draft' : '✓'}
+                                                                                    </button>
+                                                                                    {i > 0 && (
+                                                                                        <button
+                                                                                            onClick={() => { if (top) setComparePlayers([top.player, p]); }}
+                                                                                            className="px-2 py-1 text-[9px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded"
+                                                                                        >
+                                                                                            vs
+                                                                                        </button>
+                                                                                    )}
+                                                                                    <button
+                                                                                        onClick={() => setSelectedDraftPlayer(p)}
+                                                                                        className="px-2 py-1 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded"
+                                                                                    >
+                                                                                        Info
+                                                                                    </button>
+                                                                                </div>
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                    );
+                                                })()}
+
+                                                {/* Recommendations cards (mobile) */}
+                                                {(() => {
+                                                    // Reuse enrichment helpers from desktop (computed above in the IIFE scope — re-define for mobile)
+                                                    const getTierWarningMobile = (p: Player) => {
+                                                        const tier = sf ? p.rank_sf_tier : p.rank_1qb_tier;
+                                                        if (!tier || !p.position) return null;
+                                                        const sameTierSamePos = availablePlayers.filter(ap =>
+                                                            ap.position === p.position &&
+                                                            ap.id !== p.id &&
+                                                            (sf ? ap.rank_sf_tier : ap.rank_1qb_tier) === tier
+                                                        );
+                                                        if (sameTierSamePos.length === 0) return { tier, pos: p.position, isLast: true };
+                                                        if (sameTierSamePos.length <= 2) return { tier, pos: p.position, isLast: false, remaining: sameTierSamePos.length };
+                                                        return null;
+                                                    };
+
+                                                    const getSurvivalMobile = (p: Player) => {
+                                                        if (!userTeamId) return null;
+                                                        let nextUserPickIdx = -1;
+                                                        for (let i = currentPickIndex + 1; i < picks.length; i++) {
+                                                            if (picks[i].teamId === userTeamId && !picks[i].playerId) { nextUserPickIdx = i; break; }
+                                                        }
+                                                        if (nextUserPickIdx === -1) return null;
+                                                        const picksBetween: number[] = [];
+                                                        for (let i = currentPickIndex + 1; i < nextUserPickIdx; i++) {
+                                                            if (!picks[i].playerId) picksBetween.push(picks[i].teamId);
+                                                        }
+                                                        if (picksBetween.length === 0) return 100;
+                                                        let takenProbability = 0;
+                                                        for (const tid of picksBetween) {
+                                                            const { score: playerScoreForTeam } = scorePlayer(p, tid);
+                                                            const topForTeam = availablePlayers.slice(0, 10)
+                                                                .map(ap => scorePlayer(ap, tid).score)
+                                                                .sort((a, b) => b - a);
+                                                            const bestForTeam = topForTeam[0] || 0;
+                                                            if (bestForTeam > 0 && playerScoreForTeam >= bestForTeam * 0.85) {
+                                                                const rank = topForTeam.filter(s => s > playerScoreForTeam).length + 1;
+                                                                if (rank === 1) takenProbability += 0.7;
+                                                                else if (rank === 2) takenProbability += 0.2;
+                                                                else if (rank === 3) takenProbability += 0.1;
+                                                            }
+                                                        }
+                                                        return Math.max(5, Math.round((1 - Math.min(takenProbability, 0.95)) * 100));
+                                                    };
+
+                                                    const getVORMobile = (p: Player) => {
+                                                        if (!p.position || !userTeamId) return null;
+                                                        let nextUserPickIdx = -1;
+                                                        for (let i = currentPickIndex + 1; i < picks.length; i++) {
+                                                            if (picks[i].teamId === userTeamId && !picks[i].playerId) { nextUserPickIdx = i; break; }
+                                                        }
+                                                        if (nextUserPickIdx === -1) return null;
+                                                        const picksBetween: number[] = [];
+                                                        for (let i = currentPickIndex + 1; i < nextUserPickIdx; i++) {
+                                                            if (!picks[i].playerId) picksBetween.push(picks[i].teamId);
+                                                        }
+                                                        const demandRate = p.position === 'RB' ? 0.30 : p.position === 'WR' ? 0.35 : p.position === 'QB' ? 0.12 : 0.10;
+                                                        const estimatedTaken = Math.round(picksBetween.length * demandRate);
+                                                        const samePosAvailable = availablePlayers
+                                                            .filter(ap => ap.position === p.position && ap.id !== p.id)
+                                                            .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                                        const replacementIdx = Math.min(estimatedTaken, samePosAvailable.length - 1);
+                                                        if (replacementIdx < 0 || samePosAvailable.length === 0) return (p.fc_value || 0);
+                                                        const replacement = samePosAvailable[replacementIdx];
+                                                        return (p.fc_value || 0) - (replacement?.fc_value || 0);
+                                                    };
+
+                                                    return (
+                                                    <div className="sm:hidden space-y-1.5">
                                                         {alternatives.map((c, i) => {
-                                                            // "Good for you" — this player wouldn't be YOUR pick
+                                                            const p = c.player;
                                                             const isGoodForYou = !isUserPick && isLive && userTeamId && (() => {
-                                                                // Score this player for YOUR team
-                                                                const { score: myScore } = scorePlayer(c.player, userTeamId);
-                                                                // Compare to the top player's score for YOUR team
+                                                                const { score: myScore } = scorePlayer(p, userTeamId);
                                                                 const topForMe = scored[0] ? scorePlayer(scored[0].player, userTeamId).score : 0;
-                                                                // Good for you if this player scores <60% of your top pick
-                                                                // AND is not on your watchlist
-                                                                const isWatched = watchList.has(c.player.id);
+                                                                const isWatched = watchList.has(p.id);
                                                                 return myScore < topForMe * 0.6 && !isWatched;
                                                             })();
+                                                            const tierWarn = getTierWarningMobile(p);
+                                                            const survival = getSurvivalMobile(p);
+                                                            const vor = getVORMobile(p);
                                                             return (
-                                                            <div key={c.player.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-                                                                <div className="flex items-center gap-3 min-w-0">
-                                                                    <span className="text-[10px] text-zinc-400 font-mono w-4">#{i + 2}</span>
-                                                                    <div className="min-w-0">
-                                                                        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{c.player.full_name}</span>
-                                                                        <span className={`ml-1.5 text-xs ${c.player.position === 'QB' ? 'text-green-600' : c.player.position === 'RB' ? 'text-blue-600' : c.player.position === 'WR' ? 'text-red-600' : 'text-orange-600'}`}>{c.player.position}</span>
-                                                                        <span className="ml-2 text-xs text-zinc-400">— {getAltReason(c)}</span>
-                                                                        {isGoodForYou && <span className="ml-2 text-[9px] font-bold px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">👍 Good for you</span>}
+                                                                <div key={p.id} className="px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <div className="flex items-center gap-2 min-w-0">
+                                                                            <span className="text-[10px] text-zinc-400 font-mono w-4">#{i + 2}</span>
+                                                                            <div className="min-w-0">
+                                                                                <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{p.full_name}</span>
+                                                                                <span className={`ml-1.5 text-xs ${p.position === 'QB' ? 'text-green-600' : p.position === 'RB' ? 'text-blue-600' : p.position === 'WR' ? 'text-red-600' : 'text-orange-600'}`}>{p.position}</span>
+                                                                                {isGoodForYou && <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">👍</span>}
+                                                                                {tierWarn && (
+                                                                                    <span className={`ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded ${tierWarn.isLast ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                                                                                        {tierWarn.isLast ? `⚠️ Last T${tierWarn.tier}` : `T${tierWarn.tier} (${tierWarn.remaining})`}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1 flex-shrink-0">
+                                                                            <button
+                                                                                onClick={() => { makePick(p.id); }}
+                                                                                className="px-2 py-1 text-xs font-bold text-white bg-green-600 rounded hover:bg-green-700 active:scale-95 transition-all"
+                                                                            >
+                                                                                ✓
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => { if (top) setComparePlayers([top.player, p]); }}
+                                                                                className="px-2 py-1 text-[9px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded"
+                                                                            >
+                                                                                vs
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => setSelectedDraftPlayer(p)}
+                                                                                className="px-2 py-1 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded"
+                                                                            >
+                                                                                Info
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                    {/* Value row */}
+                                                                    <div className="flex items-center gap-3 mt-1 text-[10px] text-zinc-500 pl-6">
+                                                                        <span className="font-mono">{(p.fc_value || 0).toLocaleString()}</span>
+                                                                        <span className="text-amber-600 dark:text-amber-400 font-mono">{p.redraft_auction_value != null ? `$${p.redraft_auction_value}` : '—'}</span>
+                                                                        {p.zap_score != null && !p.zap_stale ? <span className="text-emerald-600 dark:text-emerald-400 font-mono">ZAP {p.zap_score}</span> : null}
+                                                                        {vor != null && vor > 0 && (
+                                                                            <span className={`font-mono font-medium ${vor > 500 ? 'text-emerald-600 dark:text-emerald-400' : vor > 200 ? 'text-sky-600 dark:text-sky-400' : 'text-zinc-500'}`}>
+                                                                                VOR +{vor.toLocaleString()}
+                                                                            </span>
+                                                                        )}
+                                                                        {survival != null && (
+                                                                            <span className={`font-mono font-medium ${survival <= 20 ? 'text-red-600 dark:text-red-400' : survival <= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                                                                                {survival}% avail
+                                                                            </span>
+                                                                        )}
+                                                                        <span className="text-zinc-400">— {getAltReason(c)}</span>
                                                                     </div>
                                                                 </div>
-                                                                <div className="flex items-center gap-1 flex-shrink-0">
-                                                                    <button
-                                                                        onClick={() => { makePick(c.player.id); }}
-                                                                        className="px-2 py-1 text-xs font-bold text-white bg-green-600 rounded hover:bg-green-700 active:scale-95 transition-all"
-                                                                    >
-                                                                        ✓
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => { if (top) setComparePlayers([top.player, c.player]); }}
-                                                                        className="px-2 py-1 text-[9px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded"
-                                                                    >
-                                                                        vs
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => setSelectedDraftPlayer(c.player)}
-                                                                        className="px-2 py-1 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded"
-                                                                    >
-                                                                        Info
-                                                                    </button>
-                                                                </div>
-                                                            </div>
                                                             );
                                                         })}
                                                     </div>
-                                                </div>
+                                                    );
+                                                })()}
                                             </>
                                         );
                                     })()}
