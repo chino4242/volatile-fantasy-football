@@ -565,6 +565,53 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         }
     }, [watchList, leagueId]);
 
+    // Win-Now / Dynasty blend for recommendation scoring.
+    // 0 = pure dynasty (fc_value), 1 = pure win-now (auction value). Persisted per league.
+    const [winNowBlend, setWinNowBlend] = useState<number>(() => {
+        if (typeof window !== 'undefined') {
+            try { const saved = localStorage.getItem(`vff_winnow_blend_${leagueId}`); if (saved != null) return Math.max(0, Math.min(1, parseFloat(saved))); } catch {}
+        }
+        return 0.5; // balanced default
+    });
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(`vff_winnow_blend_${leagueId}`, String(winNowBlend));
+        }
+    }, [winNowBlend, leagueId]);
+
+    // Blended value: mixes dynasty (fc_value) and win-now (auction) per the slider.
+    // Auction value = "what this player is worth to your roster out of a $200 budget this season" —
+    // an inherently win-now signal. To make it comparable to dynasty value, we scale auction so the
+    // top auction player on the board maps to the top dynasty player. This auto-calibrates to whatever
+    // the actual auction numbers are (no magic multiplier) and preserves the relative spread.
+    const auctionScale = useMemo(() => {
+        let maxDyn = 0;
+        let maxAuction = 0;
+        for (const p of freeAgents) {
+            if ((p.fc_value || 0) > maxDyn) maxDyn = p.fc_value || 0;
+            if ((p.redraft_auction_value || 0) > maxAuction) maxAuction = p.redraft_auction_value || 0;
+        }
+        return maxAuction > 0 ? maxDyn / maxAuction : 0;
+    }, [freeAgents]);
+
+    const blendedValue = useCallback((p: Player, applyBlend: boolean = true): number => {
+        const dyn = p.fc_value || 0;
+        // The Win-Now/Dynasty slider is a PERSONAL lens for the user's own picks only.
+        // When scoring for other teams (CPU auto-pick, opponent survival modeling), we must
+        // NOT apply the user's blend — each team drafts on its own strategy. Fall back to
+        // neutral dynasty value in that case.
+        if (!applyBlend) return dyn;
+        // A missing auction value means the player has no meaningful win-now/redraft signal
+        // (usually a deep dynasty stash or non-producer). Rather than falling back to full
+        // dynasty value — which would let them leapfrog properly-valued players when the slider
+        // is toward win-now — we treat their win-now value as a heavy discount of dynasty.
+        const NO_AUCTION_WINNOW_DISCOUNT = 0.25;
+        const winNow = p.redraft_auction_value != null
+            ? (p.redraft_auction_value || 0) * auctionScale
+            : dyn * NO_AUCTION_WINNOW_DISCOUNT;
+        return dyn * (1 - winNowBlend) + winNow * winNowBlend;
+    }, [winNowBlend, auctionScale]);
+
     // Fetch advanced stats when player modal opens
     useEffect(() => {
         if (!selectedDraftPlayer) { setAdvancedStats(null); setPlayerBreakout(null); setPlayerRegression(null); return; }
@@ -895,9 +942,12 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         // In redraft leagues (no keepers or few keepers), use redraft value as primary scoring
         // This makes CPU picks follow ADP-like behavior (proven producers go early)
         const isRedraft = !keeperCount || keeperCount <= 3;
+        // For redraft leagues, auction is already the primary lens.
+        // For keeper/dynasty leagues, use the Win-Now/Dynasty blend so the slider
+        // can tilt scoring toward win-now (auction) or long-term (dynasty) value.
         let value = isRedraft
             ? (player.redraft_auction_value || 0) * 100 // scale auction $ to comparable range
-            : (player.fc_value || 0);
+            : blendedValue(player, teamId === userTeamId);
         const tags: string[] = [];
 
         // Draft Supply/Demand Adjustments based on roster slots
@@ -1916,6 +1966,32 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             })()}
                             {(isUserPick || isLive) && (
                                 <div className="space-y-3">
+                                    {/* Win-Now / Dynasty blend slider — tilts recommendation scoring */}
+                                    {!(!keeperCount || keeperCount <= 3) && (
+                                        <div className="px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/30">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <span className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Strategy Blend</span>
+                                                <span className="text-[10px] font-medium text-zinc-600 dark:text-zinc-300">
+                                                    {winNowBlend <= 0.15 ? 'Full Dynasty' : winNowBlend >= 0.85 ? 'Full Win-Now' : `${Math.round((1 - winNowBlend) * 100)}% Dynasty / ${Math.round(winNowBlend * 100)}% Win-Now`}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[9px] font-bold text-purple-600 dark:text-purple-400 uppercase">Dynasty</span>
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={1}
+                                                    step={0.05}
+                                                    value={winNowBlend}
+                                                    onChange={(e) => setWinNowBlend(parseFloat(e.target.value))}
+                                                    className="flex-1 h-1.5 accent-amber-500 cursor-pointer"
+                                                    aria-label="Win-Now / Dynasty blend"
+                                                />
+                                                <span className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase">Win Now</span>
+                                            </div>
+                                            <div className="text-[9px] text-zinc-400 mt-1">Shifts Score, VOR & At Risk toward auction value (win-now) or dynasty value (long-term).</div>
+                                        </div>
+                                    )}
                                     {(() => {
                                         const onClockTeamId = currentPick.teamId;
                                         const needs = calculatePositionalNeed(onClockTeamId);
@@ -2138,6 +2214,75 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                     </div>
                                                 </div>
 
+                                                {/* Strategic callout: explain wait/grab tension when #1 is safe but another player won't last */}
+                                                {(() => {
+                                                    // Compute survival for top and find the biggest-regret candidate
+                                                    const computeSurvival = (p: Player): number | null => {
+                                                        if (!userTeamId) return null;
+                                                        let nextIdx = -1;
+                                                        for (let i = currentPickIndex + 1; i < picks.length; i++) {
+                                                            if (picks[i].teamId === userTeamId && !picks[i].playerId) { nextIdx = i; break; }
+                                                        }
+                                                        if (nextIdx === -1) return null;
+                                                        const between: number[] = [];
+                                                        for (let i = currentPickIndex + 1; i < nextIdx; i++) {
+                                                            if (!picks[i].playerId) between.push(picks[i].teamId);
+                                                        }
+                                                        if (between.length === 0) return 100;
+                                                        let survivalProb = 1;
+                                                        for (const tid of between) {
+                                                            const { score: ps } = scorePlayer(p, tid);
+                                                            const tops = availablePlayers.slice(0, 15).map(ap => scorePlayer(ap, tid).score).sort((a, b) => b - a);
+                                                            const best = tops[0] || 0;
+                                                            if (best <= 0) continue;
+                                                            const rank = tops.filter(s => s > ps).length + 1;
+                                                            let takeProb = 0;
+                                                            if (rank === 1) takeProb = 0.55;
+                                                            else if (rank === 2) takeProb = 0.25;
+                                                            else if (rank === 3) takeProb = 0.12;
+                                                            else if (rank <= 5) takeProb = 0.04;
+                                                            else takeProb = 0.005;
+                                                            survivalProb *= (1 - takeProb);
+                                                        }
+                                                        return Math.max(2, Math.min(99, Math.round(survivalProb * 100)));
+                                                    };
+
+                                                    const topSurvival = computeSurvival(top.player);
+                                                    // Find biggest-regret across all 5 candidates
+                                                    let regret: { player: Player; atRisk: number; survival: number } | null = null;
+                                                    for (const c of [top, ...alternatives]) {
+                                                        const s = computeSurvival(c.player);
+                                                        if (s == null) continue;
+                                                        const atRisk = Math.round(blendedValue(c.player) * ((100 - s) / 100));
+                                                        if (atRisk >= 300 && (!regret || atRisk > regret.atRisk)) {
+                                                            regret = { player: c.player, atRisk, survival: s };
+                                                        }
+                                                    }
+
+                                                    // Only show callout when #1 is genuinely safe to wait AND the regret player is someone else
+                                                    if (topSurvival == null || topSurvival < 80 || !regret || regret.player.id === top.player.id) return null;
+
+                                                    // Next pick label
+                                                    let nextPickLabel = '';
+                                                    for (let i = currentPickIndex + 1; i < picks.length; i++) {
+                                                        if (picks[i].teamId === userTeamId && !picks[i].playerId) {
+                                                            nextPickLabel = `${picks[i].round}.${String(picks[i].pick).padStart(2, '0')}`;
+                                                            break;
+                                                        }
+                                                    }
+
+                                                    return (
+                                                        <div className="mb-3 px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20">
+                                                            <div className="flex items-start gap-2">
+                                                                <span className="text-sm">💡</span>
+                                                                <div className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                                                                    <span className="font-semibold">{top.player.full_name}</span> projects <span className="font-semibold text-green-600 dark:text-green-400">{topSurvival}% available</span>{nextPickLabel ? ` at your next pick (${nextPickLabel})` : ' next turn'}. Consider grabbing <span className="font-semibold">{regret.player.full_name}</span> now — only <span className="font-semibold text-red-600 dark:text-red-400">{regret.survival}%</span> likely to last (<span className="font-mono">{regret.atRisk.toLocaleString()}</span> value at risk). You may land both.
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
+
                                                 {/* Recommendations table (desktop) */}
                                                 {(() => {
                                                     // Pre-compute enrichments for all 5 candidates
@@ -2189,27 +2334,36 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                         }
                                                         if (picksBetween.length === 0) return 100; // no picks between = guaranteed available
 
-                                                        // For each team in between, check if this player would be their top pick
-                                                        let takenProbability = 0;
+                                                        // Per-pick survival model: each intervening team makes ONE pick.
+                                                        // For each team, estimate the probability THIS player is the one they take,
+                                                        // then survival = product of (1 - takeProb) across all picks.
+                                                        // This discriminates between players (a mid-board guy survives a long gap
+                                                        // better than a consensus stud) instead of saturating everyone to the floor.
+                                                        let survivalProb = 1;
                                                         for (const teamId of picksBetween) {
                                                             const { score: playerScoreForTeam } = scorePlayer(p, teamId);
-                                                            // Compare to BPA for that team (approximate: score top 5 available for them)
-                                                            const topForTeam = availablePlayers.slice(0, 10)
-                                                                .map(ap => scorePlayer(ap, teamId).score)
-                                                                .sort((a, b) => b - a);
-                                                            const bestForTeam = topForTeam[0] || 0;
-                                                            // If this player is within top 3 picks for that team, there's a chance they take them
-                                                            if (bestForTeam > 0 && playerScoreForTeam >= bestForTeam * 0.85) {
-                                                                // Probability this team takes this specific player
-                                                                // Higher if they're #1 for that team, lower if #2-3
-                                                                const rank = topForTeam.filter(s => s > playerScoreForTeam).length + 1;
-                                                                if (rank === 1) takenProbability += 0.7;
-                                                                else if (rank === 2) takenProbability += 0.2;
-                                                                else if (rank === 3) takenProbability += 0.1;
-                                                            }
+                                                            const topForTeam = availablePlayers.slice(0, 15)
+                                                                .map(ap => ({ id: ap.id, score: scorePlayer(ap, teamId).score }))
+                                                                .sort((a, b) => b.score - a.score);
+                                                            const bestForTeam = topForTeam[0]?.score || 0;
+                                                            if (bestForTeam <= 0) continue;
+
+                                                            // Where does this player rank for this team?
+                                                            const rank = topForTeam.filter(t => t.score > playerScoreForTeam).length + 1;
+
+                                                            // Probability this team takes THIS player on their single pick.
+                                                            // CPU picks from top ~3 with weighted randomness, so:
+                                                            let takeProb = 0;
+                                                            if (rank === 1) takeProb = 0.55;      // clear favorite
+                                                            else if (rank === 2) takeProb = 0.25;
+                                                            else if (rank === 3) takeProb = 0.12;
+                                                            else if (rank <= 5) takeProb = 0.04;  // outside top 3, small chance
+                                                            else takeProb = 0.005;                // deep — very unlikely this pick
+
+                                                            survivalProb *= (1 - takeProb);
                                                         }
-                                                        // Cap at 95% taken probability
-                                                        const survivalPct = Math.max(5, Math.round((1 - Math.min(takenProbability, 0.95)) * 100));
+
+                                                        const survivalPct = Math.max(2, Math.min(99, Math.round(survivalProb * 100)));
                                                         return survivalPct;
                                                     };
 
@@ -2238,18 +2392,48 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                         const demandRate = p.position === 'RB' ? 0.30 : p.position === 'WR' ? 0.35 : p.position === 'QB' ? 0.12 : 0.10;
                                                         const estimatedTaken = Math.round(picksBetween.length * demandRate);
 
-                                                        // Get same-position players sorted by dynasty value (excluding this player)
+                                                        // Get same-position players sorted by blended value (excluding this player)
                                                         const samePosAvailable = availablePlayers
                                                             .filter(ap => ap.position === p.position && ap.id !== p.id)
-                                                            .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                                            .sort((a, b) => blendedValue(b) - blendedValue(a));
 
                                                         // The "replacement" is the best player at this position after estimated picks are taken
                                                         const replacementIdx = Math.min(estimatedTaken, samePosAvailable.length - 1);
-                                                        if (replacementIdx < 0 || samePosAvailable.length === 0) return { vor: p.fc_value || 0, replacement: null };
+                                                        if (replacementIdx < 0 || samePosAvailable.length === 0) return { vor: Math.round(blendedValue(p)), replacement: null };
 
                                                         const replacement = samePosAvailable[replacementIdx];
-                                                        const vor = (p.fc_value || 0) - (replacement?.fc_value || 0);
+                                                        const vor = Math.round(blendedValue(p) - (replacement ? blendedValue(replacement) : 0));
                                                         return { vor, replacement: replacement?.full_name || null };
+                                                    };
+
+                                                    // Expected Value If Wait (EVIW) — "value at risk" = how much value you likely
+                                                    // lose by NOT drafting this player now, weighted by the chance they're taken.
+                                                    // atRisk = value × P(taken). High atRisk = "you'll regret waiting."
+                                                    const getValueAtRisk = (p: Player, survival: number | null) => {
+                                                        if (survival == null) return null;
+                                                        const takenProb = (100 - survival) / 100;
+                                                        const value = blendedValue(p);
+                                                        return Math.round(value * takenProb);
+                                                    };
+
+                                                    // Precompute survival + at-risk for all candidates so we can flag the biggest regret
+                                                    const candidateRisk = allCandidates.map(c => {
+                                                        const survival = getSurvivalProbability(c.player);
+                                                        const atRisk = getValueAtRisk(c.player, survival);
+                                                        return { id: c.player.id, survival, atRisk };
+                                                    });
+                                                    const maxAtRisk = Math.max(0, ...candidateRisk.map(r => r.atRisk ?? 0));
+                                                    // Only flag a "biggest regret" if it's meaningfully at risk (avoid flagging trivial amounts)
+                                                    const biggestRegretId = maxAtRisk >= 300
+                                                        ? candidateRisk.find(r => r.atRisk === maxAtRisk)?.id ?? null
+                                                        : null;
+
+                                                    // Wait signal from survival probability
+                                                    const getWaitSignal = (survival: number | null): { label: string; cls: string } | null => {
+                                                        if (survival == null) return null;
+                                                        if (survival >= 80) return { label: 'Safe to wait', cls: 'text-green-600 dark:text-green-400' };
+                                                        if (survival <= 30) return { label: 'Now or never', cls: 'text-red-600 dark:text-red-400' };
+                                                        return { label: 'Some risk', cls: 'text-amber-600 dark:text-amber-400' };
                                                     };
 
                                                     return (
@@ -2265,7 +2449,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                     <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-20">Auction</th>
                                                                     <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-14">ZAP</th>
                                                                     <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-16" title="Value over replacement: dynasty value gained vs best option at this position on your next pick">VOR</th>
-                                                                    <th className="text-center py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-14" title="Probability this player is still available at your next pick">Avail?</th>
+                                                                    <th className="text-right py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-16" title="Value at risk: dynasty value × chance this player is taken before your next pick. Higher = you'll regret waiting.">At Risk</th>
+                                                                    <th className="text-center py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider w-24" title="Probability this player is still available at your next pick, and whether it's safe to wait">Avail?</th>
                                                                     <th className="text-left py-1.5 px-2 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Why</th>
                                                                     <th className="py-1.5 px-2 w-24"></th>
                                                                 </tr>
@@ -2286,14 +2471,20 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                     const tierWarn = getTierWarning(p);
                                                                     const survival = getSurvivalProbability(p);
                                                                     const vorData = getVOR(p);
+                                                                    const atRisk = getValueAtRisk(p, survival);
+                                                                    const waitSignal = getWaitSignal(survival);
+                                                                    const isBiggestRegret = biggestRegretId === p.id;
                                                                     const scoreDisplay = Math.round(c.score);
                                                                     const scoreGap = maxScore > 0 ? Math.round((c.score / maxScore) * 100) : 100;
 
                                                                     return (
-                                                                        <tr key={p.id} className={`border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${i === 0 ? 'bg-indigo-50/50 dark:bg-indigo-950/20' : ''}`}>
+                                                                        <tr key={p.id} className={`border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${isBiggestRegret ? 'bg-red-50/50 dark:bg-red-950/10' : i === 0 ? 'bg-indigo-50/50 dark:bg-indigo-950/20' : ''}`}>
                                                                             <td className="py-1.5 px-2 text-zinc-400 font-mono">{i + 1}</td>
                                                                             <td className="py-1.5 px-2 font-medium text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
                                                                                 {p.full_name}
+                                                                                {isBiggestRegret && (
+                                                                                    <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-red-600 text-white" title="Highest value at risk — most likely to be gone if you wait">⏰ Won't last</span>
+                                                                                )}
                                                                                 {tierWarn && (
                                                                                     <span className={`ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded ${tierWarn.isLast ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
                                                                                         {tierWarn.isLast ? `⚠️ Last T${tierWarn.tier} ${tierWarn.pos}` : `T${tierWarn.tier} ending (${tierWarn.remaining} left)`}
@@ -2320,11 +2511,21 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                                     </span>
                                                                                 ) : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
                                                                             </td>
+                                                                            <td className="py-1.5 px-2 text-right font-mono" title="Dynasty value you'd likely lose by waiting (value × chance taken)">
+                                                                                {atRisk != null && atRisk > 0 ? (
+                                                                                    <span className={`font-medium ${atRisk >= 1000 ? 'text-red-600 dark:text-red-400' : atRisk >= 400 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-500'}`}>
+                                                                                        {atRisk.toLocaleString()}
+                                                                                    </span>
+                                                                                ) : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                                                                            </td>
                                                                             <td className="py-1.5 px-2 text-center">
                                                                                 {survival != null ? (
-                                                                                    <span className={`font-mono font-medium ${survival <= 20 ? 'text-red-600 dark:text-red-400' : survival <= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
-                                                                                        {survival}%
-                                                                                    </span>
+                                                                                    <div className="flex flex-col items-center leading-tight">
+                                                                                        <span className={`font-mono font-medium ${survival <= 30 ? 'text-red-600 dark:text-red-400' : survival <= 60 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                                                                                            {survival}%
+                                                                                        </span>
+                                                                                        {waitSignal && <span className={`text-[9px] font-medium ${waitSignal.cls}`}>{waitSignal.label}</span>}
+                                                                                    </div>
                                                                                 ) : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
                                                                             </td>
                                                                             <td className="py-1.5 px-2 text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
@@ -2392,21 +2593,24 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                             if (!picks[i].playerId) picksBetween.push(picks[i].teamId);
                                                         }
                                                         if (picksBetween.length === 0) return 100;
-                                                        let takenProbability = 0;
+                                                        let survivalProb = 1;
                                                         for (const tid of picksBetween) {
                                                             const { score: playerScoreForTeam } = scorePlayer(p, tid);
-                                                            const topForTeam = availablePlayers.slice(0, 10)
-                                                                .map(ap => scorePlayer(ap, tid).score)
-                                                                .sort((a, b) => b - a);
-                                                            const bestForTeam = topForTeam[0] || 0;
-                                                            if (bestForTeam > 0 && playerScoreForTeam >= bestForTeam * 0.85) {
-                                                                const rank = topForTeam.filter(s => s > playerScoreForTeam).length + 1;
-                                                                if (rank === 1) takenProbability += 0.7;
-                                                                else if (rank === 2) takenProbability += 0.2;
-                                                                else if (rank === 3) takenProbability += 0.1;
-                                                            }
+                                                            const topForTeam = availablePlayers.slice(0, 15)
+                                                                .map(ap => ({ id: ap.id, score: scorePlayer(ap, tid).score }))
+                                                                .sort((a, b) => b.score - a.score);
+                                                            const bestForTeam = topForTeam[0]?.score || 0;
+                                                            if (bestForTeam <= 0) continue;
+                                                            const rank = topForTeam.filter(t => t.score > playerScoreForTeam).length + 1;
+                                                            let takeProb = 0;
+                                                            if (rank === 1) takeProb = 0.55;
+                                                            else if (rank === 2) takeProb = 0.25;
+                                                            else if (rank === 3) takeProb = 0.12;
+                                                            else if (rank <= 5) takeProb = 0.04;
+                                                            else takeProb = 0.005;
+                                                            survivalProb *= (1 - takeProb);
                                                         }
-                                                        return Math.max(5, Math.round((1 - Math.min(takenProbability, 0.95)) * 100));
+                                                        return Math.max(2, Math.min(99, Math.round(survivalProb * 100)));
                                                     };
 
                                                     const getVORMobile = (p: Player) => {
@@ -2424,12 +2628,27 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                         const estimatedTaken = Math.round(picksBetween.length * demandRate);
                                                         const samePosAvailable = availablePlayers
                                                             .filter(ap => ap.position === p.position && ap.id !== p.id)
-                                                            .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                                                            .sort((a, b) => blendedValue(b) - blendedValue(a));
                                                         const replacementIdx = Math.min(estimatedTaken, samePosAvailable.length - 1);
-                                                        if (replacementIdx < 0 || samePosAvailable.length === 0) return (p.fc_value || 0);
+                                                        if (replacementIdx < 0 || samePosAvailable.length === 0) return Math.round(blendedValue(p));
                                                         const replacement = samePosAvailable[replacementIdx];
-                                                        return (p.fc_value || 0) - (replacement?.fc_value || 0);
+                                                        return Math.round(blendedValue(p) - (replacement ? blendedValue(replacement) : 0));
                                                     };
+
+                                                    const getAtRiskMobile = (p: Player, survival: number | null) => {
+                                                        if (survival == null) return null;
+                                                        return Math.round(blendedValue(p) * ((100 - survival) / 100));
+                                                    };
+                                                    const getWaitSignalMobile = (survival: number | null): { label: string; cls: string } | null => {
+                                                        if (survival == null) return null;
+                                                        if (survival >= 80) return { label: 'safe to wait', cls: 'text-green-600 dark:text-green-400' };
+                                                        if (survival <= 30) return { label: 'now or never', cls: 'text-red-600 dark:text-red-400' };
+                                                        return { label: 'some risk', cls: 'text-amber-600 dark:text-amber-400' };
+                                                    };
+                                                    // Biggest regret (highest value at risk) across mobile alternatives
+                                                    const mobileRisk = alternatives.map(c => ({ id: c.player.id, atRisk: getAtRiskMobile(c.player, getSurvivalMobile(c.player)) ?? 0 }));
+                                                    const mobileMaxAtRisk = Math.max(0, ...mobileRisk.map(r => r.atRisk));
+                                                    const mobileBiggestRegretId = mobileMaxAtRisk >= 300 ? mobileRisk.find(r => r.atRisk === mobileMaxAtRisk)?.id ?? null : null;
 
                                                     return (
                                                     <div className="sm:hidden space-y-1.5">
@@ -2444,14 +2663,18 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                             const tierWarn = getTierWarningMobile(p);
                                                             const survival = getSurvivalMobile(p);
                                                             const vor = getVORMobile(p);
+                                                            const atRisk = getAtRiskMobile(p, survival);
+                                                            const waitSignal = getWaitSignalMobile(survival);
+                                                            const isBiggestRegret = mobileBiggestRegretId === p.id;
                                                             return (
-                                                                <div key={p.id} className="px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                                                                <div key={p.id} className={`px-3 py-2 rounded-lg transition-colors ${isBiggestRegret ? 'bg-red-50/60 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/30' : 'bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
                                                                     <div className="flex items-center justify-between">
                                                                         <div className="flex items-center gap-2 min-w-0">
                                                                             <span className="text-[10px] text-zinc-400 font-mono w-4">#{i + 2}</span>
                                                                             <div className="min-w-0">
                                                                                 <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{p.full_name}</span>
                                                                                 <span className={`ml-1.5 text-xs ${p.position === 'QB' ? 'text-green-600' : p.position === 'RB' ? 'text-blue-600' : p.position === 'WR' ? 'text-red-600' : 'text-orange-600'}`}>{p.position}</span>
+                                                                                {isBiggestRegret && <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-red-600 text-white">⏰ Won't last</span>}
                                                                                 {isGoodForYou && <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">👍</span>}
                                                                                 {tierWarn && (
                                                                                     <span className={`ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded ${tierWarn.isLast ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
@@ -2492,8 +2715,13 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                             </span>
                                                                         )}
                                                                         {survival != null && (
-                                                                            <span className={`font-mono font-medium ${survival <= 20 ? 'text-red-600 dark:text-red-400' : survival <= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
-                                                                                {survival}% avail
+                                                                            <span className={`font-mono font-medium ${survival <= 30 ? 'text-red-600 dark:text-red-400' : survival <= 60 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                                                                                {survival}%{waitSignal ? ` ${waitSignal.label}` : ' avail'}
+                                                                            </span>
+                                                                        )}
+                                                                        {atRisk != null && atRisk >= 400 && (
+                                                                            <span className={`font-mono font-medium ${atRisk >= 1000 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                                                                risk {atRisk.toLocaleString()}
                                                                             </span>
                                                                         )}
                                                                         <span className="text-zinc-400">— {getAltReason(c)}</span>
