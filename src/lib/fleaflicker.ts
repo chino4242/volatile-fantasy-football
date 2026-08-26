@@ -169,7 +169,7 @@ export async function getFleaflickerLeagueInfo(leagueId: string): Promise<Fleafl
     return info;
 }
 
-export interface RosterSlots { QB: number; RB: number; WR: number; TE: number; FLEX: number }
+export interface RosterSlots { QB: number; RB: number; WR: number; TE: number; FLEX: number; total?: number }
 
 export async function getFleaflickerRosterSlots(leagueId: string): Promise<RosterSlots> {
     const cacheKey = `fleaflicker:slots:${leagueId}`;
@@ -179,7 +179,8 @@ export async function getFleaflickerRosterSlots(leagueId: string): Promise<Roste
     const res = await fetch(`${BASE_URL}/FetchLeagueStandings?sport=NFL&league_id=${leagueId}`, { cache: 'no-store' });
     if (!res.ok) return { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
     const data = await res.json();
-    const positions = data?.league?.rosterRequirements?.positions || [];
+    const rosterReq = data?.league?.rosterRequirements || {};
+    const positions = rosterReq.positions || [];
     const slots: RosterSlots = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0 };
     for (const p of positions) {
         if (p.group !== 'START' || !p.start) continue;
@@ -190,6 +191,10 @@ export async function getFleaflickerRosterSlots(leagueId: string): Promise<Roste
             slots.FLEX += p.start;
         }
     }
+    // Total draftable roster size (starters + bench, excludes IR/reserve). Fleaflicker exposes
+    // rosterSize directly; used to cap how many picks a team can actually use.
+    const rosterSize = typeof rosterReq.rosterSize === 'number' ? rosterReq.rosterSize : undefined;
+    slots.total = rosterSize;
     cache.set(cacheKey, slots);
     return slots;
 }

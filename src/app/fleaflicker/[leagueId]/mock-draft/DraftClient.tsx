@@ -88,7 +88,7 @@ interface DraftClientProps {
     rankingsVintage?: string | null;
     redraftVintage?: string | null;
     platform?: 'sleeper' | 'fleaflicker';
-    rosterSlots?: { QB: number; RB: number; WR: number; TE: number; FLEX: number };
+    rosterSlots?: { QB: number; RB: number; WR: number; TE: number; FLEX: number; total?: number };
     keeperCount?: number;
     mode?: 'mock' | 'live';
     defaultUserTeamId?: number;
@@ -4027,9 +4027,14 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
                                 {/* My roster + upcoming picks */}
                                 {userTeamId !== null && (() => {
+                                    // Cap picks at open roster spots — you can't draft more players than you have room for.
+                                    const openSpots = rosterSlots?.total != null
+                                        ? Math.max(0, rosterSlots.total - myRosterPlayers.length)
+                                        : Infinity;
                                     const myUpcomingPicks = picks
                                         .filter((p, i) => p.teamId === userTeamId && !p.playerId && i >= currentPickIndex)
-                                        .map(p => `${p.round}.${String(p.pick).padStart(2, '0')}`);
+                                        .map(p => `${p.round}.${String(p.pick).padStart(2, '0')}`)
+                                        .slice(0, openSpots === Infinity ? undefined : openSpots);
                                     const rosterByPos = (['QB', 'RB', 'WR', 'TE'] as const).map(pos => ({
                                         pos,
                                         players: myRosterPlayers
@@ -4071,9 +4076,13 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
 
                                 {/* Write-in draft log */}
                                 {userTeamId !== null && (() => {
+                                    const openSpots = rosterSlots?.total != null
+                                        ? Math.max(0, rosterSlots.total - myRosterPlayers.length)
+                                        : Infinity;
                                     const myUpcomingPicks = picks
                                         .filter((p, i) => p.teamId === userTeamId && !p.playerId && i >= currentPickIndex)
-                                        .map(p => `${p.round}.${String(p.pick).padStart(2, '0')}`);
+                                        .map(p => `${p.round}.${String(p.pick).padStart(2, '0')}`)
+                                        .slice(0, openSpots === Infinity ? undefined : openSpots);
                                     // Rows to write into: one per upcoming pick, plus a few spares (min 8 total)
                                     const rows = [...myUpcomingPicks];
                                     while (rows.length < 8) rows.push('');

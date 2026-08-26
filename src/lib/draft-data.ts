@@ -236,5 +236,25 @@ export async function getSleeperDraftData(leagueId: string, formatParam?: string
             };
         });
 
-    return { teams, freeAgents: freeAgentsWithZap, format, rankingsVintage, redraftVintage, keeperCount, customRankingsMap: customRankingsData, keeperPicks };
+    // Derive roster slots (starters by position + total roster size) from the Sleeper league config.
+    // roster_positions is an array like ["QB","RB","RB","WR","WR","WR","TE","FLEX",...,"BN","BN"].
+    let sleeperRosterSlots: { QB: number; RB: number; WR: number; TE: number; FLEX: number; total?: number } | undefined;
+    try {
+        const leagueCfg = await fetch(`https://api.sleeper.app/v1/league/${leagueId}`).then(r => r.json());
+        const rp: string[] = leagueCfg?.roster_positions || [];
+        if (rp.length > 0) {
+            const s = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, total: rp.length };
+            for (const pos of rp) {
+                if (pos === 'QB') s.QB++;
+                else if (pos === 'RB') s.RB++;
+                else if (pos === 'WR') s.WR++;
+                else if (pos === 'TE') s.TE++;
+                else if (pos === 'FLEX' || pos === 'SUPER_FLEX' || pos === 'REC_FLEX' || pos === 'WRRB_FLEX') s.FLEX++;
+                // BN / IR / TAXI etc. still count toward total (rp.length) but not starter slots
+            }
+            sleeperRosterSlots = s;
+        }
+    } catch {}
+
+    return { teams, freeAgents: freeAgentsWithZap, format, rankingsVintage, redraftVintage, rosterSlots: sleeperRosterSlots, keeperCount, customRankingsMap: customRankingsData, keeperPicks };
 }
