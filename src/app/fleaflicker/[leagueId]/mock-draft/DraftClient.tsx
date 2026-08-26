@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, RotateCcw, Download, Undo2, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, RotateCcw, Download, Undo2, ChevronDown, ChevronUp, Printer, X } from 'lucide-react';
 import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 import { PlayerDetailModal } from './PlayerDetailModal';
 import DraftBoardGrid, { PickHistoryLog } from './DraftBoardGrid';
@@ -578,6 +578,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             localStorage.setItem(`vff_winnow_blend_${leagueId}`, String(winNowBlend));
         }
     }, [winNowBlend, leagueId]);
+
+    // Printable cheat sheet overlay (live draft)
+    const [showCheatSheet, setShowCheatSheet] = useState(false);
+    const [cheatSheetTierMode, setCheatSheetTierMode] = useState<'value' | 'redraft' | 'dynasty'>('value');
 
     // Blended value: mixes dynasty (fc_value) and win-now (auction) per the slider.
     // Auction value = "what this player is worth to your roster out of a $200 budget this season" —
@@ -1359,6 +1363,16 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             <Download className="h-4 w-4" />
                             Export CSV
                         </button>
+                        {isLive && (
+                            <button
+                                onClick={() => setShowCheatSheet(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                                title="Open a printable, tier-color-coded cheat sheet"
+                            >
+                                <Printer className="h-4 w-4" />
+                                Cheat Sheet
+                            </button>
+                        )}
                         {/* Draft Speed Selector */}
                         {draftStarted && !isDraftComplete && !isLive && (
                             <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
@@ -3875,6 +3889,263 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                         </div>
                     </div>
                 )}
+                {/* Printable Cheat Sheet (live draft) — single list by redraft tier, then auction value */}
+                {showCheatSheet && (() => {
+                    // Tier -> light background + border + text color.
+                    // Matches the team page tier scheme (T1 purple = elite, T2 blue, T3 green, T4 yellow).
+                    const tierStyle = (tier: number | null | undefined): { bg: string; border: string; label: string } => {
+                        const kind = cheatSheetTierMode === 'dynasty' ? 'Dynasty' : 'Redraft';
+                        switch (tier) {
+                            case 1: return { bg: 'bg-purple-50', border: 'border-purple-500', label: `${kind} Tier 1` };
+                            case 2: return { bg: 'bg-blue-50', border: 'border-blue-500', label: `${kind} Tier 2` };
+                            case 3: return { bg: 'bg-green-50', border: 'border-green-500', label: `${kind} Tier 3` };
+                            case 4: return { bg: 'bg-yellow-50', border: 'border-yellow-500', label: `${kind} Tier 4` };
+                            case 5: return { bg: 'bg-pink-50', border: 'border-pink-500', label: `${kind} Tier 5` };
+                            case 6: return { bg: 'bg-cyan-50', border: 'border-cyan-500', label: `${kind} Tier 6` };
+                            default: return { bg: 'bg-zinc-50', border: 'border-zinc-400', label: tier ? `${kind} Tier ${tier}` : 'Unranked' };
+                        }
+                    };
+                    // Position text color — matches the mock draft client scheme (QB green, RB blue, WR red, TE orange)
+                    const posColor = (pos: string | null | undefined) =>
+                        pos === 'QB' ? 'text-green-600' : pos === 'RB' ? 'text-blue-600' : pos === 'WR' ? 'text-red-600' : pos === 'TE' ? 'text-orange-600' : 'text-zinc-500';
+                    const posBadge = (pos: string | null | undefined) =>
+                        pos === 'QB' ? 'bg-green-600' : pos === 'RB' ? 'bg-blue-600' : pos === 'WR' ? 'bg-red-600' : pos === 'TE' ? 'bg-orange-500' : 'bg-zinc-500';
+
+                    // Group all available players.
+                    // - 'value' mode: flat descending by dynasty value, with color bands.
+                    //   Bands break on ANY of: a relative value cliff, crossing a round value floor,
+                    //   or hitting a max band size — so no single tier can balloon into hundreds of players.
+                    // - 'redraft'/'dynasty' modes: group by the stored tier field, sorted by auction within tier.
+                    let groups: { tier: number | null; players: Player[]; label?: string }[] = [];
+                    if (cheatSheetTierMode === 'value') {
+                        const sorted = [...availablePlayers].sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0));
+                        const CLIFF_PCT = 0.10;      // 10%+ drop from prev = new band
+                        const MAX_BAND_SIZE = 12;    // never let a band exceed this many players
+                        // Round value floors that force a break when crossed (elite → deep tail).
+                        const VALUE_FLOORS = [6000, 5000, 4000, 3000, 2500, 2000, 1500, 1200, 1000, 800, 600, 400, 300, 200, 100];
+                        const floorCrossed = (prev: number, cur: number) =>
+                            VALUE_FLOORS.some(f => prev >= f && cur < f);
+
+                        let bandIdx = 0;
+                        let prevValue: number | null = null;
+                        let curBand: { tier: number; players: Player[] } | null = null;
+                        for (const p of sorted) {
+                            const v = p.fc_value || 0;
+                            const cliff = prevValue != null && prevValue > 0 && (prevValue - v) / prevValue >= CLIFF_PCT;
+                            const crossed = prevValue != null && floorCrossed(prevValue, v);
+                            const tooBig = curBand != null && curBand.players.length >= MAX_BAND_SIZE;
+                            if (!curBand || cliff || crossed || tooBig) {
+                                bandIdx++;
+                                curBand = { tier: bandIdx, players: [p] };
+                                groups.push(curBand);
+                            } else {
+                                curBand.players.push(p);
+                            }
+                            prevValue = v;
+                        }
+                        // Label each band with its value range, and sort WITHIN each band by auction
+                        // value (desc) — players in a band are dynasty-equivalent, so auction order
+                        // surfaces the best win-now/redraft producers first. Dynasty value breaks ties.
+                        groups = groups.map(g => {
+                            const hi = g.players[0]?.fc_value || 0;
+                            const lo = g.players[g.players.length - 1]?.fc_value || 0;
+                            const sortedPlayers = [...g.players].sort((a, b) =>
+                                (b.redraft_auction_value || 0) - (a.redraft_auction_value || 0) || (b.fc_value || 0) - (a.fc_value || 0)
+                            );
+                            return { ...g, players: sortedPlayers, label: `Value ${Math.round(hi).toLocaleString()}–${Math.round(lo).toLocaleString()}` };
+                        });
+                    } else {
+                        const tierOf = (p: Player) => cheatSheetTierMode === 'dynasty'
+                            ? ((sf ? p.rank_sf_tier : p.rank_1qb_tier) ?? null)
+                            : (p.redraft_rank_tier ?? null);
+                        const tiersPresent = Array.from(new Set(availablePlayers.map(tierOf)))
+                            .sort((a, b) => {
+                                if (a == null) return 1; // unranked last
+                                if (b == null) return -1;
+                                return a - b;
+                            });
+                        groups = tiersPresent.map(tier => ({
+                            tier,
+                            players: availablePlayers
+                                .filter(p => tierOf(p) === tier)
+                                .sort((a, b) => (b.redraft_auction_value || 0) - (a.redraft_auction_value || 0) || (b.fc_value || 0) - (a.fc_value || 0)),
+                        }));
+                    }
+
+                    return (
+                        <div className="fixed inset-0 bg-white z-[60] overflow-y-auto cheat-sheet-root">
+                            {/* Toolbar — hidden when printing */}
+                            <div className="sticky top-0 bg-white border-b border-zinc-200 px-4 py-3 flex items-center justify-between print:hidden">
+                                <div>
+                                    <h2 className="text-lg font-bold text-zinc-900">Draft Cheat Sheet</h2>
+                                    <p className="text-xs text-zinc-500">
+                                        {cheatSheetTierMode === 'value'
+                                            ? 'Sorted by dynasty value (freshest data) · color bands from value cliffs'
+                                            : `Grouped by ${cheatSheetTierMode} tier · sorted by auction value`}
+                                        {' '}· check off players as they're drafted
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {/* Tier mode toggle */}
+                                    <div className="flex items-center bg-zinc-100 rounded-lg p-0.5">
+                                        {([
+                                            { key: 'value', label: 'Dynasty Value' },
+                                            { key: 'redraft', label: 'Redraft Tiers' },
+                                            { key: 'dynasty', label: 'Dynasty Tiers' },
+                                        ] as const).map(({ key, label }) => (
+                                            <button
+                                                key={key}
+                                                onClick={() => setCheatSheetTierMode(key)}
+                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${cheatSheetTierMode === key ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'}`}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => window.print()}
+                                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
+                                    >
+                                        <Printer className="h-4 w-4" />
+                                        Print
+                                    </button>
+                                    <button
+                                        onClick={() => setShowCheatSheet(false)}
+                                        className="flex items-center gap-2 px-3 py-2 bg-zinc-200 text-zinc-800 rounded-lg hover:bg-zinc-300 text-sm font-medium"
+                                    >
+                                        <X className="h-4 w-4" />
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Sheet content */}
+                            <div className="p-4 print:p-2 max-w-3xl mx-auto">
+                                <div className="hidden print:block mb-2">
+                                    <h1 className="text-base font-bold text-black">Draft Cheat Sheet — {isLive ? 'Live Draft' : 'Mock Draft'}</h1>
+                                </div>
+
+                                {/* My roster + upcoming picks */}
+                                {userTeamId !== null && (() => {
+                                    const myUpcomingPicks = picks
+                                        .filter((p, i) => p.teamId === userTeamId && !p.playerId && i >= currentPickIndex)
+                                        .map(p => `${p.round}.${String(p.pick).padStart(2, '0')}`);
+                                    const rosterByPos = (['QB', 'RB', 'WR', 'TE'] as const).map(pos => ({
+                                        pos,
+                                        players: myRosterPlayers
+                                            .filter((p: any) => p.position === pos)
+                                            .sort((a: any, b: any) => (b.fc_value || 0) - (a.fc_value || 0)),
+                                    }));
+                                    const myTeamName = activeTeams.find(t => t.id === userTeamId)?.name || 'My Team';
+                                    return (
+                                        <div className="mb-3 grid grid-cols-1 sm:grid-cols-3 gap-2 print:grid-cols-3">
+                                            {/* Upcoming picks */}
+                                            <div className="border border-zinc-300 rounded p-2">
+                                                <div className="text-[10px] font-bold uppercase tracking-wide text-indigo-600 mb-1">My Upcoming Picks</div>
+                                                {myUpcomingPicks.length > 0 ? (
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {myUpcomingPicks.slice(0, 20).map((lbl, i) => (
+                                                            <span key={i} className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${i === 0 ? 'bg-indigo-600 text-white font-bold' : 'bg-indigo-50 text-indigo-700 border border-indigo-200'}`}>{lbl}</span>
+                                                        ))}
+                                                    </div>
+                                                ) : <div className="text-[10px] text-zinc-400">No picks remaining</div>}
+                                            </div>
+                                            {/* Roster — spans 2 cols */}
+                                            <div className="border border-zinc-300 rounded p-2 sm:col-span-2 print:col-span-2">
+                                                <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-600 mb-1">{myTeamName} — Roster ({myRosterPlayers.length})</div>
+                                                <div className="grid grid-cols-4 gap-2">
+                                                    {rosterByPos.map(({ pos, players }) => (
+                                                        <div key={pos}>
+                                                            <div className={`text-[9px] font-bold ${pos === 'QB' ? 'text-green-600' : pos === 'RB' ? 'text-blue-600' : pos === 'WR' ? 'text-red-600' : 'text-orange-600'}`}>{pos} ({players.length})</div>
+                                                            {players.slice(0, 8).map((p: any) => (
+                                                                <div key={p.id} className="text-[9px] text-zinc-700 truncate" title={p.full_name}>{p.full_name}</div>
+                                                            ))}
+                                                            {players.length === 0 && <div className="text-[9px] text-zinc-300">—</div>}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Write-in draft log */}
+                                {userTeamId !== null && (() => {
+                                    const myUpcomingPicks = picks
+                                        .filter((p, i) => p.teamId === userTeamId && !p.playerId && i >= currentPickIndex)
+                                        .map(p => `${p.round}.${String(p.pick).padStart(2, '0')}`);
+                                    // Rows to write into: one per upcoming pick, plus a few spares (min 8 total)
+                                    const rows = [...myUpcomingPicks];
+                                    while (rows.length < 8) rows.push('');
+                                    return (
+                                        <div className="mb-3 border border-zinc-300 rounded p-2 break-inside-avoid">
+                                            <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-600 mb-1.5">Draft Log — write in your picks</div>
+                                            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                                                {rows.map((lbl, i) => (
+                                                    <div key={i} className="flex items-end gap-2">
+                                                        <span className="text-[10px] font-mono text-indigo-600 w-9 flex-shrink-0">{lbl || '__.__'}</span>
+                                                        <span className="flex-1 border-b border-zinc-400 h-4" aria-hidden />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Column headers */}
+                                <div className="flex items-center gap-2 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-zinc-400 border-b-2 border-zinc-300">
+                                    <span className="w-3" aria-hidden />
+                                    <span className="w-8">Pos</span>
+                                    <span className="flex-1">Player</span>
+                                    <span className="w-8 text-right">Team</span>
+                                    <span className="w-14 text-right" title="Dynasty value">Dynasty</span>
+                                    <span className="w-12 text-right" title="Auction value">Auction</span>
+                                    <span className="w-8 text-right" title="ZAP score">ZAP</span>
+                                </div>
+
+                                {groups.map(({ tier, players, label }) => {
+                                    // For value mode, tiers can exceed 6 — cycle the palette so bands stay distinct.
+                                    const colorTier = cheatSheetTierMode === 'value' && tier ? ((tier - 1) % 6) + 1 : tier;
+                                    const ts = tierStyle(colorTier);
+                                    const bandLabel = label || ts.label;
+                                    return (
+                                        <div key={String(tier)} className="break-inside-avoid">
+                                            <div className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 mt-1.5 ${ts.bg} border-l-4 ${ts.border} text-zinc-700`}>
+                                                {bandLabel} <span className="text-zinc-400 font-normal normal-case">· {players.length} available</span>
+                                            </div>
+                                            {players.map(p => (
+                                                <div key={p.id} className={`flex items-center gap-2 px-2 py-1 text-[11px] border-l-4 ${ts.border} ${ts.bg} border-b border-zinc-100`}>
+                                                    <span className="inline-block w-3 h-3 border border-zinc-500 rounded-sm flex-shrink-0" aria-hidden />
+                                                    <span className={`w-8 text-[8px] font-bold text-white text-center rounded px-1 py-0.5 ${posBadge(p.position)}`}>{p.position}</span>
+                                                    <span className={`flex-1 font-semibold truncate ${posColor(p.position)}`}>{p.full_name}</span>
+                                                    <span className="w-8 text-right text-zinc-500">{p.team || ''}</span>
+                                                    <span className="w-14 text-right font-mono text-zinc-700">{(p.fc_value || 0).toLocaleString()}</span>
+                                                    <span className="w-12 text-right font-mono text-amber-700">{p.redraft_auction_value != null ? `$${p.redraft_auction_value}` : '—'}</span>
+                                                    <span className="w-8 text-right font-mono text-emerald-700">{p.zap_score != null && !p.zap_stale ? Math.round(p.zap_score) : ''}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })}
+                                {groups.length === 0 && <div className="px-2 py-4 text-xs text-zinc-400 text-center">No players available.</div>}
+
+                                <div className="mt-3 text-[9px] text-zinc-400 print:mt-2">
+                                    ☐ check off as drafted · Position color-coded (<span className="text-green-600 font-semibold">QB</span> <span className="text-blue-600 font-semibold">RB</span> <span className="text-red-600 font-semibold">WR</span> <span className="text-orange-600 font-semibold">TE</span>) · grouped by redraft tier, sorted by auction value.
+                                </div>
+                            </div>
+
+                            <style jsx global>{`
+                                @media print {
+                                    body { background: white !important; }
+                                    body * { visibility: hidden; }
+                                    .cheat-sheet-root, .cheat-sheet-root * { visibility: visible; }
+                                    .cheat-sheet-root { position: absolute; inset: 0; overflow: visible; }
+                                    @page { margin: 0.4in; size: portrait; }
+                                }
+                            `}</style>
+                        </div>
+                    );
+                })()}
             </div>
         </div>
     );
