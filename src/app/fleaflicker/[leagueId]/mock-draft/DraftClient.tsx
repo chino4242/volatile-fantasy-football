@@ -2039,12 +2039,33 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                         };
 
                                         // Current pick's planned candidates (for highlighting + unexpected value detection)
+                                        // Includes: (1) candidates for this specific slot, AND (2) candidates from earlier
+                                        // slots that are still available (they fell — even better value now).
                                         const currentPickForPlan = picks[currentPickIndex];
                                         const planPickEntry = isUserPick && draftPlan
                                             ? (draftPlan.picks.find(pp => pp.round === currentPickForPlan?.round && pp.slot === currentPickForPlan?.pick)
                                                || draftPlan.picks[picks.filter(p => p.teamId === userTeamId && p.playerId && picks.indexOf(p) < currentPickIndex).length])
                                             : null;
                                         const plannedNames = new Set<string>(planPickEntry?.targetPlayers || []);
+
+                                        // Roll forward: add candidates from earlier picks that are still available
+                                        if (isUserPick && draftPlan) {
+                                            const myPicksSoFar = picks.filter(p => p.teamId === userTeamId && p.playerId && picks.indexOf(p) < currentPickIndex).length;
+                                            // Look at all plan entries for picks BEFORE this one
+                                            const currentPlanIdx = draftPlan.picks.findIndex(pp => pp.round === currentPickForPlan?.round && pp.slot === currentPickForPlan?.pick);
+                                            const lookBackLimit = currentPlanIdx >= 0 ? currentPlanIdx : myPicksSoFar;
+                                            for (let i = 0; i < lookBackLimit; i++) {
+                                                const earlierPick = draftPlan.picks[i];
+                                                if (!earlierPick?.targetPlayers) continue;
+                                                for (const name of earlierPick.targetPlayers) {
+                                                    // Only add if still available (they fell!)
+                                                    if (availablePlayers.some(ap => ap.full_name === name)) {
+                                                        plannedNames.add(name);
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         // Find the best planned candidate's blended value (for unexpected value detection)
                                         const bestPlannedValue = (() => {
                                             let best = 0;
@@ -2181,15 +2202,19 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                         pp.round === currentPick?.round && pp.slot === currentPick?.pick
                                                     ) || draftPlan.picks[picks.filter(p => p.teamId === userTeamId && p.playerId && picks.indexOf(p) < currentPickIndex).length];
 
-                                                    // Use targetPlayers array (multi-candidate)
-                                                    const candidates = planPick?.targetPlayers || (planPick?.targetPlayer ? [planPick.targetPlayer] : []);
+                                                    // Use the full planned set (this slot + rolled-forward from earlier picks)
+                                                    const candidates = Array.from(plannedNames);
                                                     if (candidates.length === 0) return null;
+
+                                                    // Which candidates were planned for THIS specific slot vs rolled forward
+                                                    const thisSlotPlans = new Set(planPick?.targetPlayers || []);
 
                                                     // Check availability of each candidate
                                                     const candidateStatus = candidates.map(name => ({
                                                         name,
                                                         player: availablePlayers.find(p => p.full_name === name) || null,
                                                         available: availablePlayers.some(p => p.full_name === name),
+                                                        isRolledForward: !thisSlotPlans.has(name),
                                                     }));
                                                     const availableCandidates = candidateStatus.filter(c => c.available);
 
@@ -2203,9 +2228,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                 <span className="text-[10px] text-zinc-400 ml-auto">{availableCandidates.length}/{candidates.length} available</span>
                                                             </div>
                                                             <div className="space-y-1">
-                                                                {candidateStatus.map(c => (
-                                                                    <div key={c.name} className={`flex items-center gap-2 ${!c.available ? 'opacity-40 line-through' : ''}`}>
+                                                                {candidateStatus.filter(c => c.available).sort((a, b) => (b.player?.fc_value || 0) - (a.player?.fc_value || 0)).map(c => (
+                                                                    <div key={c.name} className="flex items-center gap-2">
                                                                         <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{c.name}</span>
+                                                                        {c.isRolledForward && <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">🎉 Fell!</span>}
                                                                         {c.available && c.player && (
                                                                             <>
                                                                                 <span className="text-[10px] text-zinc-500 font-mono">{(c.player.fc_value || 0).toLocaleString()}</span>
@@ -2217,7 +2243,6 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                                 </button>
                                                                             </>
                                                                         )}
-                                                                        {!c.available && <span className="text-[9px] text-red-500 ml-auto">Gone</span>}
                                                                     </div>
                                                                 ))}
                                                             </div>
