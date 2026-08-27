@@ -118,7 +118,7 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
     // Load saved draft plan (keepers + pick targets)
     interface DraftPlanData {
         keeper_ids: string[];
-        picks: { pickNumber: number; round: number; slot: number; targetPosition: string | null; targetPlayer: string | null; notes: string }[];
+        picks: { pickNumber: number; round: number; slot: number; targetPosition: string | null; targetPlayer: string | null; targetPlayers: string[]; notes: string }[];
         name?: string;
     }
     const [draftPlan, setDraftPlan] = useState<DraftPlanData | null>(null);
@@ -134,9 +134,17 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                     // Auto-load the most recent plan
                     if (data.plans.length > 0) {
                         const plan = data.plans[0];
+                        const rawPicks = JSON.parse(plan.picks || '[]');
+                        // Normalize: ensure every pick has targetPlayers array
+                        const normalizedPicks = rawPicks.map((p: any) => ({
+                            ...p,
+                            targetPlayers: p.targetPlayers?.length > 0
+                                ? p.targetPlayers
+                                : p.targetPlayer ? [p.targetPlayer] : [],
+                        }));
                         setDraftPlan({
                             keeper_ids: JSON.parse(plan.keeper_ids || '[]'),
-                            picks: JSON.parse(plan.picks || '[]'),
+                            picks: normalizedPicks,
                             name: plan.name,
                         });
                     }
@@ -153,9 +161,16 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
             const { plans } = await res.json();
             const plan = plans?.find((p: any) => p.id === planId);
             if (plan) {
+                const rawPicks = JSON.parse(plan.picks || '[]');
+                const normalizedPicks = rawPicks.map((p: any) => ({
+                    ...p,
+                    targetPlayers: p.targetPlayers?.length > 0
+                        ? p.targetPlayers
+                        : p.targetPlayer ? [p.targetPlayer] : [],
+                }));
                 setDraftPlan({
                     keeper_ids: JSON.parse(plan.keeper_ids || '[]'),
-                    picks: JSON.parse(plan.picks || '[]'),
+                    picks: normalizedPicks,
                     name: plan.name,
                 });
             }
@@ -2023,6 +2038,23 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                             TE: Math.round(effectiveSlots.TE),
                                         };
 
+                                        // Current pick's planned candidates (for highlighting + unexpected value detection)
+                                        const currentPickForPlan = picks[currentPickIndex];
+                                        const planPickEntry = isUserPick && draftPlan
+                                            ? (draftPlan.picks.find(pp => pp.round === currentPickForPlan?.round && pp.slot === currentPickForPlan?.pick)
+                                               || draftPlan.picks[picks.filter(p => p.teamId === userTeamId && p.playerId && picks.indexOf(p) < currentPickIndex).length])
+                                            : null;
+                                        const plannedNames = new Set<string>(planPickEntry?.targetPlayers || []);
+                                        // Find the best planned candidate's blended value (for unexpected value detection)
+                                        const bestPlannedValue = (() => {
+                                            let best = 0;
+                                            for (const name of plannedNames) {
+                                                const p = availablePlayers.find(ap => ap.full_name === name);
+                                                if (p) best = Math.max(best, blendedValue(p));
+                                            }
+                                            return best;
+                                        })();
+
                                         // Score all available players
                                         const scored = availablePlayers
                                             .map(p => {
@@ -2149,34 +2181,47 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                         pp.round === currentPick?.round && pp.slot === currentPick?.pick
                                                     ) || draftPlan.picks[picks.filter(p => p.teamId === userTeamId && p.playerId && picks.indexOf(p) < currentPickIndex).length];
 
-                                                    if (!planPick?.targetPlayer) return null;
+                                                    // Use targetPlayers array (multi-candidate)
+                                                    const candidates = planPick?.targetPlayers || (planPick?.targetPlayer ? [planPick.targetPlayer] : []);
+                                                    if (candidates.length === 0) return null;
 
-                                                    const isAvailable = availablePlayers.some(p =>
-                                                        p.full_name === planPick.targetPlayer
-                                                    );
+                                                    // Check availability of each candidate
+                                                    const candidateStatus = candidates.map(name => ({
+                                                        name,
+                                                        player: availablePlayers.find(p => p.full_name === name) || null,
+                                                        available: availablePlayers.some(p => p.full_name === name),
+                                                    }));
+                                                    const availableCandidates = candidateStatus.filter(c => c.available);
 
                                                     return (
-                                                        <div className={`mb-3 px-3 py-2 rounded-lg border ${isAvailable ? 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20' : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30 opacity-60'}`}>
-                                                            <div className="flex items-center gap-2">
+                                                        <div className={`mb-3 px-3 py-2 rounded-lg border ${availableCandidates.length > 0 ? 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20' : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30 opacity-60'}`}>
+                                                            <div className="flex items-center gap-2 mb-1">
                                                                 <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase">📋 Your Plan</span>
-                                                                <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{planPick.targetPlayer}</span>
-                                                                {planPick.targetPosition && (
+                                                                {planPick?.targetPosition && (
                                                                     <span className="text-[10px] text-zinc-500">({planPick.targetPosition})</span>
                                                                 )}
-                                                                {isAvailable && (
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            const player = availablePlayers.find(p => p.full_name === planPick.targetPlayer);
-                                                                            if (player) makePick(player.id, 'Draft Plan');
-                                                                        }}
-                                                                        className="ml-auto px-3 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg active:scale-95 transition-all"
-                                                                    >
-                                                                        Draft
-                                                                    </button>
-                                                                )}
-                                                                {!isAvailable && <span className="text-[10px] text-red-500 font-medium ml-auto">Unavailable</span>}
+                                                                <span className="text-[10px] text-zinc-400 ml-auto">{availableCandidates.length}/{candidates.length} available</span>
                                                             </div>
-                                                            {planPick.notes && <div className="text-[10px] text-zinc-500 mt-0.5">{planPick.notes}</div>}
+                                                            <div className="space-y-1">
+                                                                {candidateStatus.map(c => (
+                                                                    <div key={c.name} className={`flex items-center gap-2 ${!c.available ? 'opacity-40 line-through' : ''}`}>
+                                                                        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{c.name}</span>
+                                                                        {c.available && c.player && (
+                                                                            <>
+                                                                                <span className="text-[10px] text-zinc-500 font-mono">{(c.player.fc_value || 0).toLocaleString()}</span>
+                                                                                <button
+                                                                                    onClick={() => { if (c.player) makePick(c.player.id, 'Draft Plan'); }}
+                                                                                    className="ml-auto px-2 py-0.5 text-[10px] font-bold text-white bg-amber-600 hover:bg-amber-700 rounded active:scale-95 transition-all"
+                                                                                >
+                                                                                    Draft
+                                                                                </button>
+                                                                            </>
+                                                                        )}
+                                                                        {!c.available && <span className="text-[9px] text-red-500 ml-auto">Gone</span>}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            {planPick?.notes && <div className="text-[10px] text-zinc-500 mt-1 border-t border-amber-200 dark:border-amber-800 pt-1">{planPick.notes}</div>}
                                                         </div>
                                                     );
                                                 })()}
@@ -2496,8 +2541,14 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                                                                             <td className="py-1.5 px-2 text-zinc-400 font-mono">{i + 1}</td>
                                                                             <td className="py-1.5 px-2 font-medium text-zinc-900 dark:text-zinc-100 whitespace-nowrap">
                                                                                 {p.full_name}
+                                                                                {isUserPick && plannedNames.has(p.full_name) && (
+                                                                                    <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" title="This player is in your draft plan for this pick">📋 Planned</span>
+                                                                                )}
+                                                                                {isUserPick && plannedNames.size > 0 && !plannedNames.has(p.full_name) && bestPlannedValue > 0 && blendedValue(p) > bestPlannedValue * 1.05 && (
+                                                                                    <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300" title="Higher value than your best planned option — unexpected value!">💎 Value</span>
+                                                                                )}
                                                                                 {isBiggestRegret && (
-                                                                                    <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-red-600 text-white" title="Highest value at risk — most likely to be gone if you wait">⏰ Won't last</span>
+                                                                                    <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded bg-red-600 text-white" title="Highest value at risk — most likely to be gone if you wait">⏰ Won&apos;t last</span>
                                                                                 )}
                                                                                 {tierWarn && (
                                                                                     <span className={`ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded ${tierWarn.isLast ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
