@@ -1,10 +1,10 @@
-import { getFleaflickerLeague } from "@/lib/fleaflicker";
+import { getFleaflickerLeague, getFleaflickerRosterSlots } from "@/lib/fleaflicker";
 import { getPickFantasyCalcId } from "@/lib/sleeper";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { db } from "@/db";
 import { players, playerValues, leagues, prospectData, prospectWriteups, playerAdvancedStats } from "@/db/schema";
-import { inArray, eq, sql, desc } from "drizzle-orm";
+import { inArray, eq, sql, desc, and } from "drizzle-orm";
 import { TeamRosterTable } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterTable";
 import { TeamRosterComposition } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
@@ -12,6 +12,8 @@ import TeamHealthDashboard from "@/components/TeamHealthDashboard";
 import { SavedTrades } from "@/components/SavedTrades";
 import { KeeperDecisionTool } from "@/components/KeeperDecisionTool";
 import { PendingTrades } from "@/components/PendingTrades";
+import { SuggestedTransactions } from "@/components/SuggestedTransactions";
+import { buildRosterConfigFromSlots } from "@/lib/transaction-suggestions";
 
 export const dynamic = "force-dynamic";
 
@@ -40,14 +42,17 @@ export default async function FleaflickerTeamPage({
         return <div className="p-8 text-center">Team not found</div>;
     }
 
-    // Normalize: lowercase, strip punctuation, strip Jr/Sr/II/III/IV suffixes
+    // Normalize: lowercase, strip punctuation, strip Jr/Sr/II/III/IV suffixes.
+    // Also strip a trailing "def"/"dst" token so team defenses match between
+    // Fleaflicker ("New England Patriots") and the DB ("New England Patriots DEF").
     // Fleaflicker drops suffixes (e.g. returns "Marvin Harrison" for "Marvin Harrison Jr")
     const normalizeName = (name: string) =>
         name.toLowerCase()
             .replace(/[^a-z0-9 ]/g, '')
             .replace(/\b(jr|sr|ii|iii|iv|v)\b/g, '')
             .replace(/\s+/g, ' ')
-            .trim();
+            .trim()
+            .replace(/\s+(def|dst)$/, '');
 
     // Get player names
     const playerNames = roster.players
@@ -337,6 +342,52 @@ export default async function FleaflickerTeamPage({
     }
     const allLeagueValuesWithPicks = [...allLeagueValues, ...otherTeamsPicks];
 
+    // === Suggested Transactions ===
+    // Free agents = players in DB with value, not on any roster in this league
+    const rosteredNameSet = new Set(allLeaguePlayerNames);
+    const valueColTxn = format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb;
+    const freeAgentsRaw = await db
+        .select({
+            sleeper_id: players.sleeper_id,
+            full_name: players.full_name,
+            position: players.position,
+            team: players.team,
+            fc_value: valueColTxn,
+        })
+        .from(players)
+        .innerJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
+        .where(
+            and(
+                sql`${valueColTxn} > 0`,
+                inArray(players.position, ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']),
+            )
+        )
+        .orderBy(desc(valueColTxn))
+        .limit(400);
+
+    const freeAgentsForTxn = freeAgentsRaw
+        .filter(p => !rosteredNameSet.has(normalizeName(p.full_name)))
+        .slice(0, 300)
+        .map(p => ({
+            sleeper_id: p.sleeper_id,
+            full_name: p.full_name,
+            position: p.position,
+            team: p.team,
+            fc_value: p.fc_value,
+        }));
+
+    // Roster config from Fleaflicker roster requirements API
+    const flSlots = await getFleaflickerRosterSlots(leagueId);
+    const rosterConfig = buildRosterConfigFromSlots(flSlots);
+
+    const myPlayersForTxn = playersWithData.map(p => ({
+        sleeper_id: p.sleeper_id,
+        full_name: p.full_name,
+        position: p.position,
+        team: p.team,
+        fc_value: p.fc_value,
+    }));
+
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 p-4 md:p-8">
             <div className="mx-auto max-w-7xl">
@@ -440,6 +491,13 @@ export default async function FleaflickerTeamPage({
                 <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                     <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} customRankingsMap={rankingsMap} />
                 </div>
+
+                <SuggestedTransactions
+                    myPlayers={myPlayersForTxn}
+                    freeAgents={freeAgentsForTxn}
+                    rosterConfig={rosterConfig}
+                    actualCoreCount={roster.players.length}
+                />
 
                 <TeamRosterTable
                     players={allAssetsWithWriteups as any[]}

@@ -22,7 +22,7 @@ export interface LeagueTeamStat {
 
 interface LeagueTableProps {
     teams: LeagueTeamStat[];
-    platform: 'sleeper' | 'fleaflicker';
+    platform: 'sleeper' | 'fleaflicker' | 'myffpc';
     leagueId: string;
     format?: '1qb' | 'sf';
     keeperCount?: number;
@@ -68,6 +68,7 @@ export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: 
         if (keeperCount) params.set('keepers', keeperCount.toString());
         const queryString = params.toString() ? `?${params.toString()}` : '';
         if (platform === 'sleeper') return `/league/${leagueId}/team/${teamId}${queryString}`;
+        if (platform === 'myffpc') return `/myffpc/${leagueId}/team/${teamId}${queryString}`;
         return `/fleaflicker/${leagueId}/team/${teamId}${queryString}`;
     };
 
@@ -112,7 +113,7 @@ export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: 
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between">
                                     <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                                        {platform === 'fleaflicker' ? team.name : team.ownerName}
+                                        {platform === 'fleaflicker' || platform === 'myffpc' ? team.name : team.ownerName}
                                     </span>
                                     <span className="text-sm font-mono font-bold text-green-600 dark:text-green-400 flex-shrink-0 ml-2">
                                         {team.totalValue.toLocaleString()}
@@ -209,7 +210,7 @@ export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: 
                                             </div>
                                             <div className="ml-2 sm:ml-3">
                                                 <div className="text-xs sm:text-sm font-medium text-zinc-900 dark:text-zinc-100 max-w-[80px] sm:max-w-[120px] truncate">
-                                                    {platform === 'fleaflicker' ? team.name : team.ownerName}
+                                                    {platform === 'fleaflicker' || platform === 'myffpc' ? team.name : team.ownerName}
                                                 </div>
                                                 {platform === 'fleaflicker' && (
                                                     <div className="text-[10px] sm:text-xs text-zinc-500 truncate">{team.ownerName}</div>

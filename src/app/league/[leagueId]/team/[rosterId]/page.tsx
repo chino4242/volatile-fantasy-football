@@ -5,7 +5,7 @@ import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/l
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { cleanseName } from "@/lib/nameUtils";
 import { sql, desc } from "drizzle-orm";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, and, notInArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import TeamRosterView from "./TeamRosterView";
 import { TeamRosterComposition } from "./TeamRosterComposition";
@@ -14,6 +14,8 @@ import TeamHealthDashboard from "@/components/TeamHealthDashboard";
 import { SavedTrades } from "@/components/SavedTrades";
 import { KeeperDecisionTool } from "@/components/KeeperDecisionTool";
 import { SleeperTradeHistory } from "@/components/SleeperTradeHistory";
+import { SuggestedTransactions } from "@/components/SuggestedTransactions";
+import { buildRosterConfig } from "@/lib/transaction-suggestions";
 
 export const dynamic = 'force-dynamic';
 
@@ -337,6 +339,60 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
     });
     positionValues['PICK'] = pickValue;
 
+    // === Suggested Transactions data ===
+    // Fetch free agents (players not on any roster) + roster config from Sleeper API
+    const rosteredIdSet = new Set(allLeaguePlayerIds);
+    const valueColTxn = format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb;
+    const freeAgentsRaw = await db
+        .select({
+            sleeper_id: players.sleeper_id,
+            full_name: players.full_name,
+            position: players.position,
+            team: players.team,
+            fc_value: valueColTxn,
+        })
+        .from(players)
+        .innerJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
+        .where(
+            and(
+                sql`${valueColTxn} > 0`,
+                inArray(players.position, ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']),
+                allLeaguePlayerIds.length > 0
+                    ? notInArray(players.sleeper_id, allLeaguePlayerIds)
+                    : undefined
+            )
+        )
+        .orderBy(desc(valueColTxn))
+        .limit(300);
+
+    const freeAgentsForTxn = freeAgentsRaw
+        .filter(p => !rosteredIdSet.has(p.sleeper_id))
+        .map(p => ({
+            sleeper_id: p.sleeper_id,
+            full_name: p.full_name,
+            position: p.position,
+            team: p.team,
+            fc_value: p.fc_value,
+        }));
+
+    // Fetch roster_positions from Sleeper league API (not stored in DB)
+    let sleeperRosterPositions: string[] | null = null;
+    try {
+        const leagueCfg = await fetch(`https://api.sleeper.app/v1/league/${leagueId}`).then(r => r.json());
+        if (Array.isArray(leagueCfg?.roster_positions)) sleeperRosterPositions = leagueCfg.roster_positions;
+    } catch { /* fall back to null → component hides */ }
+    const rosterConfig = buildRosterConfig(sleeperRosterPositions);
+
+    const myPlayersForTxn = enrichedPlayers
+        .filter((p: any) => p.position !== 'PICK')
+        .map((p: any) => ({
+            sleeper_id: p.sleeper_id,
+            full_name: p.full_name,
+            position: p.position,
+            team: p.team,
+            fc_value: p.fc_value,
+        }));
+
     // Fetch custom rankings
     const customRankings = await getCustomRankings();
     const rankingsMap = buildCustomRankingsMap(customRankings);
@@ -423,6 +479,13 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                 <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                     <TeamRosterComposition players={allAssetsWithWriteups as any[]} format={format} customRankingsMap={rankingsMap} />
                 </div>
+
+                <SuggestedTransactions
+                    myPlayers={myPlayersForTxn}
+                    freeAgents={freeAgentsForTxn}
+                    rosterConfig={rosterConfig}
+                    actualCoreCount={(roster.players || []).length}
+                />
 
                 <TeamRosterView
                     players={allAssetsWithWriteups as any[]}

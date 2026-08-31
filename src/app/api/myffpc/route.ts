@@ -107,6 +107,16 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const leagueId = searchParams.get("id");
+        const listAll = searchParams.get("list");
+
+        // List all MyFFPC leagues (for home page)
+        if (listAll) {
+            const myffpcLeagues = await db
+                .select({ league_id: leagues.league_id, name: leagues.name, total_rosters: leagues.total_rosters })
+                .from(leagues)
+                .where(eq(leagues.platform, 'myffpc'));
+            return NextResponse.json({ leagues: myffpcLeagues });
+        }
 
         if (!leagueId) {
             return NextResponse.json(

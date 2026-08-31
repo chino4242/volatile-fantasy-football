@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Save, Target, Users, ClipboardList, StickyNote, ChevronDown, Check, X, Star } from 'lucide-react';
 import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 import { analyzeLeaguePostDraft, type TeamAnalysis } from '@/lib/post-draft-analysis';
-import { runMonteCarloSim, getMonteCarloAvailability, type SimResult } from '@/lib/draft-monte-carlo';
+import { runMonteCarloSim, getMonteCarloAvailability, runOutcomeMonteCarloSim, type SimResult, type OutcomeSimResult, type OutcomePickResult } from '@/lib/draft-monte-carlo';
 import { getPositionColor } from '@/lib/positionColors';
 import { useAuth } from '@/hooks/useUser';
 
@@ -826,6 +826,12 @@ function DraftBoardSection({
     const [simProgress, setSimProgress] = useState(0);
     const [expandedTierCell, setExpandedTierCell] = useState<string | null>(null);
 
+    // Outcome-based EV optimizer state
+    const [outcomeResult, setOutcomeResult] = useState<OutcomeSimResult | null>(null);
+    const [outcomeRunning, setOutcomeRunning] = useState(false);
+    const [outcomeProgress, setOutcomeProgress] = useState({ pick: 0, totalPicks: 0, candidate: 0, totalCandidates: 0 });
+    const [outcomeSimMode, setOutcomeSimMode] = useState<'quick' | 'deep'>('quick');
+
     // Run the simulation
     const remainingPool = [...draftPool];
     const draftedByPos: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
@@ -1125,6 +1131,149 @@ function DraftBoardSection({
         }, 50);
     };
 
+    // Outcome-based EV optimizer: uses the same logic as mock draft
+    const runOutcomeSim = () => {
+        if (!activeTeam) return;
+        setOutcomeRunning(true);
+        setOutcomeProgress({ pick: 0, totalPicks: 0, candidate: 0, totalCandidates: 0 });
+        const numSims = outcomeSimMode === 'deep' ? 100 : 50;
+        const numCands = outcomeSimMode === 'deep' ? 10 : 8;
+
+        // Build the full draft order from all teams' draft picks
+        // Same as mock draft: all teams' picks for all rounds, sorted by overall
+        const fullDraftOrder: { round: number; slot: number; overall: number; teamId: number }[] = [];
+        allTeams.forEach(team => {
+            if (team.draftPicks) {
+                team.draftPicks.forEach(dp => {
+                    // Only include current-year picks (not future years)
+                    if (dp.round <= 20) { // reasonable cap
+                        fullDraftOrder.push({
+                            round: dp.round,
+                            slot: dp.slot,
+                            overall: dp.overall || ((dp.round - 1) * numTeams + dp.slot),
+                            teamId: team.id,
+                        });
+                    }
+                });
+            }
+        });
+        fullDraftOrder.sort((a, b) => a.overall - b.overall);
+
+        // Remove keeper slots from draft order (first keeperCount picks per team)
+        let draftableOrder = fullDraftOrder;
+        if (keeperCount && keeperCount > 0) {
+            const teamPickCounts = new Map<number, number>();
+            draftableOrder = fullDraftOrder.filter(pick => {
+                const count = teamPickCounts.get(pick.teamId) || 0;
+                teamPickCounts.set(pick.teamId, count + 1);
+                // Each team's first `keeperCount` picks are keeper slots (later rounds)
+                // Actually: keeper slots are the LAST N picks. So we keep the first (total - keeperCount) picks.
+                // But we don't know total per team yet. Let's just use all picks and rely on pool filtering.
+                return true;
+            });
+            // Better approach: only include picks that are actual draft picks (not keeper slots)
+            // The picks state already has the correct non-keeper picks for OUR team.
+            // For the full draft order, skip the last `keeperCount` picks per team.
+            const totalPicksPerTeam = new Map<number, number>();
+            fullDraftOrder.forEach(p => totalPicksPerTeam.set(p.teamId, (totalPicksPerTeam.get(p.teamId) || 0) + 1));
+            const teamPickIdx = new Map<number, number>();
+            draftableOrder = fullDraftOrder.filter(pick => {
+                const idx = teamPickIdx.get(pick.teamId) || 0;
+                teamPickIdx.set(pick.teamId, idx + 1);
+                const total = totalPicksPerTeam.get(pick.teamId) || 0;
+                const draftableCount = total - (keeperCount || 0);
+                return idx < draftableCount; // First N picks are draftable, last keeperCount are keeper slots
+            });
+        }
+
+        // Build teams data for the MC engine
+        const mcTeams = allTeams.map(team => ({
+            id: team.id,
+            name: team.name,
+            players: team.players.map(p => ({
+                id: p.id,
+                full_name: p.full_name,
+                position: p.position,
+                fc_value: p.fc_value,
+                redraft_auction_value: p.redraft_auction_value,
+                rank_sf_overall: p.rank_overall,
+                rank_1qb_overall: p.rank_overall,
+                fc_rank_sf: p.fc_rank_sf || null,
+                fc_rank_1qb: p.fc_rank_1qb || null,
+                redraft_rank_overall: p.redraft_rank_overall || null,
+                zap_score: p.zap_score || null,
+                zap_stale: p.zap_stale || false,
+                target_fade: (p as any).target_fade || null,
+                writeups: p.writeups || null,
+            })),
+            positionValues: {
+                QB: team.players.filter(p => p.position === 'QB').reduce((s, p) => s + (p.fc_value || 0), 0),
+                RB: team.players.filter(p => p.position === 'RB').reduce((s, p) => s + (p.fc_value || 0), 0),
+                WR: team.players.filter(p => p.position === 'WR').reduce((s, p) => s + (p.fc_value || 0), 0),
+                TE: team.players.filter(p => p.position === 'TE').reduce((s, p) => s + (p.fc_value || 0), 0),
+            },
+        }));
+
+        const mcFreeAgents = freeAgents.map(p => ({
+            id: p.id,
+            full_name: p.full_name,
+            position: p.position,
+            fc_value: p.fc_value,
+            redraft_auction_value: p.redraft_auction_value,
+            rank_sf_overall: p.rank_overall || null,
+            rank_1qb_overall: p.rank_overall || null,
+            fc_rank_sf: p.fc_rank_sf || null,
+            fc_rank_1qb: p.fc_rank_1qb || null,
+            redraft_rank_overall: p.redraft_rank_overall || null,
+            zap_score: p.zap_score || null,
+            zap_stale: p.zap_stale || false,
+            target_fade: (p as any).target_fade || null,
+            writeups: p.writeups || null,
+        }));
+
+        setTimeout(async () => {
+            const result = await runOutcomeMonteCarloSim({
+                teams: mcTeams,
+                freeAgents: mcFreeAgents,
+                draftOrder: draftableOrder,
+                userTeamId: activeTeam!.id,
+                keeperCount: keeperCount || 0,
+                keeperIds,
+                sf,
+                numSims,
+                numCandidates: numCands,
+                rosterSlots: sf
+                    ? { QB: 2, RB: 2, WR: 3, TE: 1, FLEX: 2 }
+                    : { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 },
+                onProgress: (currentPick, totalPicks, candidate, totalCandidates) => {
+                    setOutcomeProgress({ pick: currentPick, totalPicks, candidate, totalCandidates });
+                },
+            });
+            setOutcomeResult(result);
+            setOutcomeRunning(false);
+
+            // Auto-populate pick selections with EV optimizer results
+            if (result.pickResults.length > 0) {
+                const updatedPicks = [...picks];
+                for (const pr of result.pickResults) {
+                    if (!pr.bestCandidate) continue;
+                    const pickIdx = updatedPicks.findIndex(p =>
+                        !p.isKeeper && p.pickNumber === pr.pickNumber
+                    );
+                    if (pickIdx >= 0 && !updatedPicks[pickIdx].targetPlayer) {
+                        updatedPicks[pickIdx] = {
+                            ...updatedPicks[pickIdx],
+                            targetPlayer: pr.bestCandidate.playerName,
+                            targetPlayers: [pr.bestCandidate.playerName],
+                            targetPosition: pr.bestCandidate.position,
+                        };
+                    }
+                }
+                setPicks(updatedPicks);
+            }
+        }, 50);
+    };
+
     // Calculate availability % — uses Monte Carlo results if available, falls back to heuristic
     const getAvailability = (player: Player, pickOverall: number): number => {
         // Try Monte Carlo first
@@ -1251,37 +1400,61 @@ function DraftBoardSection({
             </div>
 
             {/* Monte Carlo Simulation */}
-            <div className="flex items-center gap-3">
-                <button
-                    onClick={runSimulation}
-                    disabled={simRunning || draftPool.length === 0}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                        simResult && !simRunning
-                            ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 ring-1 ring-green-200 dark:ring-green-800'
-                            : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                    } disabled:opacity-50`}
-                >
-                    {simRunning ? `Simulating... ${simProgress}%` : simResult ? '✓ Simulated (100 runs)' : '🎲 Run Monte Carlo (100 sims)'}
-                </button>
-                {simRunning && (
-                    <div className="flex-1 h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${simProgress}%` }} />
+            <div className="space-y-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                    <button
+                        onClick={runSimulation}
+                        disabled={simRunning || draftPool.length === 0}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                            simResult && !simRunning
+                                ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-300 ring-1 ring-green-200 dark:ring-green-800'
+                                : 'bg-zinc-600 hover:bg-zinc-700 text-white'
+                        } disabled:opacity-50`}
+                    >
+                        {simRunning ? `Availability... ${simProgress}%` : simResult ? '✓ Availability' : '📊 Availability Sim'}
+                    </button>
+                    <button
+                        onClick={runOutcomeSim}
+                        disabled={outcomeRunning || !activeTeam || draftPool.length === 0}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                            outcomeResult && !outcomeRunning
+                                ? 'bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-200 dark:ring-emerald-800'
+                                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        } disabled:opacity-50`}
+                    >
+                        {outcomeRunning
+                            ? `EV Sim... ${outcomeProgress.pick}/${outcomeProgress.totalPicks}`
+                            : outcomeResult
+                                ? `✓ EV Optimized (${outcomeResult.simMode})`
+                                : '🧠 Run EV Optimizer'}
+                    </button>
+                    {!outcomeRunning && !outcomeResult && (
+                        <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
+                            <button onClick={() => setOutcomeSimMode('quick')} className={`px-2 py-1 rounded-md text-[11px] font-medium ${outcomeSimMode === 'quick' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500'}`}>Quick</button>
+                            <button onClick={() => setOutcomeSimMode('deep')} className={`px-2 py-1 rounded-md text-[11px] font-medium ${outcomeSimMode === 'deep' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500'}`}>Deep</button>
+                        </div>
+                    )}
+                    <div className="ml-auto flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
+                        <button onClick={() => setSuggestionMode('tier')} className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${suggestionMode === 'tier' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>Tiers</button>
+                        <button onClick={() => setSuggestionMode('player')} className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${suggestionMode === 'player' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}>Players</button>
+                    </div>
+                </div>
+                {outcomeRunning && (
+                    <div className="space-y-1">
+                        <div className="h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                            <div className="h-full bg-indigo-500 transition-all" style={{ width: `${outcomeProgress.totalPicks > 0 ? Math.round(((outcomeProgress.pick - 1 + outcomeProgress.candidate / Math.max(1, outcomeProgress.totalCandidates)) / outcomeProgress.totalPicks) * 100) : 0}%` }} />
+                        </div>
+                        <span className="text-[10px] text-zinc-500">Pick {outcomeProgress.pick}/{outcomeProgress.totalPicks} · candidate {outcomeProgress.candidate}/{outcomeProgress.totalCandidates}</span>
                     </div>
                 )}
-                {simResult && !simRunning && (
-                    <span className="text-[10px] text-zinc-500">Availability % now based on simulated data</span>
+                {simRunning && (
+                    <div className="h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-zinc-500 transition-all" style={{ width: `${simProgress}%` }} />
+                    </div>
                 )}
-                {/* Suggestion mode toggle */}
-                <div className="ml-auto flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
-                    <button
-                        onClick={() => setSuggestionMode('tier')}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${suggestionMode === 'tier' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
-                    >Tiers</button>
-                    <button
-                        onClick={() => setSuggestionMode('player')}
-                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${suggestionMode === 'player' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
-                    >Players</button>
-                </div>
+                {outcomeResult && !outcomeRunning && (
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">✓ EV-optimized suggestions active — picks ranked by best team outcome across {outcomeResult.totalSims} simulated drafts</span>
+                )}
             </div>
 
             {/* Position Scarcity Chart (same as mock/live draft) */}
@@ -1756,6 +1929,55 @@ function DraftBoardSection({
                     })}
                 </div>
             </div>
+
+            {/* Top Targets by Position (collapsible) */}
+
+            {/* EV Optimizer Details (expandable breakdown per pick) */}
+            {outcomeResult && !outcomeRunning && (
+                <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/30 dark:bg-emerald-950/10 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-emerald-100 dark:border-emerald-900">
+                        <h3 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">🧠 EV Breakdown</h3>
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5">Expand any pick to see alternative candidates and EV comparison ({outcomeResult.totalSims} sims each).</p>
+                    </div>
+                    <div className="divide-y divide-emerald-100 dark:divide-emerald-900/50">
+                        {outcomeResult.pickResults.map((pr, idx) => {
+                            const best = pr.bestCandidate;
+                            if (!best) return null;
+                            return (
+                                <details key={idx} className="group">
+                                    <summary className="px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-950/20 list-none">
+                                        <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 w-10">{pr.round}.{String(pr.slot).padStart(2, '0')}</span>
+                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${posColor(best.position)}`}>{best.position}</span>
+                                        <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 flex-1 truncate">{best.playerName}</span>
+                                        <span className="text-[10px] text-zinc-500">{best.positionFill}</span>
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">EV {Math.round(best.avgTeamEV).toLocaleString()}</span>
+                                        {pr.candidates.length > 1 && pr.candidates[1].evDelta > 0 && (
+                                            <span className="text-[9px] text-emerald-600 dark:text-emerald-400">+{Math.round(pr.candidates[1].evDelta).toLocaleString()} vs #2</span>
+                                        )}
+                                        <ChevronDown className="w-3.5 h-3.5 text-zinc-400 group-open:rotate-180 transition-transform" />
+                                    </summary>
+                                    <div className="px-4 pb-3 pt-1 ml-10">
+                                        {pr.insight && <p className="text-[11px] text-zinc-600 dark:text-zinc-400 italic mb-2">{pr.insight}</p>}
+                                        <div className="space-y-0.5">
+                                            {pr.candidates.slice(0, 8).map((c, ci) => (
+                                                <div key={c.playerId} className={`flex items-center gap-2 text-[10px] py-1 px-2 rounded ${ci === 0 ? 'bg-emerald-50 dark:bg-emerald-900/10 font-medium' : ''}`}>
+                                                    <span className="text-zinc-400 w-3">{ci + 1}</span>
+                                                    <span className={`font-bold px-1 py-0.5 rounded ${posColor(c.position)}`}>{c.position}</span>
+                                                    <span className="flex-1 truncate text-zinc-900 dark:text-zinc-100">{c.playerName}</span>
+                                                    <span className="font-mono text-zinc-500">{c.playerValue.toLocaleString()}</span>
+                                                    <span className="font-mono text-amber-600">{c.playerAuction ? `$${c.playerAuction}` : '—'}</span>
+                                                    <span className={`font-mono ${ci === 0 ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-500'}`}>{Math.round(c.avgTeamEV).toLocaleString()}</span>
+                                                    <span className={`w-12 text-right ${c.evDelta === 0 ? 'text-emerald-600' : 'text-red-500'}`}>{c.evDelta === 0 ? '—' : `-${Math.round(c.evDelta).toLocaleString()}`}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </details>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* Top Targets by Position (collapsible) */}
             <details className="group">

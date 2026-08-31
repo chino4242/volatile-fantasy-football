@@ -62,6 +62,8 @@ export default async function MyFFPCFreeAgentsPage({
         .where(
             and(
                 gt(playerValues.fc_value_1qb, 0),
+                // Exclude draft picks (position='PICK') — only real players
+                inArray(players.position, ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']),
                 rosteredIds.length > 0
                     ? notInArray(players.sleeper_id, rosteredIds)
                     : undefined

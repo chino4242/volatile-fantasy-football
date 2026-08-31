@@ -184,7 +184,10 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
         const maxRound = Math.max(...teams.flatMap(t => t.draftPicks.map(p => p.round)), 0);
         const picksRounds = maxRound > 0 ? maxRound : DEFAULT_ROUNDS;
         if (rosterSlots) {
-            const totalRosterSpots = rosterSlots.QB + rosterSlots.RB + rosterSlots.WR + rosterSlots.TE + rosterSlots.FLEX;
+            // Cap at TOTAL roster spots (starters + bench), not just starters —
+            // otherwise keepers assigned in later rounds get dropped from the board.
+            const totalRosterSpots = rosterSlots.total
+                ?? (rosterSlots.QB + rosterSlots.RB + rosterSlots.WR + rosterSlots.TE + rosterSlots.FLEX);
             return Math.min(picksRounds, totalRosterSpots);
         }
         return picksRounds;
