@@ -165,7 +165,7 @@ export default function Home() {
     );
   }
 
-  const isLoggedIn = !!sleeperUserId || !!fleaflickerUsername || fleaflickerLeagueIds.length > 0 || myffpcLeagues.length > 0;
+  const isLoggedIn = !!sleeperUserId || !!fleaflickerUsername || fleaflickerLeagueIds.length > 0;
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-zinc-50 dark:bg-zinc-950 py-20 px-6">
@@ -579,34 +579,36 @@ export default function Home() {
               <p className="text-xs text-zinc-400 mt-2 px-1">Find your league ID in the Fleaflicker URL: fleaflicker.com/nfl/leagues/<strong>123456</strong></p>
             </section>
 
-            {/* MyFFPC Leagues */}
-            {myffpcLeagues.length > 0 && (
-              <section>
-                <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-3">MyFFPC</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                  {myffpcLeagues.map((league) => (
-                    <Link key={league.league_id} href={`/myffpc/${league.league_id}`}
-                      className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex items-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group">
-                      <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center font-bold text-emerald-600 dark:text-emerald-400 flex-shrink-0 text-sm">
-                        FC
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h4 className="font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">
-                          {league.name || 'Unnamed League'}
-                        </h4>
-                        <p className="text-xs text-zinc-500">
-                          Dynasty · 1QB · {league.total_rosters || 0} teams
-                        </p>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-                <Link href="/myffpc" className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline px-1">
-                  + Manage MyFFPC leagues
-                </Link>
-              </section>
-            )}
+            {/* MyFFPC Leagues (moved outside the login/dashboard ternary below) */}
           </div>
+        )}
+
+        {/* MyFFPC Leagues — always visible (not tied to Sleeper/Fleaflicker login) */}
+        {myffpcLeagues.length > 0 && (
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-3">MyFFPC</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+              {myffpcLeagues.map((league) => (
+                <Link key={league.league_id} href={`/myffpc/${league.league_id}`}
+                  className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex items-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center font-bold text-emerald-600 dark:text-emerald-400 flex-shrink-0 text-sm">
+                    FC
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">
+                      {league.name || 'Unnamed League'}
+                    </h4>
+                    <p className="text-xs text-zinc-500">
+                      Dynasty · 1QB · {league.total_rosters || 0} teams
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+            <Link href="/myffpc" className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline px-1">
+              + Manage MyFFPC leagues
+            </Link>
+          </section>
         )}
       </div>
     </div>

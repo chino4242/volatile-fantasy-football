@@ -20,22 +20,15 @@ export function AppHeader() {
                 </Link>
 
                 <nav className="ml-auto flex items-center gap-2 sm:gap-4">
-                    {/* Only show these hardcoded links to unauthenticated users, as authenticated users have them on the dashboard */}
+                    {/* Logged-out users: link to the home page to connect a league.
+                        Authenticated users get real league links on the dashboard. */}
                     {!isLoggedIn && (
-                        <>
-                            <Link
-                                href="/league/your-league-id"
-                                className="flex items-center min-h-[44px] min-w-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                            >
-                                Sleeper
-                            </Link>
-                            <Link
-                                href="/fleaflicker/your-league-id"
-                                className="flex items-center min-h-[44px] min-w-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                            >
-                                Fleaflicker
-                            </Link>
-                        </>
+                        <Link
+                            href="/"
+                            className="flex items-center min-h-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                        >
+                            Connect League
+                        </Link>
                     )}
                     <InstallPWA />
                     <Link
