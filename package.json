@@ -16,7 +16,8 @@
     "yahoo:sync": "tsx scripts/sync-yahoo.ts",
     "myffpc:refresh": "tsx scripts/myffpc-refresh.ts",
     "myffpc:sync": "tsx scripts/sync-myffpc.ts",
-    "myffpc:verify": "tsx scripts/myffpc-verify.ts"
+    "myffpc:verify": "tsx scripts/myffpc-verify.ts",
+    "leagues:refresh": "tsx scripts/refresh-all.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
