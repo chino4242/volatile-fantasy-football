@@ -22,7 +22,7 @@ export interface LeagueTeamStat {
 
 interface LeagueTableProps {
     teams: LeagueTeamStat[];
-    platform: 'sleeper' | 'fleaflicker' | 'myffpc';
+    platform: 'sleeper' | 'fleaflicker' | 'myffpc' | 'yahoo' | 'db';
     leagueId: string;
     format?: '1qb' | 'sf';
     keeperCount?: number;
@@ -68,7 +68,9 @@ export function LeagueTable({ teams, platform, leagueId, format, keeperCount }: 
         if (keeperCount) params.set('keepers', keeperCount.toString());
         const queryString = params.toString() ? `?${params.toString()}` : '';
         if (platform === 'sleeper') return `/league/${leagueId}/team/${teamId}${queryString}`;
+        if (platform === 'db') return `/db-league/${leagueId}/team/${teamId}${queryString}`;
         if (platform === 'myffpc') return `/myffpc/${leagueId}/team/${teamId}${queryString}`;
+        if (platform === 'yahoo') return `/yahoo/${leagueId}/team/${teamId}${queryString}`;
         return `/fleaflicker/${leagueId}/team/${teamId}${queryString}`;
     };
 

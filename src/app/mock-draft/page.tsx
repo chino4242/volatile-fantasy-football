@@ -36,6 +36,7 @@ export default async function GenericMockDraftPage({ searchParams }: { searchPar
             redraft_rank_overall: playerValues.redraft_rank_overall,
             redraft_rank_pos: playerValues.redraft_rank_pos,
             redraft_rank_tier: playerValues.redraft_rank_tier,
+            redraft_auction_value: playerValues.redraft_auction_value,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))

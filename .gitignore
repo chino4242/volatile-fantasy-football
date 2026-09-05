@@ -43,3 +43,13 @@ next-env.d.ts
 
 # Prospect writeups (copyrighted source material)
 data/prospect_writeups/
+
+
+# Yahoo Playwright session (credential — never commit)
+scripts/.yahoo-session.json
+
+# Yahoo persistent browser profile (contains logged-in session — never commit)
+scripts/.yahoo-profile/
+
+# MyFFPC debug screenshot (may contain league data)
+scripts/.myffpc-debug.png

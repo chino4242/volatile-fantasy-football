@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Live Draft — On the Clock (mockup)</title>
+<style>
+  :root {
+    --indigo: #4f46e5; --indigo-bg: #eef2ff; --indigo-border: #c7d2fe;
+    --green: #0ca678; --green-bg: #e6fcf5; --green-border: #96f2d7;
+    --zinc900:#18181b; --zinc700:#3f3f46; --zinc500:#71717a; --zinc400:#a1a1aa;
+    --zinc200:#e4e4e7; --zinc100:#f4f4f5; --amber:#d97706; --red:#dc2626;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif; background:#fafafa; color:var(--zinc900); padding:24px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--zinc500); font-size:13px; margin:0 0 20px; }
+  .toggle { display:flex; gap:8px; margin-bottom:20px; }
+  .toggle button { border:1px solid var(--zinc200); background:#fff; padding:6px 14px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
+  .toggle button.active { background:var(--zinc900); color:#fff; border-color:var(--zinc900); }
+
+  /* sticky bar */
+  .clock { background:var(--indigo); color:#fff; border-radius:10px; padding:10px 16px; display:flex; align-items:center; gap:12px; font-size:14px; font-weight:700; margin-bottom:14px; box-shadow:0 6px 20px -6px rgba(79,70,229,.5); }
+  .dot { width:9px; height:9px; border-radius:50%; background:#fff; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .clock .meta { font-weight:500; color:#c7d2fe; }
+  .clock .hint { margin-left:auto; font-weight:500; font-size:12px; color:#c7d2fe; }
+
+  /* hero row */
+  .hero { display:grid; grid-template-columns: 1.5fr 1fr; gap:14px; margin-bottom:14px; }
+  .card { border-radius:12px; padding:14px; }
+  .card.rec { background:var(--indigo-bg); border:2px solid var(--indigo-border); }
+  .card.team { background:var(--green-bg); border:2px solid var(--green-border); }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; margin:0 0 10px; }
+  .card.rec h2 { color:var(--indigo); }
+  .card.team h2 { color:var(--green); }
+
+  .primary { background:#fff; border:1px solid var(--indigo-border); border-radius:10px; padding:12px; margin-bottom:10px; }
+  .primary .name { font-size:18px; font-weight:800; }
+  .primary .line { font-size:12px; color:var(--zinc500); margin-top:2px; }
+  .primary .btns { margin-top:10px; display:flex; gap:8px; }
+  .btn { border:none; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:700; cursor:pointer; }
+  .btn.draft { background:var(--indigo); color:#fff; }
+  .btn.view { background:#fff; border:1px solid var(--indigo-border); color:var(--indigo); }
+  .reclist { font-size:13px; }
+  .reclist .row { display:flex; align-items:center; gap:8px; padding:5px 0; border-top:1px solid var(--indigo-border); }
+  .rank { width:18px; color:var(--zinc400); font-weight:700; font-size:11px; }
+  .pos { font-size:10px; font-weight:800; padding:1px 5px; border-radius:4px; }
+  .pos.RB{background:#dbeafe;color:#1d4ed8} .pos.WR{background:#dcfce7;color:#15803d}
+  .pos.QB{background:#fee2e2;color:#b91c1c} .pos.TE{background:#f3e8ff;color:#7e22ce}
+  .grow { flex:1; }
+  .muted { color:var(--zinc500); font-size:12px; }
+
+  /* team panel */
+  .posgroup { border-top:1px solid var(--green-border); padding:7px 0; }
+  .posgroup:first-of-type { border-top:none; }
+  .posgroup .head { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; }
+  .posgroup .val { margin-left:auto; font-family:ui-monospace,monospace; color:var(--zinc500); font-weight:600; }
+  .posgroup .players { font-size:11.5px; color:var(--zinc500); margin-top:2px; padding-left:2px; }
+  .flag { font-size:10px; font-weight:700; color:var(--amber); }
+
+  /* available */
+  .avail { background:#fff; border:1px solid var(--zinc200); border-radius:12px; padding:14px; margin-bottom:14px; }
+  .avail .bar { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .avail h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--zinc700); margin:0; }
+  .avail .controls { margin-left:auto; display:flex; gap:6px; }
+  .avail input, .avail select { border:1px solid var(--zinc200); border-radius:7px; padding:4px 8px; font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th { text-align:left; color:var(--zinc400); font-weight:600; font-size:11px; padding:4px 6px; border-bottom:1px solid var(--zinc100); }
+  th.sorted { color:var(--indigo); }
+  td { padding:5px 6px; border-bottom:1px solid var(--zinc100); }
+  .mono { font-family:ui-monospace,monospace; }
+  .auction { color:var(--amber); font-weight:700; }
+
+  .collapsed { border:1px dashed var(--zinc200); border-radius:10px; padding:10px 14px; font-size:12px; color:var(--zinc400); display:flex; gap:20px; }
+
+  /* mobile frame */
+  .phone { max-width:390px; margin:0 auto; border:10px solid #111; border-radius:36px; padding:14px; background:#fafafa; }
+  .strip { background:var(--green-bg); border:2px solid var(--green-border); border-radius:10px; padding:8px 12px; margin-bottom:12px; }
+  .strip .counts { font-size:14px; font-weight:800; letter-spacing:.02em; }
+  .strip .tap { font-size:11px; color:var(--green); margin-top:2px; }
+  .hide { display:none; }
+</style>
+</head>
+<body>
+  <h1>Live Draft — On the Clock</h1>
+  <p class="sub">Low-fidelity mockup. Recommendations (engine unchanged) paired with a "My Team" results panel for validation. Toggle desktop / mobile.</p>
+
+  <div class="toggle">
+    <button id="tD" class="active" onclick="show('d')">Desktop</button>
+    <button id="tM" onclick="show('m')">Mobile</button>
+  </div>
+
+  <!-- ===================== DESKTOP ===================== -->
+  <div id="desktop">
+    <div class="clock">
+      <span class="dot"></span> YOUR PICK
+      <span class="meta">Round 4, Pick 4.06</span>
+      <span class="hint">Select a player below →</span>
+    </div>
+
+    <div class="hero">
+      <!-- Recommendations -->
+      <div class="card rec">
+        <h2>🎯 Recommended</h2>
+        <div class="primary">
+          <div class="name">Bhayshul Tuten <span class="pos RB">RB</span></div>
+          <div class="line"><b>Fills:</b> RB4 (depth) — you have 3 RBs</div>
+          <div class="line"><b>Edge:</b> RB supply is thin — 3 quality options remain at this level.</div>
+          <div class="line" style="margin-top:4px"><span class="pos RB" style="background:#e6fcf5;color:#0ca678">Need</span> <span class="pos RB" style="background:#f3e8ff;color:#7e22ce">Dynasty Buy</span> <span class="pos RB" style="background:#fef3c7;color:#b45309">Tier ending</span></div>
+          <div class="btns"><button class="btn draft">Draft</button><button class="btn view">Info</button></div>
+        </div>
+        <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:11.5px;color:var(--zinc700);line-height:1.45">
+          💡 <b>Tuten</b> projects <b style="color:#0ca678">84% available</b> at your next pick (5.06). Consider grabbing <b>Terry McLaurin</b> now — only <b style="color:#dc2626">28%</b> likely to last (<span class="mono">1,540</span> value at risk). You may land both.
+        </div>
+        <div class="reclist">
+          <div class="row"><span class="rank">2</span><span class="pos WR">WR</span><span class="grow">Terry McLaurin</span><span class="muted">2,143 · $21</span></div>
+          <div class="row"><span class="rank">3</span><span class="pos QB">QB</span><span class="grow">Brock Purdy</span><span class="muted">2,386 · $6</span></div>
+          <div class="row"><span class="rank">4</span><span class="pos RB">RB</span><span class="grow">Chuba Hubbard</span><span class="muted">1,762 · $6</span></div>
+          <div class="row"><span class="rank">5</span><span class="pos WR">WR</span><span class="grow">Rome Odunze</span><span class="muted">3,316 · $17</span></div>
+        </div>
+      </div>
+
+      <!-- My Team -->
+      <div class="card team">
+        <h2>My Team · results</h2>
+        <div class="posgroup"><div class="head"><span class="pos QB">QB</span> 1 <span class="val">2,386</span></div><div class="players">Purdy (T16)</div></div>
+        <div class="posgroup"><div class="head"><span class="pos RB">RB</span> 3 <span class="val">12,900</span></div><div class="players">Gibbs (T2), Hall (T7), Mason (T15)</div></div>
+        <div class="posgroup"><div class="head"><span class="pos WR">WR</span> 2 <span class="val">9,800</span></div><div class="players">London (T5), Egbuka (T8)</div></div>
+        <div class="posgroup"><div class="head"><span class="pos TE">TE</span> 0 <span class="flag">⚠ empty</span> <span class="val">0</span></div><div class="players">—</div></div>
+      </div>
+    </div>
+
+    <!-- Available -->
+    <div class="avail">
+      <div class="bar">
+        <h2>Available Players</h2>
+        <div class="controls">
+          <input placeholder="Search…" style="width:140px" />
+          <select><option>All pos</option><option>QB</option><option>RB</option><option>WR</option><option>TE</option></select>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Player</th><th>Pos</th><th class="sorted">Auction $ ↓</th><th>Dyn Val</th><th>Tier</th></tr></thead>
+        <tbody>
+          <tr><td>Terry McLaurin</td><td><span class="pos WR">WR</span></td><td class="auction">$21</td><td class="mono">2,143</td><td class="mono">T8</td></tr>
+          <tr><td>Bhayshul Tuten</td><td><span class="pos RB">RB</span></td><td class="auction">$19</td><td class="mono">2,854</td><td class="mono">T10</td></tr>
+          <tr><td>Rome Odunze</td><td><span class="pos WR">WR</span></td><td class="auction">$17</td><td class="mono">3,316</td><td class="mono">T12</td></tr>
+          <tr><td>Chuba Hubbard</td><td><span class="pos RB">RB</span></td><td class="auction">$6</td><td class="mono">1,762</td><td class="mono">T15</td></tr>
+          <tr><td>Brock Purdy</td><td><span class="pos QB">QB</span></td><td class="auction">$6</td><td class="mono">2,386</td><td class="mono">T16</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="collapsed">
+      <span>▸ Board</span><span>▸ Scarcity</span><span>▸ Needs</span><span style="margin-left:auto">▸ Trade (minimized)</span>
+    </div>
+  </div>
+
+  <!-- ===================== MOBILE ===================== -->
+  <div id="mobile" class="hide">
+    <div class="phone">
+      <div class="clock" style="font-size:13px;padding:8px 12px"><span class="dot"></span> YOUR PICK <span class="meta">4.06</span></div>
+
+      <div class="strip">
+        <div class="counts">QB 1 · RB 3 · WR 2 · TE 0 <span class="flag">⚠</span></div>
+        <div class="tap">tap to expand full roster ▾</div>
+      </div>
+
+      <div class="card rec" style="margin-bottom:12px">
+        <h2>🎯 Recommended</h2>
+        <div class="primary">
+          <div class="name" style="font-size:16px">Bhayshul Tuten <span class="pos RB">RB</span></div>
+          <div class="line">2,854 · $19 · RB need 42%</div>
+          <div class="btns"><button class="btn draft">Draft</button><button class="btn view">View</button></div>
+        </div>
+        <div class="reclist">
+          <div class="row"><span class="rank">2</span><span class="pos WR">WR</span><span class="grow">Terry McLaurin</span><span class="muted">$21</span></div>
+          <div class="row"><span class="rank">3</span><span class="pos QB">QB</span><span class="grow">Brock Purdy</span><span class="muted">$6</span></div>
+        </div>
+      </div>
+
+      <div class="avail" style="margin-bottom:0">
+        <div class="bar"><h2>Available · Auction $ ↓</h2></div>
+        <table>
+          <tbody>
+            <tr><td>Terry McLaurin</td><td><span class="pos WR">WR</span></td><td class="auction">$21</td></tr>
+            <tr><td>Bhayshul Tuten</td><td><span class="pos RB">RB</span></td><td class="auction">$19</td></tr>
+            <tr><td>Rome Odunze</td><td><span class="pos WR">WR</span></td><td class="auction">$17</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+  function show(v){
+    document.getElementById('desktop').classList.toggle('hide', v!=='d');
+    document.getElementById('mobile').classList.toggle('hide', v!=='m');
+    document.getElementById('tD').classList.toggle('active', v==='d');
+    document.getElementById('tM').classList.toggle('active', v==='m');
+  }
+</script>
+</body>
+</html>

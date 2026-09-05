@@ -13,7 +13,7 @@ interface Props {
     currentRosterId: number;
     scoringFormat: '1qb' | 'sf';
     leagueId?: string;
-    platform?: 'sleeper' | 'fleaflicker';
+    platform?: 'sleeper' | 'fleaflicker' | 'db';
     keeperCount?: number;
     customRankingsMap?: Map<string, { rank: number; notes: string | null; signal: string | null; source_display_name: string }[]>;
     initialTrade?: {

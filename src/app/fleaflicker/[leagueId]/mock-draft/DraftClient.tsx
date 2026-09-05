@@ -7,6 +7,7 @@ import { PositionScarcityChart } from '@/components/PositionScarcityChart';
 import { PlayerDetailModal } from './PlayerDetailModal';
 import DraftBoardGrid, { PickHistoryLog } from './DraftBoardGrid';
 import AvailablePlayersTable from './AvailablePlayersTable';
+import { MyTeamResultsPanel } from './MyTeamResultsPanel';
 import { useAuth } from '@/hooks/useUser';
 import { analyzeLeaguePostDraft } from '@/lib/post-draft-analysis';
 import type { PlayerForAnalysis } from '@/lib/post-draft-analysis';
@@ -94,11 +95,13 @@ interface DraftClientProps {
     defaultUserTeamId?: number;
     customRankingsMap?: Record<string, { rank: number | null; signal: string | null; notes: string | null; source: string; marketScore: number | null; tier: number | null }[]>;
     keeperPicks?: { round: number; pick_no: number; overall: number; roster_id: number; draft_slot: number; player_id: string; player_name: string; player_position: string | null; player_value: number | null; player_data?: any }[];
+    /** When true, the available-players table defaults to a redraft view (auction sort + redraft tiers). Used by the generic redraft mock. */
+    redraftView?: boolean;
 }
 
 const DEFAULT_ROUNDS = 5;
 
-export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock', defaultUserTeamId, customRankingsMap, keeperPicks }: DraftClientProps) {
+export default function DraftClient({ leagueId, teams, freeAgents, format, rankingsVintage, redraftVintage, platform = 'fleaflicker', rosterSlots, keeperCount, mode = 'mock', defaultUserTeamId, customRankingsMap, keeperPicks, redraftView = false }: DraftClientProps) {
     const { sleeperUsername, fleaflickerUsername } = useAuth();
     const userId = sleeperUsername || fleaflickerUsername || null;
 
@@ -1998,6 +2001,12 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                             })()}
                             {(isUserPick || isLive) && (
                                 <div className="space-y-3">
+                                    {/* My Team — results/validation panel (grounds the recommendation) */}
+                                    <MyTeamResultsPanel
+                                        players={onClockRosterPlayers.filter((p: any) => p.position && p.position !== 'PICK').map((p: any) => ({ id: p.id, full_name: p.full_name, position: p.position, fc_value: p.fc_value, tier: sf ? p.rank_sf_tier : p.rank_1qb_tier }))}
+                                        startReqs={{ QB: Math.round(effectiveSlots.QB), RB: Math.round(effectiveSlots.RB), WR: Math.round(effectiveSlots.WR), TE: Math.round(effectiveSlots.TE) }}
+                                        compact
+                                    />
                                     {/* Win-Now / Dynasty blend slider — tilts recommendation scoring */}
                                     {!(!keeperCount || keeperCount <= 3) && (
                                         <div className="px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/30">
@@ -3644,6 +3653,8 @@ export default function DraftClient({ leagueId, teams, freeAgents, format, ranki
                         redraftVintage={redraftVintage}
                         isLive={isLive}
                         leagueId={leagueId}
+                        defaultSortColumn={(isLive || redraftView) ? 'redraft_auction_value' : 'fc_value'}
+                        defaultTierMode={redraftView ? 'redraft' : 'dynasty'}
                     />
                 )}
 

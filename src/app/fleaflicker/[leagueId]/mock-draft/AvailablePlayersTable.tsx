@@ -34,6 +34,8 @@ interface AvailablePlayersTableProps {
     redraftVintage?: string | null;
     isLive: boolean;
     leagueId: string;
+    defaultSortColumn?: string;
+    defaultTierMode?: 'dynasty' | 'zap' | 'redraft' | 'off';
 }
 
 export { MOCK_DRAFT_COLUMNS };
@@ -50,13 +52,15 @@ export default function AvailablePlayersTable({
     redraftVintage,
     isLive,
     leagueId,
+    defaultSortColumn = 'fc_value',
+    defaultTierMode = 'dynasty',
 }: AvailablePlayersTableProps) {
-    const [sortColumn, setSortColumn] = useState<string>('fc_value');
+    const [sortColumn, setSortColumn] = useState<string>(defaultSortColumn);
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
     const [positionFilter, setPositionFilter] = useState<string>('ALL');
     const [searchQuery, setSearchQuery] = useState('');
     const [showWatchListOnly, setShowWatchListOnly] = useState(false);
-    const [draftTierMode, setDraftTierMode] = useState<'dynasty' | 'zap' | 'redraft' | 'off'>('dynasty');
+    const [draftTierMode, setDraftTierMode] = useState<'dynasty' | 'zap' | 'redraft' | 'off'>(defaultTierMode);
     const [expandedProspect, setExpandedProspect] = useState<string | null>(null);
     const [activeWriteupTab, setActiveWriteupTab] = useState<string>('late_round');
 

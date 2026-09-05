@@ -54,6 +54,15 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
+  // Yahoo leagues (synced into the shared tables via the Yahoo cron/script)
+  const [yahooLeagues, setYahooLeagues] = useState<{ league_id: string; name: string | null; total_rosters: number | null; scoring_format: string | null }[]>([]);
+  useEffect(() => {
+    fetch('/api/yahoo?list=true')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.leagues) setYahooLeagues(data.leagues); })
+      .catch(() => {});
+  }, []);
+
   // Add Fleaflicker league form
   const [addLeagueInput, setAddLeagueInput] = useState('');
   const [addLeagueFormat, setAddLeagueFormat] = useState<'1qb' | 'sf'>('1qb');
@@ -236,9 +245,12 @@ export default function Home() {
               </form>
             )}
 
-            <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 text-center">
+            <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 text-center flex flex-col gap-2">
               <Link href="/players" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 transition-colors">
                 Or browse all players &rarr;
+              </Link>
+              <Link href="/cheat-sheet" className="text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 transition-colors">
+                📋 Draft cheat sheet (any league) &rarr;
               </Link>
             </div>
           </div>
@@ -270,6 +282,10 @@ export default function Home() {
                 <Link href="/mock-draft"
                   className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
                   🎯 Mock Draft
+                </Link>
+                <Link href="/cheat-sheet"
+                  className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 transition-colors">
+                  📋 Cheat Sheet
                 </Link>
                 <button onClick={logout}
                   className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30 transition-colors">
@@ -583,13 +599,38 @@ export default function Home() {
           </div>
         )}
 
+        {/* Yahoo Leagues — always visible (synced via the Yahoo cron/script) */}
+        {yahooLeagues.length > 0 && (
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-3">Yahoo</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+              {yahooLeagues.map((league) => (
+                <Link key={league.league_id} href={`/db-league/yahoo/${league.league_id}`}
+                  className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex items-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group">
+                  <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center font-bold text-purple-600 dark:text-purple-400 flex-shrink-0 text-sm">
+                    Y!
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors truncate">
+                      {league.name || 'Unnamed League'}
+                    </h4>
+                    <p className="text-xs text-zinc-500">
+                      Redraft · {(league.scoring_format || '1qb').toUpperCase()} · {league.total_rosters || 0} teams
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* MyFFPC Leagues — always visible (not tied to Sleeper/Fleaflicker login) */}
         {myffpcLeagues.length > 0 && (
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-3">MyFFPC</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
               {myffpcLeagues.map((league) => (
-                <Link key={league.league_id} href={`/myffpc/${league.league_id}`}
+                <Link key={league.league_id} href={`/db-league/myffpc/${league.league_id}`}
                   className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-zinc-900/5 p-5 flex items-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group">
                   <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center font-bold text-emerald-600 dark:text-emerald-400 flex-shrink-0 text-sm">
                     FC

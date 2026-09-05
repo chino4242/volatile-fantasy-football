@@ -225,3 +225,140 @@ export function parseMultiTeamPaste(text: string): ParsedRoster[] {
 
     return rosters;
 }
+
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// HTML parser (cookie-based scrape via the persistent browser)
+//
+// The MyFFPC LeagueHome/SetLineup pages are server-rendered ASP.NET WebForms.
+// Each player row is an anchor:
+//   <a href='PlayerProfile.aspx?playerID=27204&leagueID=45219&dbID=FF_D1'>
+//        Jackson, Lamar BAL </a>
+// The slot/position comes from the row's first cell class `role-XX`
+// (role-QB/RB/WR/TE/PK/DF). Defenses render as playerID=D{TEAM}H with text
+// "SEA  DST". Starters live in the `rptStartingLineup` table, bench in
+// `rptBench`, IR in `rptInjuredReserves`.
+//
+// This reuses ParsedPlayer/ParsedRoster so the sync path is identical to paste.
+// ─────────────────────────────────────────────────────────────────────────
+
+import type { CheerioAPI } from 'cheerio';
+
+/** Map a MyFFPC `role-XX` slot class or POS cell text to our position tokens. */
+function normalizeMyffpcPosition(raw: string | null | undefined): string | null {
+    if (!raw) return null;
+    const p = raw.toUpperCase().replace(/^ROLE-/, '').trim();
+    if (p === 'DF' || p === 'DST' || p === 'D' || p === 'DEF') return 'DST';
+    if (p === 'PK' || p === 'K') return 'PK';
+    if (['QB', 'RB', 'WR', 'TE'].includes(p)) return p;
+    // FLEX is a slot, not a real position — caller resolves from the POS column.
+    return p;
+}
+
+/**
+ * Parse one player anchor's text: "Last, First TEAM" or "TEAM  DST".
+ * Returns normalized "First Last" name + team, or null if unparseable.
+ */
+function parsePlayerAnchor(text: string): { rawName: string; normalizedName: string; team: string | null; isDst: boolean } | null {
+    const t = text.replace(/\s+/g, ' ').trim();
+    if (!t) return null;
+
+    // Defense: "SEA  DST" / "SEA DST"
+    const dst = t.match(/^([A-Z]{2,4})\s+DST$/);
+    if (dst) {
+        const team = dst[1];
+        return { rawName: `${team} DST`, normalizedName: cleanseName(`${team} DST`), team, isDst: true };
+    }
+
+    // Player: "Last, First TEAM"  (TEAM = trailing 2-4 uppercase letters)
+    const m = t.match(/^(.+?),\s*(.+?)\s+([A-Z]{2,4})$/);
+    if (m) {
+        const lastName = m[1].trim();
+        const firstName = m[2].trim();
+        const team = m[3];
+        const full = `${firstName} ${lastName}`;
+        return { rawName: `${lastName}, ${firstName}`, normalizedName: cleanseName(full), team, isDst: false };
+    }
+
+    // Fallback: "Last, First" with no team (rare).
+    const m2 = t.match(/^(.+?),\s*(.+)$/);
+    if (m2) {
+        const full = `${m2[2].trim()} ${m2[1].trim()}`;
+        return { rawName: t, normalizedName: cleanseName(full), team: null, isDst: false };
+    }
+    return null;
+}
+
+/**
+ * Parse a single rendered team roster page (logged-in SetLineup.aspx HTML for
+ * one viewingTeam). teamName should come from the league nav link text.
+ */
+export function parseMyFFPCRosterHtml($: CheerioAPI, teamName: string): ParsedRoster {
+    const players: ParsedPlayer[] = [];
+    const seen = new Set<string>();
+
+    // Each player is an <a href*="PlayerProfile.aspx"> inside a <tr>. Starter vs
+    // bench vs IR is encoded in the ids of cells WITHIN the row (WebForms puts
+    // the repeater id on descendant cells like "..._rptBench_tdPlayerRole_0",
+    // NOT on an ancestor <table>), so we classify by scanning the row's id
+    // attributes rather than relying on an ancestor wrapper.
+    $('a[href*="PlayerProfile.aspx"]').each((_, a) => {
+        const $anchor = $(a);
+        const parsed = parsePlayerAnchor($anchor.text());
+        if (!parsed) return;
+
+        const $row = $anchor.closest('tr');
+        if ($row.length === 0) return;
+
+        const idBlob = [
+            $row.attr('id') || '',
+            ...$row.find('[id]').map((_, el) => $(el).attr('id') || '').get(),
+        ].join(' ');
+
+        let isStarter: boolean;
+        if (/rptStartingLineup/i.test(idBlob)) isStarter = true;
+        else if (/rptBench|rptInjuredReserves/i.test(idBlob)) isStarter = false;
+        else return; // not a roster row (e.g. stray PlayerProfile link) — skip
+
+        // Dedupe (same player can recur in swap <option>s etc.).
+        const key = `${parsed.normalizedName}|${isStarter}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+
+        // Slot/position from the row's role-XX cell; FLEX/DF resolved via POS col.
+        const roleClass = $row.find('td[class*="role-"]').first().attr('class') || '';
+        const roleMatch = roleClass.match(/role-([A-Za-z]+)/);
+        let position = normalizeMyffpcPosition(roleMatch?.[1]);
+        if (!position || position === 'FLEX') {
+            const posCell = $row.find('td').filter((_, td) => /^(QB|RB|WR|TE|PK|DST)$/.test($(td).text().trim())).first().text().trim();
+            position = normalizeMyffpcPosition(posCell) || position;
+        }
+        if (parsed.isDst) position = 'DST';
+        if (!position || position === 'FLEX') return;
+
+        players.push({
+            rawName: parsed.rawName,
+            normalizedName: parsed.normalizedName,
+            position,
+            team: parsed.team,
+            isStarter,
+        });
+    });
+
+    // Draft picks: "<b>2027 Draft Picks: </b>R1, R2, ..."
+    const draftPicks: string[] = [];
+    $('[id*="DynastyDraftPickSummary"], [id*="divDynastyDraftPickSummary"]').find('*').addBack().each((_, el) => {
+        const txt = $(el).text();
+        const m = txt.match(/(\d{4})\s+Draft Picks?:\s*([R\d,\s]+)/i);
+        if (m) {
+            const year = m[1];
+            for (const r of m[2].split(',').map(s => s.trim()).filter(Boolean)) {
+                const tag = `${year} ${r}`;
+                if (!draftPicks.includes(tag)) draftPicks.push(tag);
+            }
+        }
+    });
+
+    return { teamName, owner: teamName, players, draftPicks };
+}

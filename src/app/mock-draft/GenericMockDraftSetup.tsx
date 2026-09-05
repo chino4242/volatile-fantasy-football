@@ -14,11 +14,12 @@ interface Props {
 const LEAGUE_SIZES = [8, 10, 12, 14];
 const ROOKIE_ROUNDS = [1, 2, 3, 4, 5];
 const STARTUP_ROUNDS = [10, 15, 20, 25, 30];
+const REDRAFT_ROUNDS = [12, 13, 14, 15, 16];
 
 export default function GenericMockDraftSetup({ players, allPlayers, format: initialFormat, rankingsVintage, redraftVintage }: Props) {
     const [started, setStarted] = useState(false);
     const [format, setFormat] = useState(initialFormat);
-    const [draftMode, setDraftMode] = useState<'rookie' | 'startup'>('rookie');
+    const [draftMode, setDraftMode] = useState<'rookie' | 'startup' | 'redraft'>('rookie');
     const [leagueSize, setLeagueSize] = useState(12);
     const [draftType, setDraftType] = useState<'snake' | 'linear'>('snake');
     const [rounds, setRounds] = useState(5);
@@ -55,14 +56,15 @@ export default function GenericMockDraftSetup({ players, allPlayers, format: ini
                 <DraftClient
                     leagueId="generic-mock"
                     teams={teams}
-                    freeAgents={draftMode === 'startup' ? allPlayers : players}
+                    freeAgents={draftMode === 'rookie' ? players : allPlayers}
                     format={format}
                     rankingsVintage={rankingsVintage}
                     redraftVintage={redraftVintage}
                     platform="sleeper"
-                    rosterSlots={{ QB: rosterSlots.QB + rosterSlots.SF, RB: rosterSlots.RB, WR: rosterSlots.WR, TE: rosterSlots.TE, FLEX: rosterSlots.FLEX }}
+                    rosterSlots={{ QB: rosterSlots.QB + rosterSlots.SF, RB: rosterSlots.RB, WR: rosterSlots.WR, TE: rosterSlots.TE, FLEX: rosterSlots.FLEX, total: rounds }}
                     mode="mock"
                     defaultUserTeamId={draftSlot}
+                    redraftView={draftMode === 'redraft'}
                 />
             </div>
         );
@@ -73,17 +75,17 @@ export default function GenericMockDraftSetup({ players, allPlayers, format: ini
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl ring-1 ring-zinc-900/5 p-6 sm:p-8 w-full max-w-md space-y-6">
                 <div className="text-center">
                     <h1 className="text-2xl font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
-                        {draftMode === 'startup' ? 'Startup Mock Draft' : 'Rookie Mock Draft'}
+                        {draftMode === 'startup' ? 'Startup Mock Draft' : draftMode === 'redraft' ? 'Redraft Mock Draft' : 'Rookie Mock Draft'}
                     </h1>
                     <p className="text-sm text-zinc-500 mt-1">
-                        {draftMode === 'startup' ? `${allPlayers.length} players available` : `${players.length} rookies available`}
+                        {draftMode === 'rookie' ? `${players.length} rookies available` : `${allPlayers.length} players available`}
                     </p>
                 </div>
 
                 {/* Draft Mode */}
                 <div>
                     <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block mb-2">Draft Mode</label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                         <button onClick={() => { setDraftMode('rookie'); setRounds(5); }}
                             className={`py-2.5 rounded-lg text-sm font-bold transition ${draftMode === 'rookie' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>
                             🏈 Rookie
@@ -91,6 +93,10 @@ export default function GenericMockDraftSetup({ players, allPlayers, format: ini
                         <button onClick={() => { setDraftMode('startup'); setRounds(20); }}
                             className={`py-2.5 rounded-lg text-sm font-bold transition ${draftMode === 'startup' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>
                             🌟 Startup
+                        </button>
+                        <button onClick={() => { setDraftMode('redraft'); setRounds(15); }}
+                            className={`py-2.5 rounded-lg text-sm font-bold transition ${draftMode === 'redraft' ? 'bg-emerald-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>
+                            📋 Redraft
                         </button>
                     </div>
                 </div>
@@ -138,7 +144,7 @@ export default function GenericMockDraftSetup({ players, allPlayers, format: ini
                 <div>
                     <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block mb-2">Rounds</label>
                     <div className="grid grid-cols-5 gap-2">
-                        {(draftMode === 'startup' ? STARTUP_ROUNDS : ROOKIE_ROUNDS).map(r => (
+                        {(draftMode === 'startup' ? STARTUP_ROUNDS : draftMode === 'redraft' ? REDRAFT_ROUNDS : ROOKIE_ROUNDS).map(r => (
                             <button key={r} onClick={() => setRounds(r)}
                                 className={`py-2.5 rounded-lg text-sm font-bold transition ${rounds === r ? 'bg-indigo-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}`}>
                                 {r}
