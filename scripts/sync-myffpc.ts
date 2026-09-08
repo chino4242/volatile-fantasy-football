@@ -115,7 +115,7 @@ async function syncLeague(context: BrowserContext, target: LeagueTarget) {
     }
     const MYFFPC_TO_SLEEPER_ABBR: Record<string, string> = { JAC: 'JAX' };
 
-    const results = { league: target.leagueId, teams: 0, matched: 0, unmatched: 0 };
+    const results = { league: target.leagueId, teams: 0, matched: 0, unmatched: 0, unmatchedNames: [] as string[] };
 
     // Replace the league's rosters (mirror the paste PUT flow).
     await db.delete(rosters).where(eq(rosters.league_id, target.leagueId));
@@ -149,8 +149,12 @@ async function syncLeague(context: BrowserContext, target: LeagueTarget) {
                 results.matched++;
             } else {
                 results.unmatched++;
-                // Kickers are expected-unmatched (Chino doesn't rank K) — keep quiet-ish.
-                if (pl.position !== 'PK') console.warn(`  [unmatched] ${pl.rawName} (${pl.position})`);
+                // Kickers are expected-unmatched (Chino doesn't rank K); tag others
+                // as a real miss to investigate. Log every unmatched name.
+                const expected = pl.position === 'PK' || pl.position === 'K';
+                const label = `${pl.rawName} (${pl.position || '?'})${expected ? ' — expected (K)' : ''}`;
+                results.unmatchedNames.push(`${team.name}: ${label}`);
+                console.warn(`  [unmatched]${expected ? '' : ' ⚠️'} ${team.name} — ${label}`);
             }
         }
         if (rows.length > 0) await db.insert(rosterPlayers).values(rows);
@@ -173,6 +177,11 @@ export async function syncAllMyffpcLeagues() {
             console.log(`[myffpc] syncing ${t.ltuid} → ${t.leagueId} ...`);
             const r = await syncLeague(context, t);
             console.log(`[myffpc] ${t.leagueId}: ${r.teams} teams, matched ${r.matched}, unmatched ${r.unmatched}`);
+            const unexpected = r.unmatchedNames.filter(n => !n.includes('expected (K)'));
+            if (r.unmatchedNames.length > 0) {
+                console.log(`[myffpc] ${t.leagueId} unmatched (${r.unmatchedNames.length}${unexpected.length ? `, ${unexpected.length} ⚠️ unexpected` : ', all expected kickers'}):`);
+                for (const n of r.unmatchedNames) console.log(`    - ${n}`);
+            }
             out.push(r);
         }
         return out;
@@ -183,6 +192,10 @@ export async function syncAllMyffpcLeagues() {
 
 if (require.main === module) {
     syncAllMyffpcLeagues()
-        .then(res => { console.log('\n✅ MyFFPC sync complete:', res); process.exit(0); })
+        .then(res => {
+            const summary = res.map(r => ({ league: r.league, teams: r.teams, matched: r.matched, unmatched: r.unmatched }));
+            console.log('\n✅ MyFFPC sync complete:', summary);
+            process.exit(0);
+        })
         .catch(err => { console.error('\n❌ MyFFPC sync failed:', err); process.exit(1); });
 }

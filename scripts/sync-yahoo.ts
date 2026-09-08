@@ -115,7 +115,7 @@ function matchDefense(fullName: string, teamAbbr: string | null): string | null 
     return null;
 }
 
-export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: string; matched: number; unmatched: number }> {
+export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: string; matched: number; unmatched: number; unmatchedNames: string[] }> {
     // Dynamic imports so dotenv.config() (above) runs before src/db reads env.
     const { db } = await import('../src/db');
     const { players, leagues, rosters, rosterPlayers } = await import('../src/db/schema');
@@ -176,6 +176,7 @@ export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: st
 
     let matched = 0;
     let unmatched = 0;
+    const unmatchedNames: string[] = [];
 
     for (const team of yl.teams) {
         const [insertedRoster] = await db
@@ -199,7 +200,11 @@ export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: st
                 matched++;
             } else {
                 unmatched++;
-                console.warn(`  [unmatched] ${p.full_name} (${p.position || '?'}) — no DB player`);
+                // Kickers are expected-unmatched (Chino doesn't rank K); flag others.
+                const expected = p.position === 'K' || p.position === 'PK';
+                const label = `${team.name}: ${p.full_name} (${p.position || '?'})${expected ? ' — expected (K)' : ''}`;
+                unmatchedNames.push(label);
+                console.warn(`  [unmatched]${expected ? '' : ' ⚠️'} ${label}`);
             }
         }
         const seen = new Set<string>();
@@ -209,10 +214,10 @@ export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: st
         }
     }
 
-    return { leagueId: appLeagueId, matched, unmatched };
+    return { leagueId: appLeagueId, matched, unmatched, unmatchedNames };
 }
 
-export async function syncAllYahooLeagues(): Promise<{ leagueId: string; matched: number; unmatched: number }[]> {
+export async function syncAllYahooLeagues(): Promise<{ leagueId: string; matched: number; unmatched: number; unmatchedNames: string[] }[]> {
     const keysRaw = process.env.YAHOO_LEAGUE_IDS || process.env.YAHOO_LEAGUE_KEYS || '';
     const keys = keysRaw.split(',').map(k => k.trim()).filter(Boolean);
     if (keys.length === 0) {
@@ -223,6 +228,11 @@ export async function syncAllYahooLeagues(): Promise<{ leagueId: string; matched
         console.log(`[yahoo] syncing ${key} ...`);
         const r = await syncYahooLeague(key);
         console.log(`[yahoo] ${key}: matched ${r.matched}, unmatched ${r.unmatched}`);
+        const unexpected = r.unmatchedNames.filter(n => !n.includes('expected (K)'));
+        if (r.unmatchedNames.length > 0) {
+            console.log(`[yahoo] ${key} unmatched (${r.unmatchedNames.length}${unexpected.length ? `, ${unexpected.length} ⚠️ unexpected` : ', all expected kickers'}):`);
+            for (const n of r.unmatchedNames) console.log(`    - ${n}`);
+        }
         results.push(r);
     }
     return results;
@@ -232,7 +242,8 @@ export async function syncAllYahooLeagues(): Promise<{ leagueId: string; matched
 if (require.main === module) {
     syncAllYahooLeagues()
         .then(res => {
-            console.log('\n✅ Yahoo sync complete:', res);
+            const summary = res.map(r => ({ leagueId: r.leagueId, matched: r.matched, unmatched: r.unmatched }));
+            console.log('\n✅ Yahoo sync complete:', summary);
             process.exit(0);
         })
         .catch(err => {
