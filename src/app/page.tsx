@@ -275,6 +275,10 @@ export default function Home() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                <Link href="/portfolio"
+                  className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800 transition-colors dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200">
+                  📊 Portfolio
+                </Link>
                 <Link href="/players"
                   className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-zinc-900 shadow-sm ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 dark:bg-white/10 dark:text-white dark:ring-0 dark:hover:bg-white/20">
                   Player Ranks

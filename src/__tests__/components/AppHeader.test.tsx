@@ -37,16 +37,18 @@ describe('AppHeader Component', () => {
     it('should render navigation links', () => {
         render(<AppHeader />);
 
-        const sleeperLink = screen.getByRole('link', { name: 'Sleeper' });
-        const fleaflickerLink = screen.getByRole('link', { name: 'Fleaflicker' });
+        // Logged-out state (mocked auth has no usernames) → "Connect League"
+        // plus the always-present Cheat Sheet / Players / Admin links.
+        const connectLink = screen.getByRole('link', { name: 'Connect League' });
+        const cheatSheetLink = screen.getByRole('link', { name: 'Cheat Sheet' });
         const playersLink = screen.getByRole('link', { name: 'Players' });
         const adminLink = screen.getByRole('link', { name: 'Admin' });
 
-        expect(sleeperLink).toBeInTheDocument();
-        expect(sleeperLink).toHaveAttribute('href', '/league/your-league-id');
+        expect(connectLink).toBeInTheDocument();
+        expect(connectLink).toHaveAttribute('href', '/');
 
-        expect(fleaflickerLink).toBeInTheDocument();
-        expect(fleaflickerLink).toHaveAttribute('href', '/fleaflicker/your-league-id');
+        expect(cheatSheetLink).toBeInTheDocument();
+        expect(cheatSheetLink).toHaveAttribute('href', '/cheat-sheet');
 
         expect(playersLink).toBeInTheDocument();
         expect(playersLink).toHaveAttribute('href', '/players');
