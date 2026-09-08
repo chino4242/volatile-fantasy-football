@@ -36,6 +36,15 @@ export interface PortfolioPlayer {
     is_starter: boolean;
     /** Chino's manual portfolio-wide tag, if any: 'buy' | 'sell'. */
     tag?: 'buy' | 'sell' | null;
+    /** Analyst transaction action from the feed, if any: 'buy' | 'sell' | 'add'. */
+    txnAction?: 'buy' | 'sell' | 'add' | null;
+    /** The analyst rationale (writeup) tied to txnAction. */
+    txnNote?: string | null;
+    /** This week's optimizer signal (attached by the portfolio route when weekly
+     *  rankings exist). rank lower=better; total/posMatchup are tiebreakers. */
+    weeklyRank?: number | null;
+    weeklyTotal?: number | null;
+    weeklyPosMatchup?: number | null;
 }
 
 export interface PortfolioTeam {
@@ -56,6 +65,10 @@ export interface PortfolioLeague {
     teams: PortfolioTeam[];
     /** Available players (not on any roster), enriched + format-resolved. */
     freeAgents: PortfolioPlayer[];
+    /** League starting-slot config (for the lineup optimizer). Null if unknown. */
+    rosterPositions?: string[] | null;
+    /** The week the attached weeklyRank values are for (null if none uploaded). */
+    weeklyWeek?: number | null;
 }
 
 /** A single league descriptor the client hands the portfolio route. */
@@ -247,32 +260,66 @@ export interface UndervaluedFA {
     player: PortfolioPlayer;
     /** Positive = Chino ranks him better than the market (the edge). Null if unrankable. */
     rankEdge: number | null;
-    /** True when surfaced because Chino tagged him 'buy' (not just rank edge). */
+    /** True when surfaced because Chino tagged him 'buy' or the feed said 'add'. */
     tagged: boolean;
+    /** Why it surfaced: 'buy' tag, 'add' from the feed, or 'edge' (pure rank gap). */
+    reason: 'buy' | 'add' | 'edge';
+    /** Analyst rationale, if this came from the transactions feed. */
+    note?: string | null;
 }
 
 /**
- * Feature R — undervalued free-agent sweep. Two ways a free agent surfaces:
- *  1. Dual-value gap: Chino's board ranks him meaningfully HIGHER (lower number)
- *     than the market → rankEdge = marketRank - myRank ≥ minEdge.
- *  2. Chino tagged him 'buy' on his portfolio board → always surface if available,
- *     even without a computed edge (his explicit directive wins).
- * Tagged buys sort first, then by rank edge.
+ * Feature R — undervalued free-agent sweep. A free agent surfaces if ANY of:
+ *  1. Dual-value gap: Chino's board ranks him meaningfully higher than the
+ *     market → rankEdge = marketRank - myRank ≥ minEdge.
+ *  2. Chino tagged him 'buy' on his board.
+ *  3. The analyst transactions feed said 'add' or 'buy' him.
+ * Explicit directives (buy tag / add feed) sort first, then by rank edge.
  */
-export function undervaluedFreeAgents(league: PortfolioLeague, minEdge = 15, limit = 10): UndervaluedFA[] {
+export function undervaluedFreeAgents(league: PortfolioLeague, minEdge = 15, limit = 12): UndervaluedFA[] {
     const out: UndervaluedFA[] = [];
     for (const p of league.freeAgents) {
         const hasRanks = p.myRank != null && p.marketRank != null;
         const rankEdge = hasRanks ? (p.marketRank as number) - (p.myRank as number) : null;
-        const tagged = p.tag === 'buy';
-        if (tagged || (rankEdge != null && rankEdge >= minEdge)) {
-            out.push({ player: p, rankEdge, tagged });
+        const isBuy = p.tag === 'buy' || p.txnAction === 'buy';
+        const isAdd = p.txnAction === 'add';
+        const hasEdge = rankEdge != null && rankEdge >= minEdge;
+        if (isBuy || isAdd || hasEdge) {
+            const reason: 'buy' | 'add' | 'edge' = isBuy ? 'buy' : isAdd ? 'add' : 'edge';
+            out.push({ player: p, rankEdge, tagged: isBuy || isAdd, reason, note: p.txnNote ?? null });
         }
     }
+    const rank = (r: 'buy' | 'add' | 'edge') => (r === 'buy' ? 0 : r === 'add' ? 1 : 2);
     return out
         .sort((a, b) => {
-            if (a.tagged !== b.tagged) return a.tagged ? -1 : 1; // tagged buys first
+            if (rank(a.reason) !== rank(b.reason)) return rank(a.reason) - rank(b.reason);
             return (b.rankEdge ?? 0) - (a.rankEdge ?? 0);
         })
         .slice(0, limit);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Lineup optimizer glue (pure) — runs the tested engine on a PortfolioTeam using
+// the weekly fields the route attaches. No DB access → safe on the client.
+// ─────────────────────────────────────────────────────────────────────────
+
+import { buildSlots, optimizeAndDiff, type OptimizerPlayer, type OptimizerResult } from './lineup-optimizer';
+
+/** Run the lineup optimizer for one portfolio team. Returns null if the league
+ *  has no slot config or no weekly rankings to act on. */
+export function optimizePortfolioTeam(league: PortfolioLeague, team: PortfolioTeam): (OptimizerResult & { hasWeeklyData: boolean }) | null {
+    if (!league.rosterPositions || league.rosterPositions.length === 0) return null;
+    const slots = buildSlots(league.rosterPositions);
+    const players: OptimizerPlayer[] = team.players.map(p => ({
+        sleeper_id: p.sleeper_id,
+        full_name: p.full_name,
+        position: p.position,
+        rank: p.weeklyRank ?? null,
+        total: p.weeklyTotal ?? null,
+        posMatchup: p.weeklyPosMatchup ?? null,
+        isStarter: p.is_starter,
+    }));
+    const hasWeeklyData = players.some(p => p.rank != null);
+    if (!hasWeeklyData) return null;
+    return { ...optimizeAndDiff(players, slots), hasWeeklyData };
 }

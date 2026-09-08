@@ -92,23 +92,30 @@ export async function POST(request: Request) {
         }
 
         // ── Snapshot current rankings into history before overwriting ──
-        const rankCol = category === '1qb' ? playerValues.rank_1qb_overall
-            : category === 'sf' ? playerValues.rank_sf_overall
+        const overallCol = (cat: string) => cat === '1qb' ? playerValues.rank_1qb_overall
+            : cat === 'sf' ? playerValues.rank_sf_overall
+            : cat === 'ros' ? playerValues.rank_ros_overall
             : playerValues.redraft_rank_overall;
+        const posCol = (cat: string) => cat === '1qb' ? playerValues.rank_1qb_pos
+            : cat === 'sf' ? playerValues.rank_sf_pos
+            : cat === 'ros' ? playerValues.rank_ros_pos
+            : playerValues.redraft_rank_pos;
+        const tierCol = (cat: string) => cat === '1qb' ? playerValues.rank_1qb_tier
+            : cat === 'sf' ? playerValues.rank_sf_tier
+            : cat === 'ros' ? playerValues.rank_ros_tier
+            : playerValues.redraft_rank_tier;
+        const updatedAtCol = (cat: string) => cat === '1qb' ? playerValues.rank_1qb_updated_at
+            : cat === 'sf' ? playerValues.rank_sf_updated_at
+            : cat === 'ros' ? playerValues.rank_ros_updated_at
+            : playerValues.redraft_rank_updated_at;
+
+        const rankCol = overallCol(category);
         const existingRanks = await db.select({
             sleeper_id: playerValues.sleeper_id,
-            overall: category === '1qb' ? playerValues.rank_1qb_overall
-                : category === 'sf' ? playerValues.rank_sf_overall
-                : playerValues.redraft_rank_overall,
-            pos_rank: category === '1qb' ? playerValues.rank_1qb_pos
-                : category === 'sf' ? playerValues.rank_sf_pos
-                : playerValues.redraft_rank_pos,
-            tier: category === '1qb' ? playerValues.rank_1qb_tier
-                : category === 'sf' ? playerValues.rank_sf_tier
-                : playerValues.redraft_rank_tier,
-            updated_at: category === '1qb' ? playerValues.rank_1qb_updated_at
-                : category === 'sf' ? playerValues.rank_sf_updated_at
-                : playerValues.redraft_rank_updated_at,
+            overall: overallCol(category),
+            pos_rank: posCol(category),
+            tier: tierCol(category),
+            updated_at: updatedAtCol(category),
         }).from(playerValues).where(isNotNull(rankCol));
 
         if (existingRanks.length > 0) {
@@ -186,6 +193,11 @@ export async function POST(request: Request) {
                 updateData.redraft_rank_updated_at = now;
                 if (posRank !== null) updateData.redraft_rank_pos = posRank;
                 if (auctionValue !== null) updateData.redraft_auction_value = auctionValue;
+            } else if (category === 'ros') {
+                updateData.rank_ros_overall = overall;
+                updateData.rank_ros_tier = tier;
+                updateData.rank_ros_updated_at = now;
+                if (posRank !== null) updateData.rank_ros_pos = posRank;
             }
 
             updatePromises.push(

@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { WeeklyRankingsForm } from './WeeklyRankingsForm';
+import { TransactionsForm } from './TransactionsForm';
 
 export default function AdminPage() {
     const [file, setFile] = useState<File | null>(null);
-    const [category, setCategory] = useState<'1qb' | 'sf' | 'redraft'>('1qb');
+    const [category, setCategory] = useState<'1qb' | 'sf' | 'redraft' | 'ros'>('1qb');
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
@@ -153,6 +155,15 @@ export default function AdminPage() {
                                 />
                                 <span className="text-white">Redraft (Half-PPR)</span>
                             </label>
+                            <label className="flex items-center space-x-2 bg-zinc-800/50 px-4 py-3 min-h-[44px] min-w-[44px] rounded-lg cursor-pointer border border-zinc-700 hover:border-zinc-500 transition-colors">
+                                <input
+                                    type="radio"
+                                    checked={category === 'ros'}
+                                    onChange={() => setCategory('ros')}
+                                    className="text-blue-500 bg-zinc-900 border-zinc-700 focus:ring-blue-500"
+                                />
+                                <span className="text-white">Rest of Season</span>
+                            </label>
                         </div>
                     </div>
 
@@ -286,6 +297,12 @@ export default function AdminPage() {
 
             {/* Quick Writeup Paste */}
             <WriteupForm />
+
+            {/* Weekly QB/Flex rankings */}
+            <WeeklyRankingsForm />
+
+            {/* Transactions feed */}
+            <TransactionsForm />
         </div>
     );
 }

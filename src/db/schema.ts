@@ -107,10 +107,17 @@ export const playerValues = pgTable("player_values", {
     redraft_rank_tier: integer("redraft_rank_tier"),
     redraft_auction_value: integer("redraft_auction_value"), // Auction value out of $200 budget
 
+    // Rest-of-Season Ranks — forward-looking value for the REMAINDER of the
+    // current season (distinct from redraft, which is preseason full-season).
+    rank_ros_overall: integer("rank_ros_overall"),
+    rank_ros_pos: integer("rank_ros_pos"),
+    rank_ros_tier: integer("rank_ros_tier"),
+
     // When VFF rankings were last uploaded (per format)
     rank_1qb_updated_at: timestamp("rank_1qb_updated_at"),
     rank_sf_updated_at: timestamp("rank_sf_updated_at"),
     redraft_rank_updated_at: timestamp("redraft_rank_updated_at"),
+    rank_ros_updated_at: timestamp("rank_ros_updated_at"),
 
     updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => {
@@ -550,4 +557,48 @@ export const playerTags = pgTable("player_tags", {
     note: text("note"),
     created_at: timestamp("created_at").defaultNow(),
     updated_at: timestamp("updated_at").defaultNow(),
+});
+
+
+
+// Weekly Rankings — QB and FLEX start/sit rankings for a SPECIFIC week.
+// Disposable/weekly (re-uploaded each week), carries matchup context. Kept
+// separate from player_values (which holds durable dynasty/redraft/RoS ranks)
+// so weekly start/sit data never overwrites season-long value.
+export const weeklyRankings = pgTable("weekly_rankings", {
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
+    week: integer("week").notNull(),
+    kind: text("kind").notNull(), // 'flex' | 'qb'
+    rank: integer("rank"),                 // overall rank within the kind (1 = best)
+    position: text("position"),            // player's position (RB/WR/TE/QB) as listed
+    team: text("team"),                    // NFL team abbr
+    opponent: text("opponent"),            // this week's opponent
+    total: decimal("total", { precision: 6, scale: 2 }), // projected/total points
+    pos_matchup: integer("pos_matchup"),   // opponent's rank vs this position (1 = toughest)
+    player_name: text("player_name"),      // raw name from the CSV (for unmatched rows)
+    updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => {
+    return {
+        pk: index("pk_weekly_rankings").on(table.sleeper_id, table.week, table.kind),
+        weekKindIdx: index("idx_weekly_rankings_week_kind").on(table.week, table.kind),
+    };
+});
+
+// Player Transactions — the "N Transactions" analyst feed (buy/sell/add + the
+// writeup rationale), per week. buy/sell also mirror into player_tags so they
+// boost the portfolio recommendation engine; 'add' is contextual waiver advice
+// surfaced where the player is available. Full writeups live here.
+export const playerTransactions = pgTable("player_transactions", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "set null" }),
+    player_name: text("player_name").notNull(), // raw name (kept even if unmatched)
+    action: text("action").notNull(),           // 'buy' | 'sell' | 'add'
+    note: text("note"),                          // the analyst writeup / rationale
+    week: integer("week"),
+    created_at: timestamp("created_at").defaultNow(),
+}, (table) => {
+    return {
+        weekIdx: index("idx_player_transactions_week").on(table.week),
+        sleeperIdx: index("idx_player_transactions_sleeper").on(table.sleeper_id),
+    };
 });

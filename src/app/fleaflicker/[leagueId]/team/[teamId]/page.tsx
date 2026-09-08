@@ -1,7 +1,9 @@
-import { getFleaflickerLeague, getFleaflickerRosterSlots } from "@/lib/fleaflicker";
+import { getFleaflickerLeague, getFleaflickerRosterSlots, getFleaflickerLineup } from "@/lib/fleaflicker";
 import { getPickFantasyCalcId } from "@/lib/sleeper";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
+import { optimizeTeam } from "@/lib/weekly-rankings";
+import { LineupOptimizerCard } from "@/components/LineupOptimizerCard";
 import { db } from "@/db";
 import { players, playerValues, leagues, prospectData, prospectWriteups, playerAdvancedStats } from "@/db/schema";
 import { inArray, eq, sql, desc, and } from "drizzle-orm";
@@ -86,6 +88,21 @@ export default async function FleaflickerTeamPage({
         matchedPlayers.map(p => [normalizeName(p.full_name), p])
     );
     const playerMap = new Map(matchedPlayers.map(p => [p.sleeper_id, p]));
+
+    // Lineup optimizer (latest uploaded week). Current starters + true slot
+    // config come from the boxscore (the roster endpoint has no lineup slots).
+    const { getLatestWeek } = await import("@/lib/weekly-rankings");
+    const optWeek = await getLatestWeek();
+    const ffLineup = optWeek != null ? await getFleaflickerLineup(leagueId, parseInt(teamId), optWeek) : null;
+    const starterProIds = ffLineup?.starterProIds ?? new Set<string>();
+    const optimizerRoster = roster.players
+        .map(p => {
+            const dbP = nameToPlayerMap.get(normalizeName(p.full_name));
+            if (!dbP) return null;
+            return { sleeper_id: dbP.sleeper_id, full_name: p.full_name, position: dbP.position, is_starter: p.id ? starterProIds.has(String(p.id)) : false };
+        })
+        .filter((p): p is { sleeper_id: string; full_name: string; position: string | null; is_starter: boolean } => p !== null);
+    const lineupOpt = await optimizeTeam(optimizerRoster, ffLineup?.rosterPositions ?? null, optWeek ?? undefined);
 
     // Transform players to TeamRosterTable format
     const playersWithData = roster.players
@@ -445,6 +462,10 @@ export default async function FleaflickerTeamPage({
                     }))}
                     format={format}
                 />
+
+                <div className="mt-4">
+                    <LineupOptimizerCard opt={lineupOpt} />
+                </div>
 
                 {/* Pending Trades from Fleaflicker */}
                 <PendingTrades

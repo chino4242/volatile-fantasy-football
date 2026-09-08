@@ -11,6 +11,8 @@ import TeamRosterView from "./TeamRosterView";
 import { TeamRosterComposition } from "./TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
 import TeamHealthDashboard from "@/components/TeamHealthDashboard";
+import { LineupOptimizerCard } from "@/components/LineupOptimizerCard";
+import { optimizeTeam } from "@/lib/weekly-rankings";
 import { SavedTrades } from "@/components/SavedTrades";
 import { KeeperDecisionTool } from "@/components/KeeperDecisionTool";
 import { SleeperTradeHistory } from "@/components/SleeperTradeHistory";
@@ -399,6 +401,16 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
     const activeSources = await getActiveSources();
     const rankingsVintage = formatVintage(await getRankingsVintage(format));
 
+    // Lineup optimizer (latest uploaded week). Roster players only (exclude PICKs);
+    // starters from the Sleeper roster.starters list.
+    const starterSet = new Set(roster.starters || []);
+    const lineupOpt = await optimizeTeam(
+        enrichedPlayers
+            .filter((p: any) => p.position !== 'PICK')
+            .map((p: any) => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, is_starter: starterSet.has(p.sleeper_id) })),
+        sleeperRosterPositions,
+    );
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
             <div className="max-w-4xl mx-auto">
@@ -466,6 +478,10 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                     })}
                     format={format}
                 />
+
+                <div className="mt-4">
+                    <LineupOptimizerCard opt={lineupOpt} />
+                </div>
 
                 {keeperCount && keeperCount > 0 && (
                     <KeeperDecisionTool

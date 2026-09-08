@@ -5,7 +5,8 @@ export interface FleaflickerPlayer {
 }
 
 export interface FleaflickerRosterPlayer extends FleaflickerPlayer {
-    // Fleaflicker doesn't provide position, must merge from FantasyCalc
+    // Fleaflicker doesn't provide position, must merge from FantasyCalc.
+    // Lineup slot / starter status is NOT here — it's in the boxscore.
 }
 
 export interface FleaflickerDraftPick {
@@ -77,10 +78,12 @@ export async function getFleaflickerLeague(leagueId: string): Promise<Fleaflicke
     const rosters = await Promise.all((data.rosters || []).map(async (r: any) => {
         const teamId = r.team?.id || r.id;
         const players = (r.players || []).map((p: any) => {
+            // NOTE: the roster endpoint does NOT include lineup slot info — who is
+            // *started* comes from the boxscore (see getFleaflickerLineup).
             const player = {
                 id: p.proPlayer?.id?.toString() || '',
                 full_name: p.proPlayer?.nameFull || '',
-                team: p.proPlayer?.proTeamAbbreviation
+                team: p.proPlayer?.proTeamAbbreviation,
             };
             if (player.full_name) allPlayers.add(player.full_name);
             return player;
@@ -171,6 +174,7 @@ export async function getFleaflickerLeagueInfo(leagueId: string): Promise<Fleafl
 
 export interface RosterSlots { QB: number; RB: number; WR: number; TE: number; FLEX: number; total?: number }
 
+
 export async function getFleaflickerRosterSlots(leagueId: string): Promise<RosterSlots> {
     const cacheKey = `fleaflicker:slots:${leagueId}`;
     const cached = cache.get<RosterSlots>(cacheKey, TTL.FLEAFLICKER_LEAGUE);
@@ -253,4 +257,104 @@ export async function getFleaflickerTrades(leagueId: string, filter: 'TRADES_OWN
         console.error('Failed to fetch Fleaflicker trades:', error);
         return [];
     }
+}
+
+
+
+/**
+ * A team's CURRENT starting lineup + true slot config for a week, from the
+ * boxscore endpoint (the roster endpoint does NOT expose lineup slots). Returns
+ * the set of starting pro-player ids and the ordered roster_positions tokens.
+ *
+ * The scoreboard lists games; each game has home/away team ids matching the
+ * roster/team id. The boxscore's `lineups` has a START group whose slots carry
+ * the position eligibility and the assigned player per side.
+ */
+export async function getFleaflickerLineup(
+    leagueId: string,
+    teamId: number,
+    week: number,
+): Promise<{ starterProIds: Set<string>; rosterPositions: string[] } | null> {
+    const cacheKey = `fleaflicker:lineup:${leagueId}:${teamId}:${week}`;
+    const cached = cache.get<{ starterProIds: string[]; rosterPositions: string[] }>(cacheKey, TTL.FLEAFLICKER_ROSTERS);
+    if (cached) return { starterProIds: new Set(cached.starterProIds), rosterPositions: cached.rosterPositions };
+
+    try {
+        const sb = await fetch(`${BASE_URL}/FetchLeagueScoreboard?sport=NFL&league_id=${leagueId}&scoring_period=${week}`, { cache: 'no-store' }).then(r => r.json());
+        // Find the game containing this team, and which side it is.
+        let gameId: number | null = null;
+        let side: 'home' | 'away' | null = null;
+        for (const g of sb?.games || []) {
+            if (g.home?.id === teamId) { gameId = g.id; side = 'home'; break; }
+            if (g.away?.id === teamId) { gameId = g.id; side = 'away'; break; }
+        }
+        if (gameId == null || !side) return null;
+
+        const box = await fetch(`${BASE_URL}/FetchLeagueBoxscore?sport=NFL&league_id=${leagueId}&fantasy_game_id=${gameId}`, { cache: 'no-store' }).then(r => r.json());
+        const starterProIds = new Set<string>();
+        const rosterPositions: string[] = [];
+        for (const grp of box?.lineups || []) {
+            if (grp.group !== 'START') continue;
+            for (const slot of grp.slots || []) {
+                const elig: string[] = (slot.position?.eligibility || []).map((e: string) => e.toUpperCase());
+                rosterPositions.push(slotTokenFromEligibility(elig, slot.position?.label));
+                const pid = slot[side]?.proPlayer?.id;
+                if (pid != null) starterProIds.add(String(pid));
+            }
+        }
+        if (rosterPositions.length === 0) return null;
+        cache.set(cacheKey, { starterProIds: [...starterProIds], rosterPositions });
+        return { starterProIds, rosterPositions };
+    } catch {
+        return null;
+    }
+}
+
+/** All teams' current lineups for a week in one batch (1 scoreboard + N boxscore
+ *  calls). Returns Map<teamId → {starterProIds, rosterPositions}>. Used by the
+ *  portfolio so the roll-up's lineup alert is accurate for Fleaflicker. */
+export async function getFleaflickerWeekLineups(
+    leagueId: string,
+    week: number,
+): Promise<Map<number, { starterProIds: Set<string>; rosterPositions: string[] }>> {
+    const out = new Map<number, { starterProIds: Set<string>; rosterPositions: string[] }>();
+    try {
+        const sb = await fetch(`${BASE_URL}/FetchLeagueScoreboard?sport=NFL&league_id=${leagueId}&scoring_period=${week}`, { cache: 'no-store' }).then(r => r.json());
+        const games = sb?.games || [];
+        await Promise.all(games.map(async (g: any) => {
+            try {
+                const box = await fetch(`${BASE_URL}/FetchLeagueBoxscore?sport=NFL&league_id=${leagueId}&fantasy_game_id=${g.id}`, { cache: 'no-store' }).then(r => r.json());
+                for (const side of ['home', 'away'] as const) {
+                    const teamId = g[side]?.id;
+                    if (teamId == null) continue;
+                    const starterProIds = new Set<string>();
+                    const rosterPositions: string[] = [];
+                    for (const grp of box?.lineups || []) {
+                        if (grp.group !== 'START') continue;
+                        for (const slot of grp.slots || []) {
+                            const elig: string[] = (slot.position?.eligibility || []).map((e: string) => e.toUpperCase());
+                            rosterPositions.push(slotTokenFromEligibility(elig, slot.position?.label));
+                            const pid = slot[side]?.proPlayer?.id;
+                            if (pid != null) starterProIds.add(String(pid));
+                        }
+                    }
+                    if (rosterPositions.length > 0) out.set(teamId, { starterProIds, rosterPositions });
+                }
+            } catch { /* skip this game */ }
+        }));
+    } catch { /* no scoreboard */ }
+    return out;
+}
+
+/** Map a Fleaflicker slot's eligibility set → an optimizer roster_positions token. */
+function slotTokenFromEligibility(elig: string[], label?: string): string {
+    // Fleaflicker's flex eligibility often includes K; the optimizer's FLEX is
+    // RB/WR/TE — K in a flex is rare in practice, so treat multi-eligibility
+    // (non-QB) as FLEX, QB-inclusive as SUPER_FLEX.
+    if (elig.length <= 1) return (label || elig[0] || 'BN').toUpperCase();
+    const set = new Set(elig);
+    if (set.has('QB')) return 'SUPER_FLEX';
+    if (set.has('WR') && set.has('TE') && !set.has('RB')) return 'WR/TE';
+    if (set.has('RB') && set.has('WR') && !set.has('TE')) return 'WR/RB';
+    return 'FLEX';
 }

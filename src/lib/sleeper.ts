@@ -371,3 +371,23 @@ export async function getUserLeagues(sleeperUserId: string, season?: number): Pr
     if (!res.ok) return [];
     return res.json();
 }
+
+
+
+/** Fetch a Sleeper league's starting-slot config (roster_positions array, e.g.
+ *  ["QB","RB","RB","WR","WR","TE","FLEX","BN",...]). Used by the lineup optimizer. */
+export async function getSleeperRosterPositions(leagueId: string): Promise<string[] | null> {
+    const cacheKey = `sleeper:roster_positions:${leagueId}`;
+    const cached = cache.get<string[]>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+    try {
+        const res = await fetch(`${BASE_URL}/league/${leagueId}`, { cache: 'no-store' });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const rp = Array.isArray(data?.roster_positions) ? (data.roster_positions as string[]) : null;
+        if (rp) cache.set(cacheKey, rp);
+        return rp;
+    } catch {
+        return null;
+    }
+}

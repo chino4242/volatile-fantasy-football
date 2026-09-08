@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { players, playerValues, playerTags } from "@/db/schema";
+import { players, playerValues, playerTags, playerTransactions } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { cleanseName } from "@/lib/nameUtils";
-import { getLeagueData } from "@/lib/sleeper";
-import { getFleaflickerLeague } from "@/lib/fleaflicker";
+import { getLeagueData, getSleeperRosterPositions } from "@/lib/sleeper";
+import { getFleaflickerLeague, getFleaflickerWeekLineups } from "@/lib/fleaflicker";
 import { getDbLeagueData, type DbPlatform } from "@/lib/db-league-data";
+import { getWeeklyRanks, rankForPosition } from "@/lib/weekly-rankings";
 import {
     type PortfolioLeague,
     type PortfolioPlayer,
@@ -53,6 +54,7 @@ export async function GET(request: NextRequest) {
         }
 
         await stampTags(result);
+        await stampWeekly(result);
         return NextResponse.json({ league: result });
     } catch (err) {
         console.error("[portfolio/league] error", err);
@@ -69,6 +71,7 @@ async function buildSleeper(
 ): Promise<PortfolioLeague> {
     const cols = formatColumns(format, leagueType);
     const { users, rosters } = await getLeagueData(leagueId);
+    const rosterPositions = await getSleeperRosterPositions(leagueId);
 
     const rosteredIds = [...new Set(rosters.flatMap(r => r.players || []))];
     const valueRows = await selectValueRows([...rosteredIds]);
@@ -90,7 +93,7 @@ async function buildSleeper(
 
     const freeAgents = await freeAgentSweep(new Set(rosteredIds), cols);
 
-    return { platform: "sleeper", leagueId, name: name || "Sleeper League", format, leagueType, teams, freeAgents };
+    return { platform: "sleeper", leagueId, name: name || "Sleeper League", format, leagueType, teams, freeAgents, rosterPositions };
 }
 
 // ── Fleaflicker: name-only players → bridge to DB by cleanseName ──────────────
@@ -101,11 +104,15 @@ async function buildFleaflicker(
     name?: string,
 ): Promise<PortfolioLeague> {
     const cols = formatColumns(format, leagueType);
-    const { rosters } = await getFleaflickerLeague(leagueId);
+    const { getLatestWeek } = await import("@/lib/weekly-rankings");
+    const optWeek = await getLatestWeek();
+    const [{ rosters }, lineupsByTeam] = await Promise.all([
+        getFleaflickerLeague(leagueId),
+        optWeek != null ? getFleaflickerWeekLineups(leagueId, optWeek) : Promise.resolve(new Map()),
+    ]);
 
     // Bridge names → sleeper_id via the players table.
     const allNames = [...new Set(rosters.flatMap(r => r.players.map(p => p.full_name)).filter(Boolean))];
-    const nameKeys = allNames.map(cleanseName);
     // Pull every player row once and index by cleansed name (dataset is small enough;
     // matches the pattern the existing Fleaflicker page uses).
     const allPlayers = await db.select({ sleeper_id: players.sleeper_id, full_name: players.full_name }).from(players);
@@ -122,13 +129,19 @@ async function buildFleaflicker(
     const valueRows = await selectValueRows([...rosteredSleeperIds]);
     const byId = new Map(valueRows.map(r => [String(r.sleeper_id), r]));
 
+    // Use the first team's slot config as the league's (all teams share it).
+    let rosterPositions: string[] | null = null;
+    for (const lu of lineupsByTeam.values()) { rosterPositions = lu.rosterPositions; break; }
+
     const teams = rosters.map(r => {
+        const lineup = lineupsByTeam.get(r.id);
+        const starterProIds = lineup?.starterProIds ?? new Set<string>();
         const teamPlayers: PortfolioPlayer[] = r.players
             .map(p => {
                 const sid = nameToSleeper.get(p.full_name);
                 const row = sid ? byId.get(sid) : undefined;
-                // Fleaflicker roster API here doesn't flag starters → false for now.
-                return row ? toPortfolioPlayer(row, cols, false) : null;
+                const isStarter = p.id ? starterProIds.has(String(p.id)) : false;
+                return row ? toPortfolioPlayer(row, cols, isStarter) : null;
             })
             .filter((p): p is PortfolioPlayer => p !== null);
         return { rosterId: String(r.id), ownerName: r.owners?.[0]?.display_name || `Team ${r.id}`, players: teamPlayers };
@@ -136,7 +149,7 @@ async function buildFleaflicker(
 
     const freeAgents = await freeAgentSweep(rosteredSleeperIds, cols);
 
-    return { platform: "fleaflicker", leagueId, name: name || "Fleaflicker League", format, leagueType, teams, freeAgents };
+    return { platform: "fleaflicker", leagueId, name: name || "Fleaflicker League", format, leagueType, teams, freeAgents, rosterPositions };
 }
 
 // ── Yahoo / MyFFPC: reuse the DB adapter, map DbLeaguePlayer → PortfolioPlayer ─
@@ -172,19 +185,53 @@ async function buildDb(
     }));
     const freeAgents = data.freeAgents.map(p => map(p));
 
-    return { platform, leagueId, name: data.name, format: data.format, leagueType, teams, freeAgents };
+    return { platform, leagueId, name: data.name, format: data.format, leagueType, teams, freeAgents, rosterPositions: data.rosterPositions };
 }
 
 // ── Shared DB helpers ─────────────────────────────────────────────────────────
 
-/** Load Chino's buy/sell tags and stamp them onto every player in the league
- *  (rosters + free agents), so feature R can surface tagged buys. */
+/** Attach this week's optimizer signal (rank/total/pos_matchup) to every player,
+ *  so the client can run the pure lineup optimizer without another round-trip. */
+async function stampWeekly(league: PortfolioLeague): Promise<void> {
+    const ids = [
+        ...league.teams.flatMap(t => t.players.map(p => p.sleeper_id)),
+        ...league.freeAgents.map(p => p.sleeper_id),
+    ];
+    const { week, byId } = await getWeeklyRanks([...new Set(ids)]);
+    league.weeklyWeek = week;
+    if (week == null) return;
+    const stamp = (p: PortfolioPlayer) => {
+        const info = rankForPosition(p.position, byId.get(p.sleeper_id));
+        p.weeklyRank = info.rank;
+        p.weeklyTotal = info.total;
+        p.weeklyPosMatchup = info.posMatchup;
+    };
+    for (const t of league.teams) for (const p of t.players) stamp(p);
+    for (const p of league.freeAgents) stamp(p);
+}
+
+/** Load Chino's buy/sell tags + the analyst transactions feed and stamp both
+ *  onto every player in the league (rosters + free agents), so feature R can
+ *  surface tagged buys and 'add' recommendations with their rationale. */
 async function stampTags(league: PortfolioLeague): Promise<void> {
-    const tags = await db.select({ sleeper_id: playerTags.sleeper_id, tag: playerTags.tag }).from(playerTags);
-    if (tags.length === 0) return;
+    const [tags, txns] = await Promise.all([
+        db.select({ sleeper_id: playerTags.sleeper_id, tag: playerTags.tag }).from(playerTags),
+        db.select({ sleeper_id: playerTransactions.sleeper_id, action: playerTransactions.action, note: playerTransactions.note }).from(playerTransactions),
+    ]);
     const tagBy = new Map(tags.map(t => [t.sleeper_id, t.tag as 'buy' | 'sell']));
-    for (const team of league.teams) for (const p of team.players) p.tag = tagBy.get(p.sleeper_id) ?? null;
-    for (const p of league.freeAgents) p.tag = tagBy.get(p.sleeper_id) ?? null;
+    // Most recent transaction per player wins (query returns insertion order;
+    // last one overwrites — good enough for the current single-feed cadence).
+    const txnBy = new Map<string, { action: 'buy' | 'sell' | 'add'; note: string | null }>();
+    for (const t of txns) if (t.sleeper_id) txnBy.set(t.sleeper_id, { action: t.action as 'buy' | 'sell' | 'add', note: t.note });
+
+    const stamp = (p: PortfolioPlayer) => {
+        p.tag = tagBy.get(p.sleeper_id) ?? null;
+        const tx = txnBy.get(p.sleeper_id);
+        p.txnAction = tx?.action ?? null;
+        p.txnNote = tx?.note ?? null;
+    };
+    for (const team of league.teams) for (const p of team.players) stamp(p);
+    for (const p of league.freeAgents) stamp(p);
 }
 
 /** Select players+values rows for a set of sleeper ids (all format columns; the

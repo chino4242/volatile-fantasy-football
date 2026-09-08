@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2, TrendingUp, TrendingDown, Minus, ArrowRight } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Minus, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/hooks/useUser';
 import { useMyTeams } from '@/hooks/useMyTeams';
 import { TagManager } from './TagManager';
@@ -15,6 +15,7 @@ import {
     weakestStarter,
     undervaluedFreeAgents,
     teamMarketValue,
+    optimizePortfolioTeam,
 } from '@/lib/portfolio';
 
 interface LoadedLeague {
@@ -254,6 +255,8 @@ function LeagueInsights({
     const label = labelTeam(myTeam, data);
     const weak = weakestStarter(myTeam);
     const st = STATE_STYLE[label.state];
+    const lineup = optimizePortfolioTeam(data, myTeam);
+    const lineupSwaps = lineup && !lineup.isOptimal ? lineup.swaps.length : 0;
 
     return (
         <div className="space-y-3">
@@ -265,6 +268,16 @@ function LeagueInsights({
                 <button onClick={() => onPickMyTeam('')} className="text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">change</button>
             </div>
             <div className="text-xs text-zinc-500">{label.reason}{label.coreAvgAge != null ? ` · core age ${label.coreAvgAge.toFixed(1)}` : ''}</div>
+
+            {lineupSwaps > 0 && (
+                <div className="flex items-start gap-1.5 text-xs bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 rounded-md px-2 py-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                    <span>
+                        Lineup: {lineupSwaps} suggested change{lineupSwaps > 1 ? 's' : ''} for week {data.weeklyWeek}.{' '}
+                        {lineup!.swaps.slice(0, 2).map(s => `Start ${s.startPlayer.full_name}`).join('; ')}.
+                    </span>
+                </div>
+            )}
 
             <div>
                 <div className="text-xs font-medium text-zinc-500 mb-1">Weakest starter (upgrade target)</div>
@@ -288,18 +301,22 @@ function UndervaluedList({ fas }: { fas: ReturnType<typeof undervaluedFreeAgents
             {fas.length === 0 ? (
                 <div className="text-sm text-zinc-400">No standout edges right now.</div>
             ) : (
-                <ul className="space-y-0.5">
-                    {fas.map(({ player, rankEdge, tagged }) => (
-                        <li key={player.sleeper_id} className="text-sm text-zinc-800 dark:text-zinc-200 flex items-center justify-between gap-2">
-                            <span className="truncate">
-                                {tagged && <span className="text-[10px] font-bold text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 rounded px-1 mr-1">BUY</span>}
-                                {player.full_name} <span className="text-zinc-400">({player.position})</span>
-                            </span>
-                            {rankEdge != null ? (
-                                <span className="text-xs text-green-600 dark:text-green-400 flex-shrink-0" title={`Your rank ${player.myRank} vs market ${player.marketRank}`}>+{rankEdge} edge</span>
-                            ) : (
-                                <span className="text-xs text-zinc-400 flex-shrink-0">tagged</span>
-                            )}
+                <ul className="space-y-1">
+                    {fas.map(({ player, rankEdge, reason, note }) => (
+                        <li key={player.sleeper_id} className="text-sm text-zinc-800 dark:text-zinc-200">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="truncate">
+                                    {reason === 'buy' && <span className="text-[10px] font-bold text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 rounded px-1 mr-1">BUY</span>}
+                                    {reason === 'add' && <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 rounded px-1 mr-1">ADD</span>}
+                                    {player.full_name} <span className="text-zinc-400">({player.position})</span>
+                                </span>
+                                {rankEdge != null ? (
+                                    <span className="text-xs text-green-600 dark:text-green-400 flex-shrink-0" title={`Your rank ${player.myRank} vs market ${player.marketRank}`}>+{rankEdge} edge</span>
+                                ) : (
+                                    <span className="text-xs text-zinc-400 flex-shrink-0">{reason === 'add' ? 'analyst add' : 'tagged'}</span>
+                                )}
+                            </div>
+                            {note && <div className="text-[11px] text-zinc-400 mt-0.5 line-clamp-2">{note}</div>}
                         </li>
                     ))}
                 </ul>

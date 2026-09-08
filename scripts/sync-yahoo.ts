@@ -48,6 +48,33 @@ function toRosterPositions(rp: { position: string; count: number }[]): string[] 
     return out;
 }
 
+/**
+ * Derive the league's starting slots from the ACTUAL starter slot labels on each
+ * team's roster page (the settings-page text scrape is unreliable). Yahoo's
+ * data-pos labels (QB/RB/WR/TE/W-R-T/Q/DEF/K) ARE the starting slots. We take the
+ * most common per-team starter-slot multiset across all teams (robust to a team
+ * with an empty/illegal slot). Returns [] if no slots found.
+ */
+function deriveStartPositionsFromTeams(teams: { players: { is_starter: boolean; slot: string | null }[] }[]): string[] {
+    const signatures = new Map<string, { slots: string[]; count: number }>();
+    for (const t of teams) {
+        const slots = t.players
+            .filter(p => p.is_starter && p.slot && !['BN', 'IR', 'NA'].includes(p.slot.toUpperCase()))
+            .map(p => p.slot!.toUpperCase())
+            .sort();
+        if (slots.length === 0) continue;
+        const sig = slots.join('|');
+        const entry = signatures.get(sig) || { slots, count: 0 };
+        entry.count++;
+        signatures.set(sig, entry);
+    }
+    if (signatures.size === 0) return [];
+    // Most common signature wins.
+    let best: { slots: string[]; count: number } | null = null;
+    for (const e of signatures.values()) if (!best || e.count > best.count) best = e;
+    return best ? best.slots : [];
+}
+
 /** Infer the app's scoring_format ('1qb' | 'sf') from starting QB-eligible slots. */
 function inferFormat(numQbStarters: number): '1qb' | 'sf' {
     return numQbStarters >= 2 ? 'sf' : '1qb';
@@ -109,6 +136,15 @@ export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: st
     const appLeagueId = yl.league_key;
     const format = inferFormat(yl.settings.num_qb_starters);
 
+    // Prefer the ACTUAL starting slots from the scraped rosters (data-pos labels);
+    // fall back to the settings-page scrape only if that yielded nothing.
+    const derivedStart = deriveStartPositionsFromTeams(yl.teams);
+    const startPositions = derivedStart.length > 0 ? derivedStart : toStartPositions(yl.settings.roster_positions);
+    // roster_positions = starting slots + bench slots. We don't reliably know the
+    // bench count from the page, and the optimizer only needs the STARTING slots,
+    // so store the starting slots (bench is implicit / not needed for optimization).
+    const rosterPositions = derivedStart.length > 0 ? derivedStart : toRosterPositions(yl.settings.roster_positions);
+
     // 1. Upsert the league row.
     await db
         .insert(leagues)
@@ -119,8 +155,8 @@ export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: st
             league_type: 'redraft',
             name: yl.name,
             total_rosters: yl.num_teams,
-            start_positions: toStartPositions(yl.settings.roster_positions),
-            roster_positions: toRosterPositions(yl.settings.roster_positions),
+            start_positions: startPositions,
+            roster_positions: rosterPositions,
             last_synced_at: new Date(),
         })
         .onConflictDoUpdate({
@@ -129,8 +165,8 @@ export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: st
                 name: yl.name,
                 scoring_format: format,
                 total_rosters: yl.num_teams,
-                start_positions: toStartPositions(yl.settings.roster_positions),
-                roster_positions: toRosterPositions(yl.settings.roster_positions),
+                start_positions: startPositions,
+                roster_positions: rosterPositions,
                 last_synced_at: new Date(),
             },
         });

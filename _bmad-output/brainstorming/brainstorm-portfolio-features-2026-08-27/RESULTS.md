@@ -127,3 +127,114 @@ market 360 = +179 edge). Not yet committed to git.
 
 **Next up (Phase 2 — the moat):** surplus/need matrix (M) → trade proposer
 (dual-value O + scarcity P). See build order above.
+
+
+
+---
+
+## Ranking model (clarified 2026-08-27) — drives ingestion design
+
+Four lenses across three time-scales:
+- **Dynasty (Chino's board)** = analyst opinion on long-term value → Track A player_values.rank_1qb/sf_* (EXISTS).
+- **FantasyCalc dynasty value** = MARKET sentiment → fc_value_* (EXISTS). Dynasty-rank vs FC = the dual-value gap the engine already uses.
+- **Rest-of-Season (RoS)** = how valuable a player is for the REST OF THIS SEASON. Durable-ish, seasonal refresh. → extend Track A with new columns (rank_ros_*). Read by recommendations.
+- **QB (weekly)** + **Flex (weekly)** = for a SPECIFIC WEEK, for START/SIT decisions. Disposable, re-uploaded weekly, carries matchup context (opponent, total, pos-matchup). → NEW week-keyed table `weekly_rankings` (sleeper_id, week, kind 'flex'|'qb', rank, opponent, total, pos_matchup). NOT player_values columns (would lose week history + mix durable vs weekly).
+
+Flex sample columns: Rank | FLEX | Team | Opponent | Total | Pos | Matchup(pos-rank-vs-opp).
+Decision: weekly rankings power the (Phase-3) lineup optimizer + start/sit; RoS + dynasty feed portfolio/trade recommendations.
+
+## Transactions feed (buy/sell/add + writeups) — clarified
+Parser modeled on myffpc-parser (typed result + cleanseName match + collect-unmatched).
+Actions: buy / sell (portfolio-wide directives) + add (contextual waiver pickup). Store note (the writeup rationale) + week. New table player_transactions. buy tags already boost the FA sweep via player_tags — reconcile: transactions feed can WRITE player_tags for buy/sell AND keep the full writeup/add records in player_transactions.
+
+
+
+---
+
+## Ingestion features — SHIPPED (2026-08-27)
+
+Three admin ingestion features, all build-verified + parsers unit-tested on real samples:
+
+**A. Rest-of-Season ranking** — extends Track A. New player_values columns
+rank_ros_overall/pos/tier + rank_ros_updated_at; 'ros' category in
+/api/admin/upload-rankings; 'Rest of Season' radio on /admin; ros vintage case.
+
+**B. Weekly QB/Flex rankings** — new week-keyed weekly_rankings table + POST
+/api/admin/upload-weekly (CSV; kind flex|qb + week from form). Parses Rank/
+Player/Team/Opponent/Total/Pos/Matchup, matches by cleanseName, replaces the
+(week,kind) set on each upload. WeeklyRankingsForm on /admin. Foundation for the
+Phase-3 lineup optimizer / start-sit.
+
+**C. Transactions feed** — src/lib/transactions-parser.ts (splits Add/Buy/Sell
+headers + captures rationale; "the Dallas Cowboys Defense"→DAL DST) + POST
+/api/admin/upload-transactions (matches skill via cleanseName, DEF via
+DEF_{ABBR}) → new player_transactions table (buy/sell/add + note + week).
+buy/sell ALSO upsert player_tags → boost the portfolio FA sweep. TransactionsForm
+paste box on /admin.
+
+**Read wiring:** portfolio route now stamps txnAction/txnNote; undervalued-FA
+sweep surfaces buy(tag or feed)/add/edge with a reason badge + analyst note,
+explicit directives first. So a pasted "Add X" shows up as an ADD recommendation
+(with the writeup) on the league where X is available, and "Buy/Sell X" propagate
+portfolio-wide via tags.
+
+Tables applied via scripts/create-ingestion-tables.ts (drizzle-kit push has a
+pre-existing CHECK introspection bug on this DB). Parsers verified: transactions
+7/7, weekly CSV 5/5. Not yet committed.
+
+Note: RoS columns are populated + vintaged but not yet READ by the recommendation
+engine — wire rank_ros_* into portfolio/db-league-data when you want RoS to drive
+in-season recommendations.
+
+
+
+---
+
+## Lineup optimizer (Phase 3) — design locked 2026-08-27
+
+CRITICAL semantics (user-confirmed):
+- weekly_rankings.total = NFL TEAM implied total (Vegas), SAME for every player on
+  an NFL team (Gibbs & ARSB both 28.25 = DET). NOT a player projection. Do NOT sum
+  it across a lineup.
+- The RANK is the projection signal. Optimal lineup = fill slots by best (lowest)
+  weekly rank per eligible position (flex rank for RB/WR/TE/flex; qb rank for QB/SF).
+- total + pos_matchup are TIEBREAKERS only — when ranks are close, prefer higher team
+  total / softer positional matchup. total is NOT a per-player score.
+- Output = rank-based lineup MISTAKES ("starting flex #45 over bench flex #12"), not a
+  point differential. Players absent from the week's upload = unranked → treat as
+  bench/last (don't fabricate a projection).
+
+Scope: engine must be PLATFORM-AGNOSTIC. v1 = DB (Yahoo/MyFFPC: have start_positions +
+is_starter). v2 (NOT optional — Sleeper/Fleaflicker are the MOST important leagues):
+extend via data-plumbing (Sleeper starters[]+roster_positions from API; Fleaflicker
+starters+slots). Surfaces: (1) team page — optimal lineup + suggested swaps; (2)
+portfolio roll-up — ALERT on sub-optimal lineups to review. Week = latest uploaded.
+
+
+
+---
+
+## Lineup optimizer — SHIPPED all 4 platforms (2026-08-27)
+
+Engine (src/lib/lineup-optimizer.ts, platform-agnostic, 10 vitest tests):
+rank-driven slot fill (most-restrictive slots first so scarce QB isn't eaten by
+superflex); total + posMatchup tiebreakers only; optimizeAndDiff → swaps vs
+current starters with rankGain. src/lib/weekly-rankings.ts: latest-week lookup +
+optimizeTeam glue. Verified on real MyFFPC team (found 2 real FLEX swaps).
+
+Surfaces:
+- Team pages (all 4): LineupOptimizerCard — suggested swaps + optimal lineup +
+  'already optimal'/'no weekly data' states. Wired on db-league, /league
+  (Sleeper: roster.starters + roster_positions from league API), /fleaflicker
+  (is_starter from group==='START' + roster_positions from rosterRequirements).
+- Portfolio roll-up: amber alert per my team ('N suggested changes for week W')
+  via pure optimizePortfolioTeam() on the weekly ranks attached by the route.
+
+Platform starter/slot sourcing:
+- DB (Yahoo/MyFFPC): is_starter + start_positions from tables (verified).
+- Sleeper: starters[] + /league/{id}.roster_positions (documented, solid).
+- Fleaflicker: is_starter from roster entry group==='START' + rosterRequirements
+  → token array. NOTE: FF group field inferred, not live-verified — if swaps look
+  wrong or everyone shows benched, inspect the real FetchLeagueRosters JSON.
+
+Verify: next build clean; full unit suite 73/73. Not yet committed.

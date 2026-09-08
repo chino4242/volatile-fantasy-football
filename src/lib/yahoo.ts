@@ -32,6 +32,10 @@ export interface YahooPlayerLite {
     position: string | null; // QB/RB/WR/TE/K/DEF
     team: string | null;     // NFL team abbr
     is_starter: boolean;
+    /** The lineup SLOT this player occupies (Yahoo data-pos label): QB/RB/WR/TE/
+     *  W-R-T (flex)/Q (superflex)/DEF/K/BN/IR. For starters this is the real
+     *  starting-slot; used to reconstruct the league's start_positions. */
+    slot: string | null;
 }
 
 export interface YahooTeam {
@@ -170,6 +174,7 @@ function parsePlayers($: CheerioAPI): YahooPlayerLite[] {
             position: normalizePosition(rawPos),
             team,
             is_starter: !isBench,
+            slot: posLabel,
         });
     });
     return out;

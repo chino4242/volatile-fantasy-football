@@ -28,7 +28,7 @@ export function SuggestedTransactions({
     rosterConfig,
     actualCoreCount,
 }: SuggestedTransactionsProps) {
-    const [expanded, setExpanded] = useState(true);
+    const [expanded, setExpanded] = useState(false);
     const [posFilter, setPosFilter] = useState<string>('ALL');
 
     const suggestions = useMemo<TransactionSuggestion[]>(() => {

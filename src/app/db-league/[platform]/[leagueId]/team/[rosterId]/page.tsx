@@ -4,6 +4,8 @@ import { getDbLeagueData, type DbPlatform } from "@/lib/db-league-data";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { buildRosterConfig } from "@/lib/transaction-suggestions";
+import { optimizeTeam } from "@/lib/weekly-rankings";
+import { LineupOptimizerCard } from "@/components/LineupOptimizerCard";
 import TeamRosterView from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterView";
 import { TeamRosterComposition } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
@@ -60,6 +62,12 @@ export default async function DbTeamPage({ params }: PageProps) {
     const activeSources = await getActiveSources();
     const rankingsVintage = formatVintage(await getRankingsVintage(format));
 
+    // Lineup optimizer (latest uploaded week).
+    const lineupOpt = await optimizeTeam(
+        myPlayers.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, is_starter: p.is_starter })),
+        data.rosterPositions,
+    );
+
     const label = platform === "yahoo" ? "Yahoo" : "MyFFPC";
 
     return (
@@ -106,6 +114,10 @@ export default async function DbTeamPage({ params }: PageProps) {
                     allTeams={data.teams.map(t => ({ rosterId: t.numericId, ownerName: t.ownerName, players: t.players as any[] }))}
                     format={format}
                 />
+
+                <div className="mt-4">
+                    <LineupOptimizerCard opt={lineupOpt} />
+                </div>
 
                 <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                     <TeamRosterComposition players={myPlayers as any[]} format={format} customRankingsMap={rankingsMap} />
