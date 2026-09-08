@@ -391,3 +391,40 @@ export async function getSleeperRosterPositions(leagueId: string): Promise<strin
         return null;
     }
 }
+
+
+
+export interface SleeperMatchupEntry {
+    roster_id: number;
+    matchup_id: number | null;
+    starters: string[]; // sleeper_ids; DEF appears as bare team abbr (e.g. "DEN")
+}
+
+/** Fetch a week's matchups. Entries sharing a matchup_id are head-to-head. Each
+ *  entry's `starters[]` is that roster's starting lineup for the week. */
+export async function getSleeperMatchups(leagueId: string, week: number): Promise<SleeperMatchupEntry[]> {
+    const cacheKey = `sleeper:matchups:${leagueId}:${week}`;
+    const cached = cache.get<SleeperMatchupEntry[]>(cacheKey, TTL.LEAGUE_DATA);
+    if (cached) return cached;
+    try {
+        const res = await fetch(`${BASE_URL}/league/${leagueId}/matchups/${week}`, { cache: 'no-store' });
+        if (!res.ok) return [];
+        const data = await res.json();
+        const entries: SleeperMatchupEntry[] = (Array.isArray(data) ? data : []).map((e: any) => ({
+            roster_id: e.roster_id,
+            matchup_id: e.matchup_id ?? null,
+            starters: Array.isArray(e.starters) ? e.starters : [],
+        }));
+        cache.set(cacheKey, entries);
+        return entries;
+    } catch {
+        return [];
+    }
+}
+
+/** Normalize a Sleeper starter id to match our players table. Sleeper returns
+ *  team defenses as the bare NFL abbr (e.g. "DEN"); we store them as DEF_{ABBR}. */
+export function normalizeSleeperStarterId(id: string): string {
+    if (/^[A-Z]{2,4}$/.test(id)) return `DEF_${id}`; // team-abbr defense
+    return id;
+}

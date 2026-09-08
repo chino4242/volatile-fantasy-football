@@ -139,6 +139,7 @@ export default function PortfolioPage() {
                 <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-100">Portfolio</h1>
                 <p className="text-sm text-zinc-500 mt-1 mb-8">
                     Cross-league insights — team strength, upgrade targets, and undervalued free agents across all your leagues.
+                    {' '}<Link href="/portfolio/game-day" className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">Game Day rooting guide →</Link>
                 </p>
 
                 <TagManager onChange={handleTagsChanged} />

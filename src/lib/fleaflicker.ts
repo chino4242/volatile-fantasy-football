@@ -346,6 +346,51 @@ export async function getFleaflickerWeekLineups(
     return out;
 }
 
+/** A week's head-to-head matchups with each side's STARTER player names (for
+ *  name-bridging to sleeper_id). Returns one entry per game with both teams'
+ *  ids + names + starter names. Used by the rooting guide. */
+export interface FleaflickerMatchup {
+    homeTeamId: number;
+    awayTeamId: number;
+    homeTeamName: string;
+    awayTeamName: string;
+    homeStarterNames: string[];
+    awayStarterNames: string[];
+}
+
+export async function getFleaflickerWeekMatchups(leagueId: string, week: number): Promise<FleaflickerMatchup[]> {
+    const out: FleaflickerMatchup[] = [];
+    try {
+        const sb = await fetch(`${BASE_URL}/FetchLeagueScoreboard?sport=NFL&league_id=${leagueId}&scoring_period=${week}`, { cache: 'no-store' }).then(r => r.json());
+        const games = sb?.games || [];
+        await Promise.all(games.map(async (g: any) => {
+            try {
+                const box = await fetch(`${BASE_URL}/FetchLeagueBoxscore?sport=NFL&league_id=${leagueId}&fantasy_game_id=${g.id}`, { cache: 'no-store' }).then(r => r.json());
+                const homeStarterNames: string[] = [];
+                const awayStarterNames: string[] = [];
+                for (const grp of box?.lineups || []) {
+                    if (grp.group !== 'START') continue;
+                    for (const slot of grp.slots || []) {
+                        const hn = slot.home?.proPlayer?.nameFull;
+                        const an = slot.away?.proPlayer?.nameFull;
+                        if (hn) homeStarterNames.push(hn);
+                        if (an) awayStarterNames.push(an);
+                    }
+                }
+                out.push({
+                    homeTeamId: g.home?.id,
+                    awayTeamId: g.away?.id,
+                    homeTeamName: g.home?.name || `Team ${g.home?.id}`,
+                    awayTeamName: g.away?.name || `Team ${g.away?.id}`,
+                    homeStarterNames,
+                    awayStarterNames,
+                });
+            } catch { /* skip this game */ }
+        }));
+    } catch { /* no scoreboard */ }
+    return out;
+}
+
 /** Map a Fleaflicker slot's eligibility set → an optimizer roster_positions token. */
 function slotTokenFromEligibility(elig: string[], label?: string): string {
     // Fleaflicker's flex eligibility often includes K; the optimizer's FLEX is
