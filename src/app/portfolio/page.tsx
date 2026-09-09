@@ -128,6 +128,25 @@ export default function PortfolioPage() {
     // When the buy/sell board changes, re-fetch all leagues so tagged buys surface.
     const handleTagsChanged = useCallback(() => setReloadKey(k => k + 1), []);
 
+    // Fleaflicker pending/incoming trades → feed the Action Center "Trades" group.
+    const [pendingTrades, setPendingTrades] = useState<Record<string, { id: string; headline: string; detail?: string }[]>>({});
+    useEffect(() => {
+        let cancelled = false;
+        for (const l of Object.values(leagues)) {
+            if (!l.data || l.ref.platform !== 'fleaflicker') continue;
+            const key = `${l.ref.platform}:${l.ref.leagueId}`;
+            const myTeamId = getMyTeam(l.ref.platform, l.ref.leagueId);
+            if (!myTeamId) continue;
+            const qs = new URLSearchParams({ platform: 'fleaflicker', leagueId: l.ref.leagueId, myTeamId });
+            fetch(`/api/portfolio/pending-trades?${qs.toString()}`)
+                .then(r => r.ok ? r.json() : { trades: [] })
+                .then(json => { if (!cancelled) setPendingTrades(prev => ({ ...prev, [key]: json.trades || [] })); })
+                .catch(() => { /* ignore — trades are best-effort */ });
+        }
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [leagues, getMyTeam]);
+
     const loading = authLoading || enumerating || !myTeamsLoaded;
     const loaded = Object.values(leagues);
     const anyData = loaded.some(l => l.data);
@@ -141,10 +160,11 @@ export default function PortfolioPage() {
             .map(l => ({
                 league: l.data!,
                 myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
+                pendingTrades: pendingTrades[`${l.ref.platform}:${l.ref.leagueId}`],
             }));
         if (inputs.length === 0) return null;
         return buildActionCenter(inputs, { seasonMode });
-    }, [loaded, getMyTeam, seasonMode]);
+    }, [loaded, getMyTeam, seasonMode, pendingTrades]);
 
     // Current NFL week — from any loaded league that carries weekly rankings.
     const currentWeek = useMemo(() => {
@@ -220,7 +240,7 @@ export default function PortfolioPage() {
                     <div className="flex items-center gap-2 text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading your leagues…</div>
                 )}
 
-                {!loading && anyData && seasonMode === 'in-season' && (
+                {!loading && anyData && (
                     <ActionCenter model={actionCenter} currentWeek={currentWeek} />
                 )}
 

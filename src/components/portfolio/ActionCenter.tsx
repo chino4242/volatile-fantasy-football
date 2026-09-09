@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRightLeft, PlusCircle, ArrowUpRight, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
-import type { ActionCenter as ActionCenterModel, ActionTypeGroup, ActionItem, ActionKind } from '@/lib/action-center';
+import type { ActionCenter as ActionCenterModel, ActionTypeGroup, TeamActionGroup, ActionItem, ActionKind, TierBand } from '@/lib/action-center';
 import { useLineupAcks } from '@/hooks/useLineupAcks';
 import { ackKeyFor } from '@/lib/lineup-acks';
 
@@ -78,6 +78,23 @@ export function ActionCenter({ model, currentWeek }: { model: ActionCenterModel 
         );
     }
 
+    // Off-season → group by TEAM (strengthen-moves per team).
+    if (model.seasonMode === 'off-season') {
+        if (!model.byTeam || model.byTeam.length === 0) return null;
+        return (
+            <div className="mb-8">
+                <div className="flex items-center gap-2 mb-3">
+                    <span className="text-base font-bold text-zinc-900 dark:text-zinc-100">🎯 Moves to strengthen your teams</span>
+                    <span className="text-xs text-zinc-500">grouped by team</span>
+                </div>
+                <div className="space-y-3.5">
+                    {model.byTeam.map(tg => <TeamGroupCard key={`${tg.platform}:${tg.leagueId}`} group={tg} />)}
+                </div>
+                <ManualEvaluateTradeRow />
+            </div>
+        );
+    }
+
     // In-season → byType. (Off-season byTeam lands in Story 2.5.)
     if (!model.byType || filteredByType.length === 0) return null;
 
@@ -99,6 +116,47 @@ export function ActionCenter({ model, currentWeek }: { model: ActionCenterModel 
                     <ActionGroupCard key={group.kind} group={group} onAck={ack} />
                 ))}
             </div>
+            <ManualEvaluateTradeRow />
+        </div>
+    );
+}
+
+const TIER_PILL: Record<TierBand, string> = {
+    top: 'text-green-700 bg-green-100 dark:text-green-300 dark:bg-green-900/40',
+    middle: 'text-zinc-600 bg-zinc-100 dark:text-zinc-300 dark:bg-zinc-800',
+    lower: 'text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+};
+
+/** Off-season: one team's strengthen-moves as a sub-card. */
+function TeamGroupCard({ group }: { group: TeamActionGroup }) {
+    return (
+        <div className="rounded-xl bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 dark:ring-white/5 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-100 dark:border-zinc-800">
+                <span className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 truncate">{group.teamName}</span>
+                <span className={`inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full ${TIER_PILL[group.tier]}`}>{group.tierLabel}</span>
+                {group.weakness && <span className="ml-auto text-xs text-zinc-500 truncate">weakness: {group.weakness}</span>}
+            </div>
+            <div>
+                {group.items.map(item => <ActionRow key={item.id} item={item} onAck={() => {}} />)}
+            </div>
+        </div>
+    );
+}
+
+/** Persistent manual entry: paste/evaluate an offer for any platform. */
+function ManualEvaluateTradeRow() {
+    return (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 ring-1 ring-zinc-900/5 dark:ring-white/5 px-4 py-3">
+            <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                Got an offer in another league?{' '}
+                <span className="text-zinc-400">Evaluate it — Sleeper · Yahoo · MyFFPC</span>
+            </span>
+            <Link
+                href="/players"
+                className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 px-3 py-1.5 transition-colors"
+            >
+                Evaluate a trade
+            </Link>
         </div>
     );
 }

@@ -135,7 +135,16 @@ describe('buildActionCenter — off-season', () => {
         const tg = ac.byTeam![0];
         expect(tg.teamName).toBe('Chino');
         expect(['top', 'middle', 'lower']).toContain(tg.tier);
-        expect(tg.items.length).toBeGreaterThan(0); // at least the waiver add
+        expect(tg.items.length).toBeGreaterThan(0); // at least the waiver swap
+    });
+
+    it('includes Fleaflicker pending trades among a team\'s off-season moves', () => {
+        const input = leagueWithActions();
+        input.league = { ...input.league, platform: 'fleaflicker', leagueId: 'FF1' };
+        input.pendingTrades = [{ id: 't1', headline: 'You get X ↔ give Y', detail: 'even' }];
+        const ac = buildActionCenter([input], { seasonMode: 'off-season', week: 3 });
+        const tg = ac.byTeam!.find(g => g.leagueId === 'FF1')!;
+        expect(tg.items.some(i => i.kind === 'trade' && i.scope === 'fleaflicker')).toBe(true);
     });
 });
 
