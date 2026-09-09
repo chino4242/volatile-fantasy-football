@@ -146,6 +146,14 @@ export default function PortfolioPage() {
         return buildActionCenter(inputs, { seasonMode });
     }, [loaded, getMyTeam, seasonMode]);
 
+    // Current NFL week — from any loaded league that carries weekly rankings.
+    const currentWeek = useMemo(() => {
+        for (const l of loaded) {
+            if (l.data?.weeklyWeek != null) return l.data.weeklyWeek;
+        }
+        return null;
+    }, [loaded]);
+
     // Per-league lineup-fix count (from the same engine) so the dashboard's
     // "⚠ N lineup" pill never disagrees with the Action Center.
     const lineupCountByKey = useMemo(() => {
@@ -212,7 +220,9 @@ export default function PortfolioPage() {
                     <div className="flex items-center gap-2 text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading your leagues…</div>
                 )}
 
-                {!loading && anyData && seasonMode === 'in-season' && <ActionCenter model={actionCenter} />}
+                {!loading && anyData && seasonMode === 'in-season' && (
+                    <ActionCenter model={actionCenter} currentWeek={currentWeek} />
+                )}
 
                 {!loading && refs && refs.length === 0 && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 ring-1 ring-zinc-900/5 text-zinc-600 dark:text-zinc-400">
