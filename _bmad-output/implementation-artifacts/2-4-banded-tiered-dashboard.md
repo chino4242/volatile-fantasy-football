@@ -1,6 +1,7 @@
 # Story 2.4: Banded, Tiered Dashboard
 
-Status: ready-for-dev
+Status: review
+baseline_commit: 5ea828879957f967711332d0d1d27f9adb211b17
 
 ## Story
 
@@ -25,18 +26,20 @@ Replaces the flat 2-column league grid below the Action Center with three **band
 7. The whole card (or an explicit "Open league →") deep-links to that league view (`dbHref` pattern).
 8. Bands are expanded by default on desktop; the my-team picker (for leagues where team is unknown) still appears on the relevant card as today.
 9. Visual tokens per DESIGN.md; light primary, dark still acceptable.
+10. **De-duplication (build feedback):** the dashboard cards must NOT repeat the Action Center's waiver content. The legacy "Undervalued free agents" list with inline analyst essays is removed from the card; replaced by a **collapsed scouting hint** (top ~3 names + edge, no essays, behind a "show" toggle). Full analyst write-ups appear only on click-through (player detail page).
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Shared tier mapping** (AC: 2,3)
-  - [ ] Reuse the band+label mapping from Story 2.1 (`labelTeam` state → band + format-honest label). Extract to a shared helper if not already, so Action Center (off-season) and dashboard agree.
-- [ ] **Task 2 — Banded layout** (AC: 1,6,8)
-  - [ ] Refactor the league grid in `src/app/portfolio/page.tsx` (currently a flat `grid` of `LeagueCard`) into three band sections with headers + counts; sort within band needs-action-first then value.
-- [ ] **Task 3 — Team card health + flag pill** (AC: 3,4,5,7)
-  - [ ] Update `LeagueCard`/`LeagueInsights` to show the tier pill (format label) + format badge, the rich health lines, and a `⚠ N lineup` pill when the team has lineup actions (read from the same engine result to stay consistent).
-  - [ ] Preserve the existing my-team picker path (AC #8).
-- [ ] **Task 4 — Verify** (AC: all)
-  - [ ] `npx next build` clean. Manual: mixed dynasty+redraft portfolio shows correct bands + labels + badges; lineup flag pill matches Action Center; deep-links work.
+- [x] **Task 1 — Shared tier mapping** (AC: 2,3)
+  - [x] Reuse the band+label mapping from Story 2.1 (`tierFor`) so Action Center (off-season) and dashboard agree.
+- [x] **Task 2 — Banded layout** (AC: 1,6,8)
+  - [x] Refactored the flat grid into three band sections (`BandSection`) + an "unassigned" section for leagues with unknown my-team; sort within band needs-action-first (lineup count) then value.
+- [x] **Task 3 — Team card health + flag pill** (AC: 3,4,5,7)
+  - [x] `LeagueInsights` shows the format-honest tier pill (`tierFor`) + `⚠ N lineup` pill (from the same engine count map), rich health lines, and preserves the my-team picker.
+- [x] **Task 4 — De-dup scouting (build feedback)** (AC: 10)
+  - [x] Replaced the verbose "Undervalued free agents" list (with inline analyst essays) with a collapsed "Scouting" hint (top 3 names + edge, expandable, essays removed; each name links to the player detail page for the write-up).
+- [x] **Task 5 — Verify** (AC: all)
+  - [x] `npx next build` clean; full suite 116/116.
 
 ## Dev Notes
 
@@ -49,3 +52,26 @@ Replaces the flat 2-column league grid below the Action Center with three **band
 - [Source: src/lib/portfolio.ts#labelTeam, #weakestStarter, #undervaluedFreeAgents]
 - [Source: src/app/portfolio/page.tsx — LeagueCard/LeagueInsights/UndervaluedList/STATE_STYLE/dbHref]
 - [Source: EXPERIENCE.md §IA tier model; DESIGN.md §Components; mockups/mock-hub-offseason.html]
+
+
+## Dev Agent Record
+
+### Agent Model Used
+Kiro (bmad-dev-story workflow).
+
+### Completion Notes List
+- Dashboard refactored in `src/app/portfolio/page.tsx` from a flat 2-col grid into three tier bands (Top 🟢 / Middle ⚪ / Lower 🟠) via `BandSection`, plus a separate "Pick your team" section for leagues whose my-team is unknown (they still show the picker).
+- `banded` memo partitions loaded leagues using `labelTeam(myTeam, data).state` → `tierFor(state, leagueType)` (the SHARED helper from Story 2.1) so band + label are format-honest (dynasty Contender/Middle/Rebuild; redraft Contender/In the mix/Falling behind). Within a band: sort needs-action-first (lineup count) then team market value.
+- `lineupCountByKey` memo derives per-league lineup-fix counts from the SAME Action Center engine output, so the card's `⚠ N lineup` pill can never disagree with the Action Center.
+- `LeagueCard`/`LeagueInsights` now take `lineupCount`; tier pill uses `tierFor` (replaced the old `STATE_STYLE` map); `⚠ N lineup` pill shows when count > 0; rich health (reason, core age, weakest starter) preserved; my-team picker preserved.
+- **De-duplication fix (build feedback):** the verbose "Undervalued free agents" list with inline analyst essays is gone. Replaced with a collapsed **Scouting** hint — a one-line "top 3 names +edge", expandable to the full edge list (names + edge only, no essays); each name links to `/portfolio/player/{id}` where the analyst write-up lives. This removes the duplication between the Action Center (actionable add/drop) and the dashboard (pure board-vs-market scouting).
+
+### Verification
+- `npx next build` — Compiled successfully.
+- Full suite 116/116 (no regressions).
+
+### File List
+- src/app/portfolio/page.tsx (banded dashboard, BandSection, tier pill via tierFor, lineup pill, collapsed Scouting list; removed STATE_STYLE + verbose FA list; imports updated)
+
+### Change Log
+- 2026-08-27: Implemented Story 2.4 — banded tiered dashboard + de-dup of waiver/scouting content. Status → review.
