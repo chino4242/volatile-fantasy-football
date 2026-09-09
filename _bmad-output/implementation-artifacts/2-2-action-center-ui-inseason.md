@@ -80,3 +80,7 @@ Kiro (bmad-dev-story workflow).
 
 ### Change Log
 - 2026-08-27: Implemented Story 2.2 — in-season Action Center UI + page wiring. Status → review.
+
+
+### Change Log (course correction)
+- 2026-08-27: Waiver rows now render the ADD→DROP headline from the reworked engine (Story 2.1) with a green value-gain detail; removed the raw `+edge` badge. Lineup detail stays muted. Addresses build feedback that the waiver list was an unactionable firehose.

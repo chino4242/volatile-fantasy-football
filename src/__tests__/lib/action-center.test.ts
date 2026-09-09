@@ -43,7 +43,7 @@ function league(over: Partial<PortfolioLeague> & { teams: PortfolioTeam[] }): Po
 }
 
 // A league where MY team has a sub-optimal lineup (a better bench player exists)
-// and there are undervalued FAs available.
+// and the FA pool contains upgrades over my worst bench body (full roster).
 function leagueWithActions(): ActionCenterInput {
     const starters = [
         P({ sleeper_id: 'qb1', position: 'QB', is_starter: true, weeklyRank: 5, marketValue: 3000 }),
@@ -52,16 +52,19 @@ function leagueWithActions(): ActionCenterInput {
     ];
     const bench = [
         P({ sleeper_id: 'wr2', position: 'WR', is_starter: false, weeklyRank: 8, marketValue: 2500 }), // should start over wr1
+        P({ sleeper_id: 'wr3', position: 'WR', is_starter: false, marketValue: 300 }),                 // cheap drop candidate
     ];
     const my = team('1', 'Chino', [...starters, ...bench]);
     const opp = team('2', 'Rival', [P({ marketValue: 2000 }), P({ marketValue: 1800 })]);
     const fas = [
-        P({ sleeper_id: 'fa1', full_name: 'Undervalued Guy', position: 'WR', myRank: 60, marketRank: 248 }), // +188 edge
+        P({ sleeper_id: 'fa1', full_name: 'Upgrade Guy', position: 'WR', marketValue: 2600 }), // clear upgrade over wr3 (300)
+        P({ sleeper_id: 'fa2', full_name: 'Scrub', position: 'WR', marketValue: 100 }),         // not an upgrade
     ];
     const lg = league({
         teams: [my, opp],
         freeAgents: fas,
-        rosterPositions: ['QB', 'RB', 'WR', 'FLEX', 'BN', 'BN'],
+        // 1QB/RB/WR/FLEX + 1 bench = coreCapacity 5; roster has 5 → full → swaps.
+        rosterPositions: ['QB', 'RB', 'WR', 'FLEX', 'BN'],
         weeklyWeek: 3,
     });
     return { league: lg, myRosterId: '1' };
@@ -100,12 +103,16 @@ describe('buildActionCenter — in-season', () => {
         expect(ac.counts.lineup).toBe(lineupGrp.items.length);
     });
 
-    it('derives a waiver action with the rank edge', () => {
+    it('derives an actionable waiver ADD→DROP swap (upgrades only)', () => {
         const ac = buildActionCenter([leagueWithActions()], { seasonMode: 'in-season', week: 3 });
         const waiverGrp = ac.byType!.find(g => g.kind === 'waiver')!;
-        const item = waiverGrp.items.find(i => i.headline.includes('Undervalued Guy'))!;
+        const item = waiverGrp.items.find(i => i.headline.includes('Upgrade Guy'))!;
         expect(item).toBeDefined();
-        expect(item.edge).toBe(188);
+        // Actionable: names the drop and shows a positive value gain.
+        expect(item.headline).toMatch(/drop /);
+        expect(item.detail).toMatch(/^\+/);
+        // The non-upgrade FA ("Scrub") must NOT surface.
+        expect(waiverGrp.items.some(i => i.headline.includes('Scrub'))).toBe(false);
     });
 
     it('emits Fleaflicker-scoped trade items when pending trades are supplied', () => {
@@ -145,9 +152,10 @@ describe('buildActionCenter — edge cases', () => {
         const input = leagueWithActions();
         input.myRosterId = null;
         const ac = buildActionCenter([input], { seasonMode: 'in-season', week: 3 });
-        // No my-team → no lineup actions; FA edges are team-agnostic so may still show.
-        const lineupGrp = ac.byType?.find(g => g.kind === 'lineup');
-        expect(lineupGrp).toBeUndefined();
+        // No my-team → no lineup AND no waiver swaps (both are roster-specific) → quiet.
+        expect(ac.isEmpty).toBe(true);
+        expect(ac.byType?.find(g => g.kind === 'lineup')).toBeUndefined();
+        expect(ac.byType?.find(g => g.kind === 'waiver')).toBeUndefined();
     });
 
     it('every action item exposes a stable id and a deepLink', () => {

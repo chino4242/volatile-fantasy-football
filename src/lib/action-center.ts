@@ -20,12 +20,18 @@ import {
     type PortfolioPlatform,
     type PortfolioLeagueType,
     type PortfolioPlayer,
+    type PortfolioTeam,
     type CompetitiveState,
     labelTeam,
     weakestStarter,
-    undervaluedFreeAgents,
     optimizePortfolioTeam,
 } from './portfolio';
+import {
+    generateTransactionSuggestions,
+    buildRosterConfig,
+    type TxnPlayer,
+    type TransactionSuggestion,
+} from './transaction-suggestions';
 
 export type SeasonMode = 'in-season' | 'off-season';
 export type ActionKind = 'lineup' | 'trade' | 'waiver' | 'sell';
@@ -51,8 +57,8 @@ export interface ActionCenterOptions {
     seasonMode: SeasonMode;
     /** Current NFL week (for item ids / week-scoped acknowledge upstream). */
     week?: number | null;
-    /** Rank-edge threshold for waiver adds (defaults to the portfolio default). */
-    minEdge?: number;
+    /** Max actionable waiver swaps surfaced per league (default 3). */
+    waiverPerLeague?: number;
     /** Max strengthen-moves per team off-season. */
     perTeamLimit?: number;
 }
@@ -127,9 +133,9 @@ export function tierFor(state: CompetitiveState, leagueType: PortfolioLeagueType
     return { band, label };
 }
 
-/** Rough per-position surplus check for a roster (skill positions only). */
-function primaryWeakness(team: { players: PortfolioPlayer[] }): string | undefined {
-    const w = weakestStarter(team as any);
+/** The team's weakest starter as a short weakness note (for off-season by-team). */
+function primaryWeakness(team: PortfolioTeam): string | undefined {
+    const w = weakestStarter(team);
     if (w.player) return `${w.player.position} (${w.player.full_name})`;
     return undefined;
 }
@@ -163,21 +169,51 @@ function lineupItems(input: ActionCenterInput): ActionItem[] {
     });
 }
 
-function waiverItems(input: ActionCenterInput, minEdge?: number): ActionItem[] {
-    const { league } = input;
+function toTxnPlayer(p: PortfolioPlayer): TxnPlayer {
+    return { sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, fc_value: p.marketValue };
+}
+
+/**
+ * Actionable waiver items: ADD→DROP swaps (or pure adds into an open spot) from
+ * the shared transactions engine, which respects starting-requirement legality
+ * and only surfaces genuine upgrades. Requires a known my-team (a drop is
+ * roster-specific). Capped per league by the caller.
+ */
+function waiverItems(input: ActionCenterInput, limit: number): ActionItem[] {
+    const { league, myRosterId } = input;
+    if (!myRosterId) return [];
+    const team = league.teams.find(t => t.rosterId === myRosterId);
+    if (!team) return [];
+
+    const config = buildRosterConfig(league.rosterPositions);
+    if (!config) return [];
+
+    const myPlayers = team.players.map(toTxnPlayer);
+    const freeAgents = league.freeAgents.map(toTxnPlayer);
+    const suggestions = generateTransactionSuggestions(myPlayers, freeAgents, config, {
+        actualCoreCount: myPlayers.length,
+        maxSuggestions: limit,
+    });
+
     const link = deepLinkFor(league.platform, league.leagueId);
-    return undervaluedFreeAgents(league, minEdge).map(fa => ({
-        id: `waiver:${league.platform}:${league.leagueId}:${fa.player.sleeper_id}`,
-        kind: 'waiver' as const,
-        headline: `${fa.player.full_name} (${fa.player.position ?? '—'})`,
-        detail: fa.reason === 'buy' ? 'tagged BUY' : fa.reason === 'add' ? 'analyst ADD' : undefined,
-        leagueName: league.name,
-        platform: league.platform,
-        leagueId: league.leagueId,
-        deepLink: link,
-        edge: fa.rankEdge,
-        meta: { reason: fa.reason },
-    }));
+    return suggestions.map((s: TransactionSuggestion) => {
+        const add = s.addPlayer;
+        const drop = s.dropPlayer;
+        const headline = drop
+            ? `Add ${add.full_name} (${add.position ?? '—'}) · drop ${drop.full_name} (${drop.position ?? '—'})`
+            : `Add ${add.full_name} (${add.position ?? '—'}) — open spot`;
+        return {
+            id: `waiver:${league.platform}:${league.leagueId}:${add.sleeper_id}->${drop?.sleeper_id ?? 'open'}`,
+            kind: 'waiver' as const,
+            headline,
+            detail: `+${Math.round(s.valueGain).toLocaleString()} value${s.type === 'swap' ? ` (${Math.round(s.valueGainPct)}%)` : ''}`,
+            leagueName: league.name,
+            platform: league.platform,
+            leagueId: league.leagueId,
+            deepLink: link,
+            meta: { addId: add.sleeper_id, dropId: drop?.sleeper_id ?? null, valueGain: s.valueGain },
+        };
+    });
 }
 
 function tradeItems(input: ActionCenterInput): ActionItem[] {
@@ -200,7 +236,8 @@ function tradeItems(input: ActionCenterInput): ActionItem[] {
 // ── Public entry ─────────────────────────────────────────────────────────────
 
 export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCenterOptions): ActionCenter {
-    const { seasonMode, minEdge, perTeamLimit = 4 } = opts;
+    const { seasonMode, perTeamLimit = 4 } = opts;
+    const waiverPerLeague = opts.waiverPerLeague ?? 3;
 
     // Collect all items per kind across leagues.
     const lineup: ActionItem[] = [];
@@ -210,7 +247,7 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
     for (const input of inputs) {
         lineup.push(...lineupItems(input));
         trade.push(...tradeItems(input));
-        waiver.push(...waiverItems(input, minEdge));
+        waiver.push(...waiverItems(input, waiverPerLeague));
     }
 
     const counts = { lineup: lineup.length, trade: trade.length, waiver: waiver.length, sell: 0 };
@@ -235,9 +272,9 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
         const label = labelTeam(team, league);
         const { band, label: tierLabel } = tierFor(label.state, league.leagueType);
 
-        // Strengthen-moves for this team: waiver adds + (trade items if any).
+        // Strengthen-moves for this team: actionable waiver swaps + trades if any.
         const items: ActionItem[] = [
-            ...waiverItems(input, minEdge),
+            ...waiverItems(input, waiverPerLeague),
             ...tradeItems(input),
         ].slice(0, perTeamLimit);
 

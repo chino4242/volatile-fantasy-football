@@ -154,3 +154,7 @@ Kiro (bmad-dev-story workflow).
 
 ### Change Log
 - 2026-08-27: Implemented Story 2.1 — Action Center aggregation engine + contract + tests. Status → review.
+
+
+### Change Log (course correction)
+- 2026-08-27: **Waiver derivation reworked after build feedback.** Original used raw `undervaluedFreeAgents` → bare "add" rows with no drop, no cap, and +0/negative-edge noise (~70 rows across 12 leagues — not actionable). Replaced with the shared `generateTransactionSuggestions` engine so each waiver item is a legal **ADD→DROP swap** (respects starting-requirement legality) or an open-spot add, upgrades only, **capped `waiverPerLeague` (default 3)**. Waivers are now roster-specific → require a known my-team (a drop can't be computed otherwise). Removed the `minEdge` option + `edge` reliance; item `detail` now shows value gain, `meta` carries `addId`/`dropId`. Real-data spot check (Yahoo + MyFFPC): 2–3 clean, drop-named, positive-gain items per league. Tests updated (still 10, all pass).

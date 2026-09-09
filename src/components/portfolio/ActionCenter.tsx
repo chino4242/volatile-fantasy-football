@@ -116,9 +116,12 @@ function ActionRow({ item }: { item: ActionItem }) {
             <div className="flex-1 min-w-0">
                 <div className="text-sm text-zinc-900 dark:text-zinc-100">
                     <span className="font-medium">{item.headline}</span>
-                    {item.detail && <span className="text-zinc-400"> · {item.detail}</span>}
-                    {item.kind === 'waiver' && item.edge != null && (
-                        <span className="ml-1.5 text-xs font-bold text-green-600 dark:text-green-400">+{item.edge} edge</span>
+                    {item.detail && (
+                        <span className={item.kind === 'waiver'
+                            ? 'ml-1.5 text-xs font-semibold text-green-600 dark:text-green-400'
+                            : 'text-zinc-400'}>
+                            {item.kind === 'waiver' ? item.detail : ` · ${item.detail}`}
+                        </span>
                     )}
                 </div>
                 <span className="inline-block mt-1 text-[11px] text-zinc-500 bg-zinc-100 dark:bg-zinc-800 rounded px-1.5 py-0.5">
