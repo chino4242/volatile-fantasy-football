@@ -1,6 +1,7 @@
 # Story 2.1: Action Center Aggregation Engine + Contract
 
-Status: ready-for-dev
+Status: review
+baseline_commit: dc8fb3cad48fbe11c29e8a7e4ed77b02f4843f66
 
 ## Story
 
@@ -75,21 +76,21 @@ export interface ActionCenter {
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Module + types** (AC: 1,7)
-  - [ ] Create `src/lib/action-center.ts` with the types above (import `PortfolioLeague`, `PortfolioPlatform` from `src/lib/portfolio.ts`).
-  - [ ] `deepLinkFor(platform, leagueId, rosterId?)` helper mirroring the `dbHref` logic in `src/app/portfolio/page.tsx` (sleeper→`/league/{id}`, fleaflicker→`/fleaflicker/{id}`, yahoo/myffpc→`/db-league/{platform}/{id}`). NOTE: v1 deep-links to the in-app league view; the "leave to real platform" URL can be a follow-up — confirm target in Dev Notes.
-- [ ] **Task 2 — Derive lineup actions** (AC: 4)
-  - [ ] For each league with a known my-team + weekly data, call `optimizePortfolioTeam(league, team)`; map each swap to an `ActionItem{kind:'lineup', headline:'Start {startPlayer} over {benchPlayer}', detail: slot/rankGain}`.
-- [ ] **Task 3 — Derive waiver actions** (AC: 5)
-  - [ ] Run `undervaluedFreeAgents(league)`; map each to `ActionItem{kind:'waiver', headline:'{name} ({pos})', edge: rankEdge}`. Respect existing surfacing rules (buy/add/edge).
-- [ ] **Task 4 — Trades (optional input)** (AC: 6)
-  - [ ] Accept optional per-league pending-trade input; when present (Fleaflicker), emit `ActionItem{kind:'trade', scope:'fleaflicker'}`. When absent, emit nothing. Do NOT block on wiring the live pending-trade fetch — that's the UI/route story.
-- [ ] **Task 5 — Grouping + quiet state** (AC: 2,3,8,9)
-  - [ ] In-season: assemble `byType` in fixed order lineup→trade→waiver; compute `counts`.
-  - [ ] Off-season: assemble `byTeam`; reuse `labelTeam` for tier + tierLabel and `weakestStarter`/position-value for `weakness`; attach add/trade/sell moves.
-  - [ ] `isEmpty` = no items in any group.
-- [ ] **Task 6 — Tests** (AC: 10)
-  - [ ] `src/__tests__/lib/action-center.test.ts` — fixtures of `PortfolioLeague`; assert in-season order+counts, off-season by-team, quiet state, my-team-unknown safety, and that only deep-linkable actions appear (no passive health).
+- [x] **Task 1 — Module + types** (AC: 1,7)
+  - [x] Create `src/lib/action-center.ts` with the types above (import `PortfolioLeague`, `PortfolioPlatform` from `src/lib/portfolio.ts`).
+  - [x] `deepLinkFor(platform, leagueId, rosterId?)` helper mirroring the `dbHref` logic in `src/app/portfolio/page.tsx` (sleeper→`/league/{id}`, fleaflicker→`/fleaflicker/{id}`, yahoo/myffpc→`/db-league/{platform}/{id}`). NOTE: v1 deep-links to the in-app league view; the "leave to real platform" URL can be a follow-up — confirm target in Dev Notes.
+- [x] **Task 2 — Derive lineup actions** (AC: 4)
+  - [x] For each league with a known my-team + weekly data, call `optimizePortfolioTeam(league, team)`; map each swap to an `ActionItem{kind:'lineup', headline:'Start {startPlayer} over {benchPlayer}', detail: slot/rankGain}`.
+- [x] **Task 3 — Derive waiver actions** (AC: 5)
+  - [x] Run `undervaluedFreeAgents(league)`; map each to `ActionItem{kind:'waiver', headline:'{name} ({pos})', edge: rankEdge}`. Respect existing surfacing rules (buy/add/edge).
+- [x] **Task 4 — Trades (optional input)** (AC: 6)
+  - [x] Accept optional per-league pending-trade input; when present (Fleaflicker), emit `ActionItem{kind:'trade', scope:'fleaflicker'}`. When absent, emit nothing. Do NOT block on wiring the live pending-trade fetch — that's the UI/route story.
+- [x] **Task 5 — Grouping + quiet state** (AC: 2,3,8,9)
+  - [x] In-season: assemble `byType` in fixed order lineup→trade→waiver; compute `counts`.
+  - [x] Off-season: assemble `byTeam`; reuse `labelTeam` for tier + tierLabel and `weakestStarter`/position-value for `weakness`; attach add/trade/sell moves.
+  - [x] `isEmpty` = no items in any group.
+- [x] **Task 6 — Tests** (AC: 10)
+  - [x] `src/__tests__/lib/action-center.test.ts` — fixtures of `PortfolioLeague`; assert in-season order+counts, off-season by-team, quiet state, my-team-unknown safety, and that only deep-linkable actions appear (no passive health).
 
 ## Dev Notes
 
@@ -119,3 +120,37 @@ export interface ActionCenter {
 - [Source: src/lib/portfolio.ts — labelTeam, weakestStarter, undervaluedFreeAgents, optimizePortfolioTeam]
 - [Source: src/app/portfolio/page.tsx — league enumeration + dbHref]
 - [Source: EXPERIENCE.md §IA, §State Patterns; DESIGN.md semantic colors]
+
+
+## Dev Agent Record
+
+### Agent Model Used
+Kiro (bmad-dev-story workflow).
+
+### Implementation Plan / Approach
+- Pure library `src/lib/action-center.ts`, no network/DB. Consumes already-loaded `PortfolioLeague` objects + my-team selection; reuses existing computations (`labelTeam`, `weakestStarter`, `undervaluedFreeAgents`, `optimizePortfolioTeam`) rather than inventing math.
+- Red-green: wrote `action-center.test.ts` first (10 cases), confirmed failing (missing module), then implemented to green.
+
+### Completion Notes List
+- `buildActionCenter(inputs, opts)` returns season-adaptive `ActionCenter`:
+  - in-season → `byType` groups in fixed order lineup → trade → waiver (empty kinds omitted), plus `counts`.
+  - off-season → `byTeam` groups (only where my-team known), each with tier band + format-honest `tierLabel`, `weakness`, and top-N strengthen-moves.
+- `tierFor(state, leagueType)` exported + shared with Story 2.4: dynasty → Contender/Middle/Rebuild; redraft → Contender/In the mix/Falling behind; bands top/middle/lower.
+- `deepLinkFor(platform, leagueId)` mirrors the portfolio `dbHref` pattern. **Decision/NOTE:** v1 deep-links to the in-app league view (`/league/{id}`, `/fleaflicker/{id}`, `/db-league/{platform}/{id}`), not the external platform URL. The EXPERIENCE.md "leave to the real platform" endgame is deferred to a follow-up (external URL per platform) — flagged for review.
+- Lineup items derive from `optimizePortfolioTeam` swaps; each carries `meta.startId`/`meta.benchId`/`slot` so Story 2.3's per-week acknowledge can build a stable `ackKey`. Item id already encodes `startId->benchId`.
+- Waiver items derive from `undervaluedFreeAgents` (respects buy/add/edge surfacing) and carry the `edge`.
+- Trade items are emitted ONLY when optional `pendingTrades` are supplied (Fleaflicker), tagged `scope:'fleaflicker'`. Live pending-trade fetch intentionally deferred to Story 2.5 (route/UI concern).
+- Quiet state: `isEmpty:true` + zeroed counts when nothing actionable; no fabricated proactive suggestions.
+- my-team unknown → no lineup/trade personalized items for that league; never throws.
+
+### Verification
+- New unit tests: `src/__tests__/lib/action-center.test.ts` — 10 tests, all pass (in-season order+counts, lineup derivation, waiver edge, Fleaflicker trade scoping + order, off-season by-team, quiet state, my-team-unknown safety, stable/unique ids + deepLinks, tierFor mapping).
+- Full suite: 116/116 pass (was 106; +10). No regressions.
+- `npx next build` — Compiled successfully.
+
+### File List
+- src/lib/action-center.ts (new)
+- src/__tests__/lib/action-center.test.ts (new)
+
+### Change Log
+- 2026-08-27: Implemented Story 2.1 — Action Center aggregation engine + contract + tests. Status → review.
