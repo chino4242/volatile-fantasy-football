@@ -105,7 +105,7 @@ function analyzeLeague(
     let trade: TargetedTradeResult | null = null;
     if (myTeam && tag !== 'sell') {
         const target = owningTeam.players.find(p => p.sleeper_id === sleeperId)!;
-        trade = proposeAcquire(toTradePlayer(target), myTeam.players.map(toTradePlayer), owningTeam.players.map(toTradePlayer));
+        trade = proposeAcquire(toTradePlayer(target), myTeam.players.map(toTradePlayer), owningTeam.players.map(toTradePlayer), 0.15, league.rosterPositions);
     }
     return { ...base, status: 'opponent' as LeagueStatus, ownerName: owningTeam.ownerName, trade };
 }
@@ -117,7 +117,7 @@ function bestShed(myTeam: PortfolioLeague['teams'][number], league: PortfolioLea
     const opponents = league.teams.filter(t => t.rosterId !== myTeam.rosterId);
     let best: TargetedTradeResult | null = null;
     for (const opp of opponents) {
-        const r = proposeShed(toTradePlayer(mine), myTeam.players.map(toTradePlayer), opp.players.map(toTradePlayer));
+        const r = proposeShed(toTradePlayer(mine), myTeam.players.map(toTradePlayer), opp.players.map(toTradePlayer), 0.15, league.rosterPositions);
         if (r.proposal && (!best || (r.advisor?.score ?? -999) > (best.advisor?.score ?? -999))) {
             best = { ...r, reason: `${r.reason} (partner: ${opp.ownerName})` };
         }

@@ -10,12 +10,15 @@ const CURRENT_YEAR = new Date().getFullYear();
 
 interface TradePlayerLite { full_name: string; position: string | null; marketValue: number | null; }
 interface Advisor { verdict: string; summary: string; reasons: string[]; pitch: string; score: number; }
+interface RoomSnapshot { count: number; startableSlots: number; startableFilled: number; starterValue: number; totalValue: number; }
+interface PositionalImpact { position: string; before: RoomSnapshot; after: RoomSnapshot; thinsBelowStarters: boolean; }
 interface TargetedTrade {
     proposal: { iSend: TradePlayerLite; iReceive: TradePlayerLite } | null;
     advisor: Advisor | null;
     valueGapPct: number | null;
     reason: string;
     rosConsidered: boolean;
+    positionalImpact: PositionalImpact[] | null;
 }
 interface LeagueSituation {
     league: string; platform: string; leagueName?: string; myTeamKnown?: boolean;
@@ -198,7 +201,35 @@ function TradeBlock({ trade }: { trade: TargetedTrade }) {
                 </div>
             )}
             <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{trade.reason}</div>
+            {trade.positionalImpact && trade.positionalImpact.length > 0 && (
+                <div className="mt-2 space-y-0.5">
+                    {trade.positionalImpact.map((pi) => <RoomImpactLine key={pi.position} pi={pi} />)}
+                </div>
+            )}
             {trade.advisor?.pitch && <div className="text-[11px] text-zinc-400 mt-1 italic">Pitch: {trade.advisor.pitch}</div>}
+        </div>
+    );
+}
+
+/** One position group's before→after room readout, e.g. "RB room: 4 → 3 (still 2 startable)". */
+function RoomImpactLine({ pi }: { pi: PositionalImpact }) {
+    const { position, before, after, thinsBelowStarters } = pi;
+    const grew = after.count > before.count;
+    const shrank = after.count < before.count;
+    const arrow = grew ? '↑' : shrank ? '↓' : '→';
+    const startNote = `${after.startableFilled}/${after.startableSlots} startable`;
+    const cls = thinsBelowStarters
+        ? 'text-amber-600 dark:text-amber-400'
+        : grew
+            ? 'text-green-600 dark:text-green-400'
+            : 'text-zinc-500 dark:text-zinc-400';
+    return (
+        <div className={`text-[11px] flex items-center gap-1.5 ${cls}`}>
+            <span className="font-medium">{position} room:</span>
+            <span>{before.count} {arrow} {after.count}</span>
+            <span className="text-zinc-400">·</span>
+            <span>{startNote}</span>
+            {thinsBelowStarters && <span className="font-medium">— thins your starters</span>}
         </div>
     );
 }

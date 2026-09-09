@@ -15,6 +15,7 @@
  */
 
 import { analyzeTradeAdvisor, type TradeAdvisorResult } from './trade-advisor';
+import { slotEligibility } from './lineup-optimizer';
 
 export interface TradePlayer {
     sleeper_id: string;
@@ -45,15 +46,118 @@ export interface TargetedTradeResult {
     reason: string;
     /** True if RoS was considered (always false for now — data not wired). */
     rosConsidered: boolean;
+    /** Group-strength (positional room) before→after for the two affected
+     *  positions. null when there is no proposal. */
+    positionalImpact: PositionalImpact[] | null;
+}
+
+/** How a trade reshapes one position group on MY roster, before → after. */
+export interface RoomSnapshot {
+    /** Total rostered players at this position (skill only). */
+    count: number;
+    /** How many "startable" slots this position can realistically fill on this
+     *  roster's lineup (dedicated + a share of flex/superflex). */
+    startableSlots: number;
+    /** Count of players good enough to fill those startable slots (min of count
+     *  and startableSlots — i.e. do we field a full starting group?). */
+    startableFilled: number;
+    /** Total market value of the top-`startableSlots` players (the starting core). */
+    starterValue: number;
+    /** Total market value of the whole group. */
+    totalValue: number;
+}
+
+export interface PositionalImpact {
+    position: string;
+    before: RoomSnapshot;
+    after: RoomSnapshot;
+    /** True when the trade leaves this position unable to fill its starting slots. */
+    thinsBelowStarters: boolean;
 }
 
 const IDEAL_MIN: Record<string, number> = { QB: 1, RB: 3, WR: 4, TE: 1 };
+const SKILL = ['QB', 'RB', 'WR', 'TE'];
 
 /** Rough positional surplus/need for a roster (by count vs ideal minimum). */
 function positionCounts(players: TradePlayer[]): Record<string, number> {
     const c: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
     for (const p of players) if (p.position && p.position in c) c[p.position]++;
     return c;
+}
+
+/**
+ * How many STARTING slots each skill position can realistically fill for a
+ * league, derived from its roster-slot config. Dedicated slots count fully; a
+ * flex/superflex slot is split evenly across the positions it accepts (so a
+ * single FLEX adds ~0.33 each to RB/WR/TE). Falls back to IDEAL_MIN when the
+ * league's slot config is unknown.
+ */
+export function startableSlotsByPosition(rosterPositions: string[] | null | undefined): Record<string, number> {
+    if (!rosterPositions || rosterPositions.length === 0) {
+        return { ...IDEAL_MIN };
+    }
+    const slots: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    for (const token of rosterPositions) {
+        const eligible = slotEligibility(token);
+        if (!eligible) continue; // BN/IR/unknown → not a starting slot
+        const skillEligible = SKILL.filter(pos => eligible.has(pos));
+        if (skillEligible.length === 0) continue; // K/DEF etc.
+        const share = 1 / skillEligible.length;
+        for (const pos of skillEligible) slots[pos] += share;
+    }
+    // Round to sensible starting-group sizes (ceil so a partial flex still asks
+    // for one more body of depth).
+    return {
+        QB: Math.max(0, Math.round(slots.QB * 10) / 10 >= 0.5 ? Math.ceil(slots.QB) : Math.round(slots.QB)),
+        RB: Math.ceil(slots.RB),
+        WR: Math.ceil(slots.WR),
+        TE: Math.max(1, Math.ceil(slots.TE)),
+    };
+}
+
+/** Snapshot one position group's depth + starting-core value on a roster. */
+function roomSnapshot(players: TradePlayer[], position: string, startableSlots: number): RoomSnapshot {
+    const group = players
+        .filter(p => p.position === position)
+        .sort((a, b) => (b.marketValue || 0) - (a.marketValue || 0));
+    const starters = group.slice(0, Math.max(0, Math.round(startableSlots)));
+    return {
+        count: group.length,
+        startableSlots: Math.round(startableSlots),
+        startableFilled: Math.min(group.length, Math.round(startableSlots)),
+        starterValue: starters.reduce((s, p) => s + (p.marketValue || 0), 0),
+        totalValue: group.reduce((s, p) => s + (p.marketValue || 0), 0),
+    };
+}
+
+/**
+ * Compute the before→after positional room impact of a 1-for-1 on MY roster.
+ * Only the positions of the two swapped players are reported (the rest are
+ * unchanged). `myRoster` is my roster INCLUDING the player I'm sending.
+ */
+export function positionalImpact(
+    myRoster: TradePlayer[],
+    iSend: TradePlayer,
+    iReceive: TradePlayer,
+    rosterPositions?: string[] | null,
+): PositionalImpact[] {
+    const slots = startableSlotsByPosition(rosterPositions);
+    const after = myRoster.filter(p => p.sleeper_id !== iSend.sleeper_id).concat(iReceive);
+
+    // Report each affected position once (send and receive may share a position).
+    const positions = [...new Set([iSend.position, iReceive.position].filter((p): p is string => !!p && SKILL.includes(p)))];
+
+    return positions.map(position => {
+        const slotN = slots[position] ?? (IDEAL_MIN[position] ?? 1);
+        const before = roomSnapshot(myRoster, position, slotN);
+        const aft = roomSnapshot(after, position, slotN);
+        return {
+            position,
+            before,
+            after: aft,
+            thinsBelowStarters: aft.startableFilled < Math.round(slotN) && aft.startableFilled < before.startableFilled,
+        };
+    });
 }
 
 /**
@@ -65,10 +169,11 @@ export function proposeAcquire(
     myRoster: TradePlayer[],
     opponentRoster: TradePlayer[],
     tolerancePct = 0.15,
+    rosterPositions?: string[] | null,
 ): TargetedTradeResult {
     const tv = target.marketValue || 0;
     if (tv <= 0) {
-        return { proposal: null, advisor: null, valueGapPct: null, rosConsidered: false,
+        return { proposal: null, advisor: null, valueGapPct: null, rosConsidered: false, positionalImpact: null,
             reason: 'No market value for the target, so a fair value cannot be computed.' };
     }
 
@@ -91,7 +196,7 @@ export function proposeAcquire(
 
     const best = candidates.find(c => c.gap <= tolerancePct) || candidates[0];
     if (!best) {
-        return { proposal: null, advisor: null, valueGapPct: null, rosConsidered: false,
+        return { proposal: null, advisor: null, valueGapPct: null, rosConsidered: false, positionalImpact: null,
             reason: 'You have no tradeable asset with market value to offer here.' };
     }
 
@@ -99,7 +204,7 @@ export function proposeAcquire(
         // Closest single player is outside fairness → a 1-for-1 won't be fair.
         const dir = (best.p.marketValue || 0) > tv ? 'overpay' : 'underpay';
         return {
-            proposal: null, advisor: null, valueGapPct: Math.round(best.gap * 100), rosConsidered: false,
+            proposal: null, advisor: null, valueGapPct: Math.round(best.gap * 100), rosConsidered: false, positionalImpact: null,
             reason: `No fair 1-for-1: your closest asset (${best.p.full_name}) is a ${Math.round(best.gap * 100)}% ${dir} vs ${target.full_name}. A multi-player package would be needed.`,
         };
     }
@@ -118,6 +223,7 @@ export function proposeAcquire(
         advisor,
         valueGapPct: gapPct,
         rosConsidered: false,
+        positionalImpact: positionalImpact(myRoster, best.p, target, rosterPositions),
         reason: describeFairness(best.p, target, best.fitBonus),
     };
 }
@@ -131,10 +237,11 @@ export function proposeShed(
     myRoster: TradePlayer[],
     opponentRoster: TradePlayer[],
     tolerancePct = 0.15,
+    rosterPositions?: string[] | null,
 ): TargetedTradeResult {
     const mv = mine.marketValue || 0;
     if (mv <= 0) {
-        return { proposal: null, advisor: null, valueGapPct: null, rosConsidered: false,
+        return { proposal: null, advisor: null, valueGapPct: null, rosConsidered: false, positionalImpact: null,
             reason: 'No market value for this player, so no fair trade can be computed — a drop is the likely move.' };
     }
 
@@ -157,7 +264,7 @@ export function proposeShed(
     const best = candidates.find(c => c.gap <= tolerancePct) || candidates[0];
     if (!best || best.gap > tolerancePct) {
         return {
-            proposal: null, advisor: null, valueGapPct: best ? Math.round(best.gap * 100) : null, rosConsidered: false,
+            proposal: null, advisor: null, valueGapPct: best ? Math.round(best.gap * 100) : null, rosConsidered: false, positionalImpact: null,
             reason: `No fair 1-for-1 return from this opponent for ${mine.full_name}. Consider a package, another partner, or a drop if he's low value.`,
         };
     }
@@ -176,6 +283,7 @@ export function proposeShed(
         advisor,
         valueGapPct: gapPct,
         rosConsidered: false,
+        positionalImpact: positionalImpact(myRoster, mine, best.p, rosterPositions),
         reason: describeFairness(mine, best.p, best.fitBonus),
     };
 }
