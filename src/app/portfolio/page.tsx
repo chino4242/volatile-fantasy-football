@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Loader2, TrendingUp, TrendingDown, Minus, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/hooks/useUser';
 import { useMyTeams } from '@/hooks/useMyTeams';
 import { useSeasonMode } from '@/hooks/useSeasonMode';
 import { TagManager } from './TagManager';
+import { ActionCenter } from '@/components/portfolio/ActionCenter';
+import { buildActionCenter, type ActionCenterInput } from '@/lib/action-center';
 import {
     type PortfolioLeague,
     type PortfolioLeagueRef,
@@ -34,7 +36,7 @@ export default function PortfolioPage() {
         isLoading: authLoading,
     } = useAuth();
     const { getMyTeam, setMyTeam, loaded: myTeamsLoaded } = useMyTeams();
-    const { showFor } = useSeasonMode();
+    const { showFor, mode: seasonMode } = useSeasonMode();
 
     const [refs, setRefs] = useState<PortfolioLeagueRef[] | null>(null);
     const [leagues, setLeagues] = useState<Record<string, LoadedLeague>>({});
@@ -130,6 +132,20 @@ export default function PortfolioPage() {
     const loaded = Object.values(leagues);
     const anyData = loaded.some(l => l.data);
 
+    // Action Center model — aggregate recommended actions across all loaded
+    // leagues, re-prioritized by season mode. Passive team health stays in the
+    // dashboard below (LeagueCard), not here.
+    const actionCenter = useMemo(() => {
+        const inputs: ActionCenterInput[] = loaded
+            .filter(l => l.data)
+            .map(l => ({
+                league: l.data!,
+                myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
+            }));
+        if (inputs.length === 0) return null;
+        return buildActionCenter(inputs, { seasonMode });
+    }, [loaded, getMyTeam, seasonMode]);
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -151,6 +167,8 @@ export default function PortfolioPage() {
                 {loading && (
                     <div className="flex items-center gap-2 text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading your leagues…</div>
                 )}
+
+                {!loading && anyData && seasonMode === 'in-season' && <ActionCenter model={actionCenter} />}
 
                 {!loading && refs && refs.length === 0 && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 ring-1 ring-zinc-900/5 text-zinc-600 dark:text-zinc-400">
