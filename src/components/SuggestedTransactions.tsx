@@ -28,8 +28,11 @@ export function SuggestedTransactions({
     rosterConfig,
     actualCoreCount,
 }: SuggestedTransactionsProps) {
-    const [expanded, setExpanded] = useState(false);
+    const [expanded, setExpanded] = useState(true);
     const [posFilter, setPosFilter] = useState<string>('ALL');
+    const [showAll, setShowAll] = useState(false);
+
+    const TOP_N = 5;
 
     const suggestions = useMemo<TransactionSuggestion[]>(() => {
         if (!rosterConfig) return [];
@@ -83,7 +86,7 @@ export function SuggestedTransactions({
                                 {['ALL', 'QB', 'RB', 'WR', 'TE'].map(pos => (
                                     <button
                                         key={pos}
-                                        onClick={() => setPosFilter(pos)}
+                                        onClick={() => { setPosFilter(pos); setShowAll(false); }}
                                         className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
                                             posFilter === pos
                                                 ? 'bg-indigo-600 text-white'
@@ -96,10 +99,19 @@ export function SuggestedTransactions({
                             </div>
 
                             <div className="space-y-2">
-                                {filtered.map((s, i) => (
+                                {(showAll ? filtered : filtered.slice(0, TOP_N)).map((s, i) => (
                                     <SuggestionRow key={`${s.addPlayer.sleeper_id}-${i}`} suggestion={s} rank={i + 1} />
                                 ))}
                             </div>
+
+                            {filtered.length > TOP_N && (
+                                <button
+                                    onClick={() => setShowAll(v => !v)}
+                                    className="mt-3 w-full text-center text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+                                >
+                                    {showAll ? 'Show less' : `Show ${filtered.length - TOP_N} more`}
+                                </button>
+                            )}
 
                             {filtered.length === 0 && (
                                 <div className="text-center py-4 text-xs text-zinc-400">

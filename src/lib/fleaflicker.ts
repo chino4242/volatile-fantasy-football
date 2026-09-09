@@ -172,7 +172,7 @@ export async function getFleaflickerLeagueInfo(leagueId: string): Promise<Fleafl
     return info;
 }
 
-export interface RosterSlots { QB: number; RB: number; WR: number; TE: number; FLEX: number; total?: number }
+export interface RosterSlots { QB: number; RB: number; WR: number; TE: number; FLEX: number; DST: number; PK: number; total?: number }
 
 
 export async function getFleaflickerRosterSlots(leagueId: string): Promise<RosterSlots> {
@@ -181,16 +181,26 @@ export async function getFleaflickerRosterSlots(leagueId: string): Promise<Roste
     if (cached) return cached;
 
     const res = await fetch(`${BASE_URL}/FetchLeagueStandings?sport=NFL&league_id=${leagueId}`, { cache: 'no-store' });
-    if (!res.ok) return { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2 };
+    if (!res.ok) return { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 2, DST: 1, PK: 1 };
     const data = await res.json();
     const rosterReq = data?.league?.rosterRequirements || {};
     const positions = rosterReq.positions || [];
-    const slots: RosterSlots = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0 };
+    const slots: RosterSlots = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, DST: 0, PK: 0 };
+    // Normalize Fleaflicker eligibility tokens to our canonical slot keys.
+    const norm = (t: string): keyof RosterSlots | null => {
+        const u = (t || '').toUpperCase();
+        if (u === 'QB' || u === 'RB' || u === 'WR' || u === 'TE') return u as keyof RosterSlots;
+        if (u === 'D/ST' || u === 'DST' || u === 'DEF' || u === 'D') return 'DST';
+        if (u === 'K' || u === 'PK') return 'PK';
+        return null;
+    };
     for (const p of positions) {
         if (p.group !== 'START' || !p.start) continue;
         const elig = p.eligibility || [];
-        if (elig.length === 1 && elig[0] in slots) {
-            slots[elig[0] as keyof RosterSlots] += p.start;
+        if (elig.length === 1) {
+            const key = norm(elig[0]);
+            if (key) slots[key] += p.start;
+            else slots.FLEX += p.start; // unknown single-eligibility slot → treat as flex-ish
         } else if (elig.length > 1) {
             slots.FLEX += p.start;
         }

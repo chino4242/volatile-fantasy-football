@@ -7,13 +7,17 @@
  *
  * Rules:
  * - If the roster has an open core spot, suggest a pure ADD (no drop).
- * - If the roster is full, pair the pickup with the lowest-value drop candidate.
- * - Never drop the LAST player at a required starting position (e.g. your only
- *   DST or K), since you must be able to field a legal lineup.
- * - Only surface a suggestion when the free agent's value exceeds the drop
+ * - If the roster is full, pair EACH pickup with its own best drop: a
+ *   same-position upgrade, or a genuine cross-position SURPLUS body.
+ * - Never drop below your starting requirement at ANY position — dedicated
+ *   starter slots are a hard floor, and the RB/WR/TE (and QB, in superflex)
+ *   pools must retain enough bodies to fill their flex/superflex slots too.
+ * - Dedupe drop targets so the same player isn't suggested many times.
+ * - Only surface a swap when the free agent's value exceeds the drop
  *   candidate's value by at least `thresholdPct` (default 5%).
- * - Pure adds (open spot) surface whenever the free agent has meaningful value.
  *
+ * Value lens: dynasty `fc_value` for now. Rest-of-season/win-now is a planned
+ * secondary factor (flagging "helps this season but weakens you long term").
  * IR/taxi awareness is intentionally out of scope for Phase 1.
  */
 
@@ -30,6 +34,17 @@ export interface RosterConfig {
     coreCapacity: number;
     /** Set of positions that must be startable each week (e.g. QB, RB, WR, TE, PK, DST). */
     requiredStartPositions: Set<string>;
+    /**
+     * Minimum number of players you must KEEP at each position to still field a
+     * legal starting lineup — i.e. the count of dedicated starting slots for
+     * that position (flex slots are tracked separately, not attributed here).
+     * Normalized to canonical position keys (QB/RB/WR/TE/PK/DST). Missing key = 0.
+     */
+    startingSlots: Record<string, number>;
+    /** Number of flex slots (RB/WR/TE-eligible) — extra bodies the RB/WR/TE pool must cover. */
+    flexSlots: number;
+    /** Number of superflex slots (QB/RB/WR/TE-eligible). */
+    superFlexSlots: number;
 }
 
 export interface TransactionSuggestion {
@@ -43,59 +58,100 @@ export interface TransactionSuggestion {
 
 /**
  * Positions that count toward filling a required starting slot.
- * FLEX-eligible positions can cover a FLEX requirement, but for Phase 1 we
- * only protect the LAST player at a hard required position.
+ * FLEX-eligible positions can cover a FLEX requirement.
  */
 const FLEX_ELIGIBLE = new Set(['RB', 'WR', 'TE']);
+const SUPERFLEX_ELIGIBLE = new Set(['QB', 'RB', 'WR', 'TE']);
 
-/**
- * Determine which of my players are "protected" from being dropped because they
- * are the last player I have at a required starting position.
- */
-function computeProtectedIds(myPlayers: TxnPlayer[], config: RosterConfig): Set<string> {
-    const protectedIds = new Set<string>();
-
-    // Count players per position
-    const byPosition = new Map<string, TxnPlayer[]>();
-    for (const p of myPlayers) {
-        const pos = p.position || 'UNK';
-        if (!byPosition.has(pos)) byPosition.set(pos, []);
-        byPosition.get(pos)!.push(p);
-    }
-
-    // For each required start position, if I have exactly one player there, protect them.
-    for (const reqPos of config.requiredStartPositions) {
-        // Normalize common aliases
-        const positionsToCheck = reqPos === 'FLEX'
-            ? [] // FLEX is covered by RB/WR/TE depth — don't protect a single flex player
-            : [reqPos, ...positionAliases(reqPos)];
-
-        for (const pos of positionsToCheck) {
-            const playersAtPos = byPosition.get(pos) || [];
-            if (playersAtPos.length === 1) {
-                protectedIds.add(playersAtPos[0].sleeper_id);
-            }
-        }
-    }
-
-    return protectedIds;
-}
-
-function positionAliases(pos: string): string[] {
-    if (pos === 'PK' || pos === 'K') return ['PK', 'K'];
-    if (pos === 'DST' || pos === 'DEF' || pos === 'D') return ['DST', 'DEF', 'D'];
-    return [];
+/** Normalize a raw position/token to a canonical key. */
+export function canonicalPos(pos: string | null | undefined): string {
+    const p = (pos || '').toUpperCase().trim();
+    if (p === 'K') return 'PK';
+    if (p === 'DEF' || p === 'D' || p === 'D/ST' || p === 'DST') return 'DST';
+    return p;
 }
 
 /**
- * Find the best drop candidate: the lowest dynasty value player who is NOT protected.
+ * Would dropping `candidate` from my roster leave me unable to field a legal
+ * lineup at its position (dedicated slots) or in a flex pool it's needed for?
+ * This is the general "don't drop below your starting requirement anywhere" guard.
  */
-function findDropCandidate(myPlayers: TxnPlayer[], protectedIds: Set<string>): TxnPlayer | null {
-    const droppable = myPlayers
-        .filter(p => !protectedIds.has(p.sleeper_id))
-        .filter(p => p.position !== 'PICK') // never drop picks via this tool
+function wouldBreakLineup(
+    candidate: TxnPlayer,
+    myCountsByPos: Record<string, number>,
+    config: RosterConfig,
+): boolean {
+    const pos = canonicalPos(candidate.position);
+    const slots = config.startingSlots;
+
+    // 1. Dedicated-slot floor: never drop below the number of dedicated starters.
+    const dedicated = slots[pos] ?? 0;
+    if ((myCountsByPos[pos] ?? 0) - 1 < dedicated) return true;
+
+    // 2. Flex pool floor (RB/WR/TE): the pool must retain its dedicated starters
+    //    plus the flex slots.
+    if (FLEX_ELIGIBLE.has(pos) && config.flexSlots > 0) {
+        const poolFloor = (slots.RB ?? 0) + (slots.WR ?? 0) + (slots.TE ?? 0) + config.flexSlots;
+        const poolCount = (myCountsByPos.RB ?? 0) + (myCountsByPos.WR ?? 0) + (myCountsByPos.TE ?? 0);
+        if (poolCount - 1 < poolFloor) return true;
+    }
+
+    // 3. Superflex pool floor (QB/RB/WR/TE).
+    if (SUPERFLEX_ELIGIBLE.has(pos) && config.superFlexSlots > 0) {
+        const poolFloor = (slots.QB ?? 0) + (slots.RB ?? 0) + (slots.WR ?? 0) + (slots.TE ?? 0)
+            + config.flexSlots + config.superFlexSlots;
+        const poolCount = (myCountsByPos.QB ?? 0) + (myCountsByPos.RB ?? 0) + (myCountsByPos.WR ?? 0) + (myCountsByPos.TE ?? 0);
+        if (poolCount - 1 < poolFloor) return true;
+    }
+
+    return false;
+}
+
+/** Count my players per canonical position (excluding picks). */
+function countByPosition(players: TxnPlayer[]): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const p of players) {
+        if (p.position === 'PICK') continue;
+        const pos = canonicalPos(p.position);
+        counts[pos] = (counts[pos] ?? 0) + 1;
+    }
+    return counts;
+}
+
+
+/**
+ * Find the best drop candidate to pair with a specific incoming free agent.
+ * Prefers a same-position upgrade drop when it's near the cheapest body,
+ * otherwise the lowest-value legal (surplus) drop anywhere (cross-position OK).
+ * Never returns a player whose drop would break the lineup.
+ */
+function findDropForAdd(
+    add: TxnPlayer,
+    myPlayers: TxnPlayer[],
+    myCountsByPos: Record<string, number>,
+    config: RosterConfig,
+): TxnPlayer | null {
+    const legalDroppable = myPlayers
+        .filter(p => p.position !== 'PICK')
+        .filter(p => !wouldBreakLineup(p, myCountsByPos, config))
         .sort((a, b) => (a.fc_value || 0) - (b.fc_value || 0));
-    return droppable[0] || null;
+
+    if (legalDroppable.length === 0) return null;
+
+    const addPos = canonicalPos(add.position);
+    const lowest = legalDroppable[0];
+
+    // Prefer a same-position drop the add clearly upgrades.
+    const samePos = legalDroppable.find(
+        p => canonicalPos(p.position) === addPos && (add.fc_value || 0) > (p.fc_value || 0),
+    );
+    if (samePos) {
+        if (samePos.sleeper_id === lowest.sleeper_id) return samePos;
+        const sameVal = samePos.fc_value || 0;
+        const lowVal = lowest.fc_value || 0;
+        if (lowVal <= 0 || sameVal <= lowVal * 1.2) return samePos;
+    }
+    return lowest;
 }
 
 export interface SuggestionOptions {
@@ -134,7 +190,7 @@ export function generateTransactionSuggestions(
     );
     const openSpots = Math.max(0, config.coreCapacity - effectiveCoreCount);
 
-    const protectedIds = computeProtectedIds(corePlayers, config);
+    const myCountsByPos = countByPosition(corePlayers);
 
     // Sort free agents by value descending
     const sortedFAs = [...freeAgents]
@@ -163,34 +219,45 @@ export function generateTransactionSuggestions(
         remainingOpenSpots--;
     }
 
-    // --- Swaps: for remaining FAs, pair with the best drop candidate ---
-    // Recompute the drop candidate each time we conceptually add a player, but for
-    // Phase 1 we keep it simple: compare each remaining FA against the current worst
-    // droppable player. We show the top swap opportunities.
-    const dropCandidate = findDropCandidate(corePlayers, protectedIds);
+    // --- Swaps: pair each remaining FA with the best sensible drop for THAT add ---
+    // Each add gets its own drop (same-position upgrade or a genuine cross-position
+    // surplus), respecting the "don't drop below your starting requirement" guard.
+    // We dedupe so the same drop target isn't shown many times: once a drop has
+    // been suggested a couple times we stop reusing it, keeping the list varied.
+    const dropUseCount = new Map<string, number>();
+    const MAX_REUSE_PER_DROP = 2;
 
-    if (dropCandidate) {
-        const dropVal = dropCandidate.fc_value || 0;
-        for (; faIdx < sortedFAs.length; faIdx++) {
-            const fa = sortedFAs[faIdx];
-            const faVal = fa.fc_value || 0;
-            if (faVal <= 0) break;
+    for (; faIdx < sortedFAs.length; faIdx++) {
+        const fa = sortedFAs[faIdx];
+        const faVal = fa.fc_value || 0;
+        if (faVal <= 0) break;
 
-            const gain = faVal - dropVal;
-            const gainPct = dropVal > 0 ? (gain / dropVal) * 100 : (faVal > 0 ? Infinity : 0);
+        const drop = findDropForAdd(fa, corePlayers, myCountsByPos, config);
+        if (!drop) continue; // nothing legal to drop → no swap
 
-            // Only surface meaningful upgrades
-            if (gainPct < thresholdPct) continue;
+        const dropVal = drop.fc_value || 0;
+        const gain = faVal - dropVal;
+        const gainPct = dropVal > 0 ? (gain / dropVal) * 100 : (faVal > 0 ? Infinity : 0);
 
-            suggestions.push({
-                type: 'swap',
-                addPlayer: fa,
-                dropPlayer: dropCandidate,
-                valueGain: gain,
-                valueGainPct: gainPct === Infinity ? 100 : gainPct,
-                reason: `Upgrade over ${dropCandidate.full_name} (+${gain.toLocaleString()} value, ${Math.round(gainPct)}%)`,
-            });
-        }
+        // Only surface meaningful upgrades.
+        if (gainPct < thresholdPct) continue;
+
+        // Dedupe: don't spam the same drop target.
+        const used = dropUseCount.get(drop.sleeper_id) ?? 0;
+        if (used >= MAX_REUSE_PER_DROP) continue;
+        dropUseCount.set(drop.sleeper_id, used + 1);
+
+        const samePos = canonicalPos(drop.position) === canonicalPos(fa.position);
+        suggestions.push({
+            type: 'swap',
+            addPlayer: fa,
+            dropPlayer: drop,
+            valueGain: gain,
+            valueGainPct: gainPct === Infinity ? 100 : gainPct,
+            reason: samePos
+                ? `Upgrade at ${canonicalPos(fa.position)} over ${drop.full_name} (+${gain.toLocaleString()}, ${Math.round(gainPct)}%)`
+                : `Add ${fa.full_name}; drop surplus ${drop.full_name} (${canonicalPos(drop.position)}) for +${gain.toLocaleString()} value`,
+        });
     }
 
     // Sort: pure adds first (by value), then swaps by value gain
@@ -214,15 +281,29 @@ export function buildRosterConfig(rosterPositions: string[] | null | undefined):
     );
     const coreCapacity = nonReserve.length;
 
-    // Required start positions = the non-bench, non-reserve, non-flex slots
+    // Dedicated starting slots per canonical position, plus flex/superflex counts.
+    const startingSlots: Record<string, number> = {};
+    let flexSlots = 0;
+    let superFlexSlots = 0;
     const requiredStartPositions = new Set<string>();
-    for (const pos of rosterPositions) {
-        if (pos === 'BN' || pos === 'IR' || pos === 'TAXI' || pos === 'BE' || pos === 'INJURED_RESERVE') continue;
-        if (pos === 'FLEX' || pos === 'SUPER_FLEX' || pos === 'REC_FLEX' || pos === 'WRRB_FLEX' || pos === 'WRT') continue;
-        requiredStartPositions.add(pos);
+
+    for (const raw of rosterPositions) {
+        const pos = raw.toUpperCase().trim();
+        if (pos === 'BN' || pos === 'BE' || pos === 'IR' || pos === 'TAXI' || pos === 'INJURED_RESERVE') continue;
+        if (pos === 'SUPER_FLEX' || pos === 'SUPERFLEX' || pos === 'SF' || pos === 'Q/W/R/T' || pos === 'QB/RB/WR/TE') {
+            superFlexSlots++;
+            continue;
+        }
+        if (pos === 'FLEX' || pos === 'W/R/T' || pos === 'WRT' || pos === 'WRRB_FLEX' || pos === 'REC_FLEX' || pos === 'WR/RB' || pos === 'RB/WR' || pos === 'WR/TE') {
+            flexSlots++;
+            continue;
+        }
+        const canon = canonicalPos(pos);
+        startingSlots[canon] = (startingSlots[canon] ?? 0) + 1;
+        requiredStartPositions.add(canon);
     }
 
-    return { coreCapacity, requiredStartPositions };
+    return { coreCapacity, requiredStartPositions, startingSlots, flexSlots, superFlexSlots };
 }
 
 /**
@@ -231,22 +312,25 @@ export function buildRosterConfig(rosterPositions: string[] | null | undefined):
  * Required start positions are the hard positions with >= 1 starter slot.
  */
 export function buildRosterConfigFromSlots(
-    slots: { QB: number; RB: number; WR: number; TE: number; FLEX?: number; total?: number } | null | undefined,
+    slots: { QB: number; RB: number; WR: number; TE: number; FLEX?: number; DST?: number; PK?: number; total?: number } | null | undefined,
 ): RosterConfig | null {
     if (!slots) return null;
 
+    const startingSlots: Record<string, number> = {};
     const requiredStartPositions = new Set<string>();
-    if (slots.QB > 0) requiredStartPositions.add('QB');
-    if (slots.RB > 0) requiredStartPositions.add('RB');
-    if (slots.WR > 0) requiredStartPositions.add('WR');
-    if (slots.TE > 0) requiredStartPositions.add('TE');
-    // Note: FLEX is intentionally not a hard-protected position.
+    if (slots.QB > 0) { startingSlots.QB = slots.QB; requiredStartPositions.add('QB'); }
+    if (slots.RB > 0) { startingSlots.RB = slots.RB; requiredStartPositions.add('RB'); }
+    if (slots.WR > 0) { startingSlots.WR = slots.WR; requiredStartPositions.add('WR'); }
+    if (slots.TE > 0) { startingSlots.TE = slots.TE; requiredStartPositions.add('TE'); }
+    if ((slots.DST ?? 0) > 0) { startingSlots.DST = slots.DST!; requiredStartPositions.add('DST'); }
+    if ((slots.PK ?? 0) > 0) { startingSlots.PK = slots.PK!; requiredStartPositions.add('PK'); }
+    const flexSlots = slots.FLEX || 0;
 
     // Core capacity: prefer explicit total, else estimate starters + a standard bench
-    const starters = slots.QB + slots.RB + slots.WR + slots.TE + (slots.FLEX || 0);
+    const starters = slots.QB + slots.RB + slots.WR + slots.TE + flexSlots + (slots.DST ?? 0) + (slots.PK ?? 0);
     const coreCapacity = typeof slots.total === 'number' && slots.total > 0
         ? slots.total
         : starters + 6; // fallback bench estimate
 
-    return { coreCapacity, requiredStartPositions };
+    return { coreCapacity, requiredStartPositions, startingSlots, flexSlots, superFlexSlots: 0 };
 }
