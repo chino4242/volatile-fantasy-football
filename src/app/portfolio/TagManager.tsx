@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { Search, X, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface TagRow {
@@ -122,8 +123,8 @@ export function TagManager({ onChange }: { onChange?: () => void }) {
                         <div className="text-sm text-zinc-400 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading tags…</div>
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <TagColumn title="BUY" rows={buys} color="green" onRemove={removeTag} />
-                            <TagColumn title="SELL" rows={sells} color="red" onRemove={removeTag} />
+                            <TagColumn title="Buy / Add" rows={buys} color="green" onRemove={removeTag} />
+                            <TagColumn title="Sell / Drop" rows={sells} color="red" onRemove={removeTag} />
                         </div>
                     )}
                 </div>
@@ -142,9 +143,11 @@ function TagColumn({ title, rows, color, onRemove }: { title: string; rows: TagR
             ) : (
                 <ul className="space-y-0.5">
                     {rows.map(t => (
-                        <li key={t.sleeper_id} className="text-sm text-zinc-800 dark:text-zinc-200 flex items-center justify-between gap-2 group">
-                            <span className="truncate">{t.full_name} <span className="text-zinc-400">({t.position})</span></span>
-                            <button onClick={() => onRemove(t.sleeper_id)} className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" title="Remove tag">
+                        <li key={t.sleeper_id} className="text-sm flex items-center justify-between gap-2 group">
+                            <Link href={`/portfolio/player/${t.sleeper_id}`} className="truncate text-zinc-800 dark:text-zinc-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline">
+                                {t.full_name} <span className="text-zinc-400">({t.position})</span>
+                            </Link>
+                            <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(t.sleeper_id); }} className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" title="Remove tag">
                                 <X className="h-3.5 w-3.5" />
                             </button>
                         </li>
