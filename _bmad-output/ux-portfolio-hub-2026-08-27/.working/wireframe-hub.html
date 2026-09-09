@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portfolio Hub — Wireframe (low-fi)</title>
+<style>
+  :root { --line:#d4d4d8; --ink:#18181b; --dim:#52525b; --dimmer:#71717a; --amber:#b45309; --green:#15803d; --red:#b91c1c; --indigo:#4f46e5; --bg:#fafafa; --card:#ffffff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-monospace,Menlo,monospace; padding:24px; }
+  h1 { font-size:15px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); border-bottom:1px dashed var(--line); padding-bottom:8px; }
+  .frame { max-width:1080px; margin:0 auto 48px; border:1px dashed var(--line); border-radius:10px; padding:16px; background:#f4f4f5; }
+  .tag { display:inline-block; font-size:10px; padding:1px 6px; border-radius:6px; border:1px solid var(--line); color:var(--dim); }
+  .toggle { float:right; font-size:11px; border:1px solid var(--line); border-radius:999px; padding:2px 8px; color:var(--dim); }
+  .card { border:1px solid var(--line); border-radius:10px; padding:12px; margin:10px 0; background:var(--card); }
+  .ac { border-color:var(--amber); }
+  .muted { color:var(--dimmer); }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:6px 0; border-bottom:1px dotted #e4e4e7; }
+  .row:last-child { border-bottom:0; }
+  .pill { font-size:10px; padding:1px 6px; border-radius:999px; border:1px solid var(--line); }
+  .grp { font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--dim); margin:14px 0 4px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .btn { font-size:11px; border:1px solid var(--indigo); color:var(--indigo); border-radius:7px; padding:2px 8px; }
+  .ack { font-size:11px; border:1px solid var(--line); color:var(--dim); border-radius:7px; padding:2px 8px; }
+  .amber { color:var(--amber); } .green{color:var(--green);} .red{color:var(--red);} .indigo{color:var(--indigo);}
+  .note { font-size:11px; color:var(--dimmer); margin-top:2px; }
+  .sub { font-size:11px; color:var(--dim); }
+  .mobile { max-width:360px; }
+</style>
+</head>
+<body>
+
+<!-- ============== STATE A: IN-SEASON (group by action type) ============== -->
+<div class="frame">
+  <h1>Portfolio Hub — IN-SEASON <span class="toggle">❄ Off-season | 🔥 In-season ▉</span></h1>
+  <div class="sub">Cross-league management · 12 leagues</div>
+
+  <!-- ACTION CENTER -->
+  <div class="card ac">
+    <div><strong class="amber">⚡ Needs attention this week</strong> <span class="muted">· 4 lineup fixes · 2 trades · 3 waiver adds</span></div>
+
+    <div class="grp amber">⚠ Lineup fixes (4)</div>
+    <div class="row">
+      <span>Start <strong>Jaylen Waddle</strong> over Romeo Doubs <span class="muted">· FLEX</span> <span class="pill">Fun w/ Friends · Sleeper</span></span>
+      <span><a class="btn">Open Sleeper ↗</a> <a class="ack">✓ On purpose</a></span>
+    </div>
+    <div class="row">
+      <span>Start <strong>Rico Dowdle</strong> over Kaytron Allen <span class="muted">· RB2</span> <span class="pill">Late Round Dads · Sleeper</span></span>
+      <span><a class="btn">Open Sleeper ↗</a> <a class="ack">✓ On purpose</a></span>
+    </div>
+    <div class="note">↳ acknowledged flags collapse into "2 intentional (show)"</div>
+
+    <div class="grp indigo">🔀 Trades to review (2) <span class="muted">· auto-pulled</span> <span class="pill">Fleaflicker</span></div>
+    <div class="row">
+      <span>Incoming: you get <strong>Garrett Wilson</strong> ↔ give Breece Hall <span class="green">· even value</span> <span class="pill">FF League · Fleaflicker</span></span>
+      <span><a class="btn">Evaluate ↗</a></span>
+    </div>
+    <div class="row muted">
+      <span>+ Evaluate a trade for another league <span class="muted">(paste an offer — Sleeper / Yahoo / MyFFPC)</span></span>
+      <span><a class="ack">Evaluate a trade</a></span>
+    </div>
+
+    <div class="grp green">➕ Waiver adds worth it (3)</div>
+    <div class="row">
+      <span><strong>Cedric Tillman</strong> (WR) <span class="green">+188 edge</span> <span class="muted">available</span> <span class="pill">Forte-Year Olds · Sleeper</span></span>
+      <span><a class="btn">Open Sleeper ↗</a></span>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="grp">Your teams <span class="muted">— sorted: needs-action first</span></div>
+  <div class="grid">
+    <div class="card">
+      <div><strong>Forte-Year Old Virgins</strong> <span class="pill amber">⚠ 1 lineup</span> <span class="pill green">Contender</span></div>
+      <div class="sub">Sleeper · 1QB · dynasty · Kaioty</div>
+      <div class="note">Weakest starter: Rico Dowdle (RB) · core age 26.1</div>
+    </div>
+    <div class="card">
+      <div><strong>Insurance Survivors</strong> <span class="pill">Middle</span></div>
+      <div class="sub">Yahoo · 1QB · redraft · Warren Peace</div>
+      <div class="note">No urgent actions</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============== STATE B: OFF-SEASON (group by team) ============== -->
+<div class="frame">
+  <h1>Portfolio Hub — OFF-SEASON <span class="toggle">❄ Off-season ▉ | 🔥 In-season</span></h1>
+
+  <div class="card ac">
+    <div><strong class="indigo">🎯 Moves to strengthen your teams</strong> <span class="muted">· grouped by team</span></div>
+
+    <div class="grp">Forte-Year Old Virgins <span class="pill green">Contender</span> <span class="muted">— weakness: RB depth</span></div>
+    <div class="row">
+      <span class="green">➕ Add Cedric Tillman (WR) · +188 edge <span class="muted">available</span></span>
+      <span><a class="btn">Open Sleeper ↗</a></span>
+    </div>
+    <div class="row">
+      <span class="indigo">🔀 Trade for RB: send surplus WR → target a startable back</span>
+      <span><a class="btn">See trade ↗</a></span>
+    </div>
+
+    <div class="grp">Late Round Dads <span class="pill amber">Rebuild</span> <span class="muted">— aging core</span></div>
+    <div class="row">
+      <span class="red">📉 Sell window: Derrick Henry (RB) — cash the vet for youth</span>
+      <span><a class="btn">See trade ↗</a></span>
+    </div>
+  </div>
+
+  <div class="grp">Your teams <span class="muted">— strengths & weaknesses</span></div>
+  <div class="grid">
+    <div class="card">
+      <div><strong>Forte-Year Old Virgins</strong> <span class="pill green">Contender</span></div>
+      <div class="note">Strong: WR · Thin: RB depth · core age 26.1</div>
+    </div>
+    <div class="card">
+      <div><strong>Late Round Dads</strong> <span class="pill amber">Rebuild</span></div>
+      <div class="note">Aging core · sell-window vets flagged</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============== STATE C: QUIET ============== -->
+<div class="frame">
+  <h1>Portfolio Hub — QUIET STATE</h1>
+  <div class="card" style="border-color:var(--green)">
+    <div class="green"><strong>✓ You're all caught up</strong></div>
+    <div class="note">Nothing needs attention right now. Browse your teams below.</div>
+  </div>
+  <div class="grp">Your teams</div>
+  <div class="grid">
+    <div class="card"><strong>Forte-Year Old Virgins</strong><div class="note">Contender · all lineups optimal</div></div>
+    <div class="card"><strong>Insurance Survivors</strong><div class="note">Middle · no flags</div></div>
+  </div>
+</div>
+
+<!-- ============== STATE D: MOBILE QUICK-HIT ============== -->
+<div class="frame mobile">
+  <h1 style="font-size:13px">📱 Mobile — quick hit</h1>
+  <div class="card ac">
+    <div class="amber"><strong>⚡ 4 need attention</strong></div>
+    <div class="row"><span class="sub">⚠ 4 lineup fixes</span><span><a class="btn">View</a></span></div>
+    <div class="row"><span class="sub">🔀 2 trades to review</span><span><a class="btn">View</a></span></div>
+    <div class="row"><span class="sub">➕ 3 waiver adds</span><span><a class="btn">View</a></span></div>
+  </div>
+  <div class="note">Tap a group → expand list → deep-link out. Dashboard collapsed by default on phone.</div>
+</div>
+
+</body>
+</html>
