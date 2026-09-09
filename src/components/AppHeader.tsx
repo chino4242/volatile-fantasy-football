@@ -4,10 +4,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { User } from "lucide-react";
 import { useAuth } from "@/hooks/useUser";
+import { useSeasonMode } from "@/hooks/useSeasonMode";
+import { SeasonModeToggle } from "./SeasonModeToggle";
 import { InstallPWA } from "./InstallPWA";
 
 export function AppHeader() {
     const { sleeperUsername, fleaflickerUsername } = useAuth();
+    const { showFor } = useSeasonMode();
     const isLoggedIn = !!sleeperUsername || !!fleaflickerUsername;
 
     return (
@@ -31,12 +34,15 @@ export function AppHeader() {
                         </Link>
                     )}
                     <InstallPWA />
-                    <Link
-                        href="/cheat-sheet"
-                        className="flex items-center min-h-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                    >
-                        Cheat Sheet
-                    </Link>
+                    <SeasonModeToggle />
+                    {showFor('off-season') && (
+                        <Link
+                            href="/cheat-sheet"
+                            className="flex items-center min-h-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                        >
+                            Cheat Sheet
+                        </Link>
+                    )}
                     <Link
                         href="/players"
                         className="flex items-center min-h-[44px] min-w-[44px] px-2 text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"

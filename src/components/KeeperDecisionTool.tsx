@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { Settings, ChevronDown, ChevronUp } from 'lucide-react';
 
 import { BasePlayer as Player } from '@/types/player';
+import { useSeasonMode } from '@/hooks/useSeasonMode';
 
 interface KeeperSettings {
     keeperCount: number;
@@ -26,6 +27,7 @@ interface KeeperRecommendation {
 }
 
 export function KeeperDecisionTool({ players, scoringFormat, keeperCount, leagueId }: KeeperDecisionToolProps) {
+    const { showFor } = useSeasonMode();
     const [expanded, setExpanded] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [settings, setSettings] = useState<KeeperSettings>(() => {
@@ -115,6 +117,8 @@ export function KeeperDecisionTool({ players, scoringFormat, keeperCount, league
     const borderline = recommendations.filter(r => r.verdict === 'borderline');
 
     if (players.filter(p => p.position !== 'PICK').length === 0) return null;
+    // Keeper decisions are an off-season activity — hidden in in-season mode.
+    if (!showFor('off-season')) return null;
 
     return (
         <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm ring-1 ring-zinc-900/5 overflow-hidden mb-6">

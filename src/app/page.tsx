@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { LogOut, Loader2, Plus, X, Settings } from "lucide-react";
 import { useAuth } from "@/hooks/useUser";
+import { useSeasonMode } from "@/hooks/useSeasonMode";
 import { useState, useEffect } from "react";
 import { InstallBanner } from "@/components/InstallBanner";
 import ValueMovers from "@/components/ValueMovers";
@@ -30,6 +31,7 @@ export default function Home() {
     setLeagueType, setKeeperCount,
     logout, isLoading,
   } = useAuth();
+  const { showFor } = useSeasonMode();
 
   const [activeTab, setActiveTab] = useState<'sleeper' | 'fleaflicker'>('sleeper');
   const [usernameInput, setUsernameInput] = useState('');
@@ -249,9 +251,11 @@ export default function Home() {
               <Link href="/players" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 transition-colors">
                 Or browse all players &rarr;
               </Link>
-              <Link href="/cheat-sheet" className="text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 transition-colors">
-                📋 Draft cheat sheet (any league) &rarr;
-              </Link>
+              {showFor('off-season') && (
+                <Link href="/cheat-sheet" className="text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 transition-colors">
+                  📋 Draft cheat sheet (any league) &rarr;
+                </Link>
+              )}
             </div>
           </div>
         ) : (
@@ -283,14 +287,18 @@ export default function Home() {
                   className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-zinc-900 shadow-sm ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 dark:bg-white/10 dark:text-white dark:ring-0 dark:hover:bg-white/20">
                   Player Ranks
                 </Link>
-                <Link href="/mock-draft"
-                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
-                  🎯 Mock Draft
-                </Link>
-                <Link href="/cheat-sheet"
-                  className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 transition-colors">
-                  📋 Cheat Sheet
-                </Link>
+                {showFor('off-season') && (
+                  <Link href="/mock-draft"
+                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
+                    🎯 Mock Draft
+                  </Link>
+                )}
+                {showFor('off-season') && (
+                  <Link href="/cheat-sheet"
+                    className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 transition-colors">
+                    📋 Cheat Sheet
+                  </Link>
+                )}
                 <button onClick={logout}
                   className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30 transition-colors">
                   <LogOut className="w-4 h-4" /> Disconnect

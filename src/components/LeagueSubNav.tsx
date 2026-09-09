@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { useSeasonMode, type FeatureSeason } from '@/hooks/useSeasonMode';
 
 interface TeamInfo {
     id: string | number;
@@ -20,6 +21,7 @@ interface LeagueSubNavProps {
 export function LeagueSubNav({ leagueId, leagueName, platform, teams }: LeagueSubNavProps) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
+    const { showFor } = useSeasonMode();
     const [teamDropdownOpen, setTeamDropdownOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -75,14 +77,19 @@ export function LeagueSubNav({ leagueId, leagueName, platform, teams }: LeagueSu
         return str ? `?${str}` : '';
     })();
 
-    const tabs = [
-        { key: 'dashboard', label: 'Dashboard', href: `${basePath}${qs}` },
-        { key: 'free-agents', label: 'Free Agents', href: `${basePath}/free-agents${freeAgentsQs}` },
-        { key: 'draft-plan', label: 'Draft Plan', href: `${basePath}/draft-plan${qs}` },
-        { key: 'trades', label: 'Trades', href: `${basePath}/trades${qs}` },
-        { key: 'mock-draft', label: 'Mock Draft', href: `${basePath}/mock-draft${qs}` },
-        { key: 'live-draft', label: 'Live Draft', href: `${basePath}/live-draft${qs}`, muted: true },
+    const tabs: { key: string; label: string; href: string; season: FeatureSeason; muted?: boolean }[] = [
+        { key: 'dashboard', label: 'Dashboard', href: `${basePath}${qs}`, season: 'both' },
+        { key: 'free-agents', label: 'Free Agents', href: `${basePath}/free-agents${freeAgentsQs}`, season: 'both' },
+        { key: 'draft-plan', label: 'Draft Plan', href: `${basePath}/draft-plan${qs}`, season: 'off-season' },
+        { key: 'trades', label: 'Trades', href: `${basePath}/trades${qs}`, season: 'in-season' },
+        { key: 'mock-draft', label: 'Mock Draft', href: `${basePath}/mock-draft${qs}`, season: 'off-season' },
+        { key: 'live-draft', label: 'Live Draft', href: `${basePath}/live-draft${qs}`, season: 'off-season', muted: true },
     ];
+
+    // Hide tabs that don't apply to the current season mode, but always keep the
+    // tab for the page you're currently on (so a direct-URL visit doesn't look
+    // like a broken nav with no active tab).
+    const visibleTabs = tabs.filter(tab => showFor(tab.season) || tab.key === activeTab);
 
     return (
         <div className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
@@ -138,7 +145,7 @@ export function LeagueSubNav({ leagueId, leagueName, platform, teams }: LeagueSu
 
                 {/* Tab bar */}
                 <div className="flex items-center gap-0 -mb-px overflow-x-auto">
-                    {tabs.map(tab => {
+                    {visibleTabs.map(tab => {
                         const isActive = tab.key === activeTab || (tab.key === 'dashboard' && activeTab === 'team');
                         return (
                             <Link
