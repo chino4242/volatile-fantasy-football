@@ -91,7 +91,7 @@ async function yahooOpponentTeamNum(yahooLeagueId: string, myTeamNum: string): P
  * so we map numericId → roster_id → scrape opponent by team number.
  */
 export async function resolveYahooMatchup(appLeagueId: string, myRosterId: string, leagueName: string): Promise<LeagueMatchupInput | null> {
-    const [lg] = await db.select({ league_id: leagues.league_id }).from(leagues).where(eq(leagues.league_id, appLeagueId));
+    const [lg] = await db.select({ league_id: leagues.league_id, last_synced_at: leagues.last_synced_at }).from(leagues).where(eq(leagues.league_id, appLeagueId));
     if (!lg) return null;
     // Yahoo appLeagueId is the numeric Yahoo league id (yl.league_key).
     const yahooLeagueId = appLeagueId;
@@ -111,6 +111,7 @@ export async function resolveYahooMatchup(appLeagueId: string, myRosterId: strin
         myStarterIds: mine.starters,
         oppStarterIds: opp.starters,
         opponentName: opp.ownerName,
+        lastSynced: lg.last_synced_at ? lg.last_synced_at.toISOString() : null,
     };
 }
 
@@ -136,11 +137,14 @@ export async function resolveMyffpcMatchup(appLeagueId: string, myRosterId: stri
     const opp = rosterList.find(r => nk(r.ownerName) === nk(oppName));
     if (!opp) return null;
 
+    const [lg] = await db.select({ last_synced_at: leagues.last_synced_at }).from(leagues).where(eq(leagues.league_id, appLeagueId));
+
     return {
         leagueId: appLeagueId, leagueName, platform: 'myffpc',
         myStarterIds: mine.starters,
         oppStarterIds: opp.starters,
         opponentName: opp.ownerName,
+        lastSynced: lg?.last_synced_at ? lg.last_synced_at.toISOString() : null,
     };
 }
 

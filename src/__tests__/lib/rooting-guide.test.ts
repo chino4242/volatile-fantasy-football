@@ -78,3 +78,19 @@ describe('buildRootingGuide', () => {
         expect(g.games[g.games.length - 1].gameKey).toBe('UNKNOWN');
     });
 });
+
+
+describe('buildRootingGuide — sources (data freshness)', () => {
+    it('reports lastSynced per league (live for API platforms, ISO for DB)', () => {
+        const leagues: LeagueMatchupInput[] = [
+            { leagueId: 's', leagueName: 'Sleeper Lg', platform: 'sleeper', myStarterIds: [], oppStarterIds: [], lastSynced: 'live' },
+            { leagueId: 'y', leagueName: 'Yahoo Lg', platform: 'yahoo', myStarterIds: [], oppStarterIds: [], lastSynced: '2026-09-10T09:00:00.000Z' },
+            { leagueId: 'm', leagueName: 'MyFFPC Lg', platform: 'myffpc', myStarterIds: [], oppStarterIds: [], lastSynced: null },
+        ];
+        const g = buildRootingGuide(leagues, new Map(), 1);
+        expect(g.sources).toHaveLength(3);
+        expect(g.sources.find(s => s.platform === 'sleeper')!.lastSynced).toBe('live');
+        expect(g.sources.find(s => s.platform === 'yahoo')!.lastSynced).toBe('2026-09-10T09:00:00.000Z');
+        expect(g.sources.find(s => s.platform === 'myffpc')!.lastSynced).toBeNull();
+    });
+});

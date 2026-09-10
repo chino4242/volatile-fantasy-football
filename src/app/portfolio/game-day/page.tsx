@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Loader2, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Loader2, ThumbsUp, ThumbsDown, Clock } from 'lucide-react';
 import { useAuth } from '@/hooks/useUser';
 import { useMyTeams } from '@/hooks/useMyTeams';
-import type { RootingGuide, RootingPlayer, RootingGame } from '@/lib/rooting-guide';
+import type { RootingGuide, RootingPlayer, RootingGame, RootingSource } from '@/lib/rooting-guide';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -81,15 +81,17 @@ export default function GameDayPage() {
                     <span>/</span>
                     <Link href="/portfolio" className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">Portfolio</Link>
                     <span>/</span>
-                    <span className="text-zinc-900 dark:text-zinc-100 font-medium">Game Day</span>
+                    <span className="text-zinc-900 dark:text-zinc-100 font-medium">For &amp; Against</span>
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-100">Game Day Rooting Guide</h1>
-                <p className="text-sm text-zinc-500 mt-1 mb-6">
+                <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-100">For &amp; Against</h1>
+                <p className="text-sm text-zinc-500 mt-1 mb-2">
                     Every NFL game where you have a rooting interest — who you&apos;re rooting <span className="text-green-600 dark:text-green-400 font-medium">for</span> and <span className="text-red-600 dark:text-red-400 font-medium">against</span> across your leagues.{guide?.week != null && <> Week {guide.week}.</>}
                     <span className="block text-xs text-zinc-400 mt-1">All leagues. Starters only. &quot;Against&quot; = your weekly head-to-head opponent.</span>
                 </p>
 
-                {loading && <div className="flex items-center gap-2 text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Building your rooting guide…</div>}
+                {!loading && guide?.sources && guide.sources.length > 0 && <FreshnessLine sources={guide.sources} />}
+
+                {loading && <div className="flex items-center gap-2 text-zinc-500 mt-4"><Loader2 className="h-4 w-4 animate-spin" /> Building your board…</div>}
                 {error && <div className="text-sm text-red-500">Failed to load ({error}).</div>}
 
                 {!loading && guide && guide.week == null && (
@@ -163,6 +165,50 @@ function fmtTime(t: string): string {
     const ampm = h >= 12 ? 'PM' : 'AM';
     const hr = h % 12 === 0 ? 12 : h % 12;
     return `${hr}:${String(m || 0).padStart(2, '0')} ${ampm} ET`;
+}
+
+// Human "time ago" from an ISO date, e.g. "3h ago", "2d ago", "just now".
+function relativeTime(iso: string): string {
+    const then = new Date(iso).getTime();
+    if (isNaN(then)) return '';
+    const diffMs = Date.now() - then;
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.round(hrs / 24);
+    return `${days}d ago`;
+}
+
+/**
+ * Data-freshness line. Sleeper/Fleaflicker are live (API per request); Yahoo &
+ * MyFFPC are DB-synced, so we show the oldest sync among them as the "last
+ * refreshed" and flag when it's stale (> ~2 days).
+ */
+function FreshnessLine({ sources }: { sources: RootingSource[] }) {
+    const live = sources.filter(s => s.lastSynced === 'live').length;
+    const synced = sources.filter(s => s.lastSynced && s.lastSynced !== 'live') as { platform: string; lastSynced: string }[];
+    // Oldest sync drives the freshness signal (weakest link).
+    const oldest = synced.reduce<string | null>((acc, s) => (!acc || s.lastSynced < acc ? s.lastSynced : acc), null);
+    const stale = oldest ? (Date.now() - new Date(oldest).getTime()) > 2 * 24 * 60 * 60 * 1000 : false;
+
+    return (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400 mb-6">
+            <span className="inline-flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" />
+                {live > 0 && <span>{live} league{live !== 1 ? 's' : ''} live</span>}
+                {live > 0 && synced.length > 0 && <span className="text-zinc-300 dark:text-zinc-600">·</span>}
+                {synced.length > 0 && oldest && (
+                    <span className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : ''}>
+                        Yahoo/MyFFPC synced {relativeTime(oldest)}
+                        {stale && ' — run a refresh'}
+                    </span>
+                )}
+            </span>
+            {synced.length === 0 && live === 0 && <span>No data sources.</span>}
+        </div>
+    );
 }
 
 function PlayerRow({ p }: { p: RootingPlayer }) {

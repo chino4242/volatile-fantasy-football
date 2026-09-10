@@ -97,6 +97,7 @@ async function resolveSleeper(leagueId: string, myRosterId: string, leagueName: 
         leagueId, leagueName, platform: "sleeper",
         myStarterIds: mine.starters.map(normalizeSleeperStarterId),
         oppStarterIds: (opp?.starters || []).map(normalizeSleeperStarterId),
+        lastSynced: "live",
     };
 }
 
@@ -119,6 +120,7 @@ async function resolveFleaflicker(leagueId: string, myTeamId: string, leagueName
         myStarterIds: toIds(myNames),
         oppStarterIds: toIds(oppNames),
         opponentName: iAmHome ? game.awayTeamName : game.homeTeamName,
+        lastSynced: "live",
     };
 }
 

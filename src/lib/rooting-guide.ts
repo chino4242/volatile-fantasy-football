@@ -26,6 +26,9 @@ export interface LeagueMatchupInput {
     oppStarterIds: string[];
     /** Opponent team display name (for context), optional. */
     opponentName?: string;
+    /** Data freshness: ISO date string of the last DB sync (Yahoo/MyFFPC), or
+     *  'live' for API-backed platforms (Sleeper/Fleaflicker) fetched per request. */
+    lastSynced?: string | 'live' | null;
 }
 
 /** Minimal player metadata + NFL-game placement for a sleeper_id. */
@@ -67,11 +70,21 @@ export interface RootingGame {
     kickoffSort?: number | null;
 }
 
+/** One data source (league) + how fresh its data is, for the freshness line. */
+export interface RootingSource {
+    leagueName: string;
+    platform: string;
+    /** ISO date of last sync (Yahoo/MyFFPC), or 'live' (Sleeper/Fleaflicker). */
+    lastSynced: string | 'live' | null;
+}
+
 export interface RootingGuide {
     week: number | null;
     games: RootingGame[];
     /** Leagues that couldn't be resolved (no matchup/my-team), for UI hinting. */
     unresolvedLeagues: string[];
+    /** Per-league data-freshness, for the "last refreshed" line. */
+    sources: RootingSource[];
 }
 
 const UNKNOWN_GAME = 'UNKNOWN';
@@ -162,5 +175,11 @@ export function buildRootingGuide(
         return (b.forCount + b.againstCount) - (a.forCount + a.againstCount);
     });
 
-    return { week, games, unresolvedLeagues: [] };
+    const sources: RootingSource[] = leagues.map(lg => ({
+        leagueName: lg.leagueName,
+        platform: lg.platform,
+        lastSynced: lg.lastSynced ?? null,
+    }));
+
+    return { week, games, unresolvedLeagues: [], sources };
 }
