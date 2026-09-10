@@ -259,7 +259,7 @@ export default function PortfolioPage() {
                 <p className="text-sm text-zinc-500 mt-1 mb-8">
                     Cross-league insights — team strength, upgrade targets, and undervalued free agents across all your leagues.
                     {showFor('in-season') && (
-                        <>{' '}<Link href="/portfolio/game-day" className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">Game Day rooting guide →</Link></>
+                        <>{' '}<Link href="/portfolio/game-day" className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">For &amp; Against →</Link></>
                     )}
                 </p>
 
