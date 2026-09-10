@@ -5,7 +5,7 @@ import { inArray, eq } from "drizzle-orm";
 import { cleanseName } from "@/lib/nameUtils";
 import { getSleeperMatchups, normalizeSleeperStarterId } from "@/lib/sleeper";
 import { getFleaflickerWeekMatchups } from "@/lib/fleaflicker";
-import { resolveYahooMatchup, resolveMyffpcMatchup } from "@/lib/db-matchups";
+import { resolveYahooMatchup, resolveMyffpcMatchup, resolveDbMatchup } from "@/lib/db-matchups";
 import { getLatestWeek } from "@/lib/weekly-rankings";
 import { getWeekSchedule } from "@/lib/nfl-schedule";
 import { getLiveGameStates } from "@/lib/nfl-live";
@@ -48,9 +48,13 @@ export async function POST(request: NextRequest) {
             } else if (ref.platform === "fleaflicker" && week != null) {
                 resolved = await resolveFleaflicker(ref.leagueId, ref.myRosterId, label, week);
             } else if (ref.platform === "yahoo") {
-                resolved = await resolveYahooMatchup(ref.leagueId, ref.myRosterId, label);
+                // Prefer the opponent PERSISTED by the sync (Vercel-safe, no scrape);
+                // fall back to a live scrape locally if not yet persisted.
+                resolved = await resolveDbMatchup("yahoo", ref.leagueId, ref.myRosterId, label)
+                    || await resolveYahooMatchup(ref.leagueId, ref.myRosterId, label);
             } else if (ref.platform === "myffpc") {
-                resolved = await resolveMyffpcMatchup(ref.leagueId, ref.myRosterId, label);
+                resolved = await resolveDbMatchup("myffpc", ref.leagueId, ref.myRosterId, label)
+                    || await resolveMyffpcMatchup(ref.leagueId, ref.myRosterId, label);
             } else {
                 continue;
             }

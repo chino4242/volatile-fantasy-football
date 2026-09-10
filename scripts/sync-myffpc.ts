@@ -46,8 +46,9 @@ function parseLeagueTargets(): LeagueTarget[] {
     return targets;
 }
 
-/** Read one team's rendered roster HTML by navigating directly to its page. */
-async function readTeam(context: BrowserContext, ltuid: string, viewingTeam: number): Promise<string> {
+/** Read one team's rendered roster HTML by navigating directly to its page.
+ *  Also returns the "Current Matchup: vs {Team}" opponent name when present. */
+async function readTeam(context: BrowserContext, ltuid: string, viewingTeam: number): Promise<{ html: string; opponentName: string | null }> {
     const page = context.pages()[0] || await context.newPage();
     // Retry: WebForms pages occasionally return before the roster repeater has
     // painted, yielding 0 players. Reload until we see player anchors.
@@ -58,18 +59,25 @@ async function readTeam(context: BrowserContext, ltuid: string, viewingTeam: num
         if (ok) {
             // Give the rest of the rows a beat to finish rendering.
             await page.waitForTimeout(500);
-            return page.content();
+            const opponentName = await page
+                .$eval('#cphContent_cphContent_cphContent_TeamBanner_hlCurrentOpponent', el => el.textContent?.trim() || '')
+                .catch(() => '');
+            return { html: await page.content(), opponentName: opponentName || null };
         }
         await page.waitForTimeout(800 * attempt);
     }
     // Last resort — return whatever we have (caller logs 0 players).
-    return page.content();
+    return { html: await page.content(), opponentName: null };
 }
+
+/** Cleanse a team/owner name for matching (lowercase, collapse whitespace). */
+function nkTeam(s: string): string { return s.toLowerCase().replace(/\s+/g, ' ').trim(); }
 
 async function syncLeague(context: BrowserContext, target: LeagueTarget) {
     const { db } = await import('../src/db');
     const { leagues, rosters, rosterPlayers, players } = await import('../src/db/schema');
     const { eq } = await import('drizzle-orm');
+    const { getLatestWeek } = await import('../src/lib/weekly-rankings');
 
     const page = context.pages()[0] || await context.newPage();
     // Load one team's SetLineup page — it carries the cboTeams dropdown with the
@@ -117,21 +125,36 @@ async function syncLeague(context: BrowserContext, target: LeagueTarget) {
 
     const results = { league: target.leagueId, teams: 0, matched: 0, unmatched: 0, unmatchedNames: [] as string[] };
 
+    // Map team NAME → viewingTeam, to resolve each team's opponent (scraped as a
+    // name) into the opponent's roster_id for persistence.
+    const nameToViewingTeam = new Map<string, number>();
+    for (const t of teams) nameToViewingTeam.set(nkTeam(t.name), t.viewingTeam);
+    const currentWeek = await getLatestWeek();
+
     // Replace the league's rosters (mirror the paste PUT flow).
     await db.delete(rosters).where(eq(rosters.league_id, target.leagueId));
 
     let rosterIdx = 0;
     for (const team of teams) {
-        const html = await readTeam(context, target.ltuid, team.viewingTeam);
+        const { html, opponentName } = await readTeam(context, target.ltuid, team.viewingTeam);
         const $ = load(html);
         const parsed = parseMyFFPCRosterHtml($, team.name);
         rosterIdx++;
         results.teams++;
 
+        // Resolve the scraped opponent name → opponent's roster_id.
+        let opponentRosterId: string | null = null;
+        if (opponentName) {
+            const oppVt = nameToViewingTeam.get(nkTeam(opponentName));
+            if (oppVt != null) opponentRosterId = `${target.leagueId}_roster_${oppVt}`;
+        }
+
         const [insertedRoster] = await db.insert(rosters).values({
             league_id: target.leagueId,
             roster_id: `${target.leagueId}_roster_${team.viewingTeam}`,
             owner_name: team.name,
+            opponent_roster_id: opponentRosterId,
+            opponent_week: opponentRosterId ? currentWeek : null,
         }).returning({ id: rosters.id });
 
         const seen = new Set<string>();

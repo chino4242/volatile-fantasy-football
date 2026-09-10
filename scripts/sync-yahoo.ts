@@ -119,9 +119,11 @@ export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: st
     // Dynamic imports so dotenv.config() (above) runs before src/db reads env.
     const { db } = await import('../src/db');
     const { players, leagues, rosters, rosterPlayers } = await import('../src/db/schema');
-    const { eq } = await import('drizzle-orm');
+    const { eq, and } = await import('drizzle-orm');
     const { getYahooLeague } = await import('../src/lib/yahoo');
     const { cleanseName } = await import('../src/lib/nameUtils');
+    const { yahooOwnerMatchupPair } = await import('../src/lib/db-matchups');
+    const { getLatestWeek } = await import('../src/lib/weekly-rankings');
 
     const yl: YahooLeague = await getYahooLeague(leagueKey);
 
@@ -174,6 +176,9 @@ export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: st
     // 2. Replace rosters for this league (cascade deletes roster_players).
     await db.delete(rosters).where(eq(rosters.league_id, appLeagueId));
 
+    // Current NFL week — for stamping the owner's weekly opponent.
+    const currentWeek = await getLatestWeek();
+
     let matched = 0;
     let unmatched = 0;
     const unmatchedNames: string[] = [];
@@ -212,6 +217,31 @@ export async function syncYahooLeague(leagueKey: string): Promise<{ leagueId: st
         if (deduped.length > 0) {
             await db.insert(rosterPlayers).values(deduped);
         }
+    }
+
+    // Persist the OWNER's weekly H2H opponent so the For & Against page can
+    // resolve the AGAINST side on Vercel without a live scrape. Yahoo scopes the
+    // matchup view to the authenticated cookie owner, so we can only know the
+    // owner's own matchup (their team + opponent). Stamp it RECIPROCALLY on just
+    // those two roster rows; all other teams keep opponent_roster_id = NULL
+    // (the route falls back to a live scrape for those, which is fine since the
+    // user only roots for their own teams).
+    try {
+        const pair = await yahooOwnerMatchupPair(appLeagueId);
+        if (pair) {
+            const [a, b] = pair;
+            await db.update(rosters)
+                .set({ opponent_roster_id: b, opponent_week: currentWeek })
+                .where(and(eq(rosters.league_id, appLeagueId), eq(rosters.roster_id, a)));
+            await db.update(rosters)
+                .set({ opponent_roster_id: a, opponent_week: currentWeek })
+                .where(and(eq(rosters.league_id, appLeagueId), eq(rosters.roster_id, b)));
+            console.log(`[yahoo] ${appLeagueId}: persisted owner matchup ${a} ↔ ${b} (week ${currentWeek})`);
+        } else {
+            console.warn(`[yahoo] ${appLeagueId}: could not resolve owner matchup pair (opponent not persisted)`);
+        }
+    } catch (e) {
+        console.warn(`[yahoo] ${appLeagueId}: opponent persist failed (best-effort):`, e);
     }
 
     return { leagueId: appLeagueId, matched, unmatched, unmatchedNames };

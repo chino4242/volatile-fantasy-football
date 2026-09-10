@@ -19,7 +19,7 @@
 
 import { db } from '@/db';
 import { leagues, rosters, rosterPlayers } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { load } from 'cheerio';
 import type { LeagueMatchupInput } from './rooting-guide';
 
@@ -52,6 +52,44 @@ async function loadLeagueRostersWithStarters(appLeagueId: string) {
 /** cleanse an owner/team name for matching (lowercase, collapse whitespace). */
 function nk(s: string): string { return s.toLowerCase().replace(/\s+/g, ' ').trim(); }
 
+/**
+ * DB-backed matchup resolution for Yahoo/MyFFPC — reads the weekly opponent
+ * PERSISTED by the sync (rosters.opponent_roster_id) instead of scraping live.
+ * This is what lets the For & Against page resolve the AGAINST side on Vercel /
+ * mobile (no cookie, no browser). Returns null if no persisted opponent (caller
+ * may fall back to the live resolver locally).
+ */
+export async function resolveDbMatchup(
+    platform: 'yahoo' | 'myffpc',
+    appLeagueId: string,
+    myRosterId: string,
+    leagueName: string,
+): Promise<LeagueMatchupInput | null> {
+    const [lg] = await db.select({ last_synced_at: leagues.last_synced_at }).from(leagues).where(eq(leagues.league_id, appLeagueId));
+    const rosterList = await loadLeagueRostersWithStarters(appLeagueId);
+    const mine = rosterList.find(r => String(r.numericId) === String(myRosterId));
+    if (!mine) return null;
+
+    // Persisted opponent roster_id (written by the sync).
+    const [myRow] = await db
+        .select({ opponent_roster_id: rosters.opponent_roster_id })
+        .from(rosters)
+        .where(and(eq(rosters.league_id, appLeagueId), eq(rosters.roster_id, mine.rosterId)));
+    const oppRosterId = myRow?.opponent_roster_id;
+    if (!oppRosterId) return null; // not persisted → caller can fall back to live
+
+    const opp = rosterList.find(r => r.rosterId === oppRosterId);
+    if (!opp) return null;
+
+    return {
+        leagueId: appLeagueId, leagueName, platform,
+        myStarterIds: mine.starters,
+        oppStarterIds: opp.starters,
+        opponentName: opp.ownerName,
+        lastSynced: lg?.last_synced_at ? lg.last_synced_at.toISOString() : null,
+    };
+}
+
 // ── Yahoo ────────────────────────────────────────────────────────────────
 async function yahooFetch(path: string): Promise<string | null> {
     const cookie = process.env.YAHOO_COOKIE;
@@ -65,12 +103,28 @@ async function yahooFetch(path: string): Promise<string | null> {
 }
 
 /** Scrape the Yahoo matchup page for my team → the opponent team number.
- *  The matchup page links to exactly the two teams in the H2H (mine + opponent)
- *  via /f1/{league}/{teamNum} hrefs. We collect those team numbers and take the
- *  one that isn't mine. (Class-based selectors like `Fz-xxl` are brittle — Yahoo
- *  periodically obfuscates class names — so we key off the stable href pattern.) */
-async function yahooOpponentTeamNum(yahooLeagueId: string, myTeamNum: string): Promise<string | null> {
-    const html = await yahooFetch(`/f1/${yahooLeagueId}/${myTeamNum}/matchup`);
+ *  Exported so the sync can persist each team's weekly opponent to the DB.
+ *
+ *  NOTE: Yahoo scopes the matchup view to the AUTHENTICATED user (the cookie
+ *  owner), so `/f1/{league}/{anyTeam}/matchup` renders the OWNER's H2H pair
+ *  regardless of which team number is in the URL. This function is only correct
+ *  when `myTeamNum` is the cookie owner's own team. For the sync, use
+ *  `yahooOwnerMatchupPair` instead (resolve once, stamp reciprocally). */
+export async function yahooOpponentTeamNum(yahooLeagueId: string, myTeamNum: string): Promise<string | null> {
+    const pair = await yahooOwnerMatchupPair(yahooLeagueId);
+    if (!pair) return null;
+    // If the caller's team is in the pair, return the other member; else the
+    // page didn't correspond to this team (Yahoo showed the owner's) → no answer.
+    if (String(myTeamNum) === pair[0]) return pair[1];
+    if (String(myTeamNum) === pair[1]) return pair[0];
+    return null;
+}
+
+/** The cookie owner's current-week H2H pair [teamA, teamB] (both Yahoo team
+ *  numbers), scraped from the matchup page. Yahoo always renders the owner's
+ *  own matchup here, so a single fetch yields exactly the owner + opponent. */
+export async function yahooOwnerMatchupPair(yahooLeagueId: string): Promise<[string, string] | null> {
+    const html = await yahooFetch(`/f1/${yahooLeagueId}/matchup`);
     if (!html) return null;
     const $ = load(html);
     const hrefRe = new RegExp(`/f1/${yahooLeagueId}/(\\d+)(?:$|[/?#])`);
@@ -79,10 +133,10 @@ async function yahooOpponentTeamNum(yahooLeagueId: string, myTeamNum: string): P
         const m = ($(a).attr('href') || '').match(hrefRe);
         if (m) nums.add(m[1]);
     });
-    const others = [...nums].filter(n => n !== String(myTeamNum));
-    // The matchup page should reference exactly one other team (the opponent).
-    // If more slip through (nav links etc.), prefer the first non-self.
-    return others[0] || null;
+    const arr = [...nums];
+    // The owner's matchup page links exactly the two H2H teams (owner + opp).
+    if (arr.length >= 2) return [arr[0], arr[1]];
+    return null;
 }
 
 /**
