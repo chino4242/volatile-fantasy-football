@@ -9,6 +9,8 @@ import { resolveYahooMatchup, resolveMyffpcMatchup } from "@/lib/db-matchups";
 import { getLatestWeek } from "@/lib/weekly-rankings";
 import { getWeekSchedule } from "@/lib/nfl-schedule";
 import { getLiveGameStates } from "@/lib/nfl-live";
+import { getLivePlayerStats } from "@/lib/nfl-live-stats";
+import type { LivePoints } from "@/lib/rooting-guide";
 import {
     buildRootingGuide,
     type LeagueMatchupInput,
@@ -61,11 +63,16 @@ export async function POST(request: NextRequest) {
         const allStarterIds = [...new Set(leagues.flatMap(l => [...l.myStarterIds, ...l.oppStarterIds]))];
         const gameInfo = await buildGameInfo(allStarterIds, week);
 
-        const guide = buildRootingGuide(leagues, gameInfo, week);
-        guide.unresolvedLeagues = unresolved;
-
         // Live NFL game-state (ESPN) — uniform across all platforms.
         const liveStates = await getLiveGameStates();
+
+        // Live per-player points, computed uniformly (half-PPR) from ESPN box
+        // scores for games that have started. Name-matched to sleeper_id so it
+        // applies to EVERY platform's players consistently.
+        const livePoints = await buildLivePoints(liveStates);
+
+        const guide = buildRootingGuide(leagues, gameInfo, week, livePoints);
+        guide.unresolvedLeagues = unresolved;
 
         // Stamp each game with its NFL day/slot from the schedule, then order by
         // kickoff (day, then time). UNKNOWN bucket sinks to the bottom.
@@ -169,6 +176,33 @@ async function nameToSleeperIdMap(): Promise<Map<string, string>> {
     for (const r of rows) if (r.full_name) m.set(cleanseName(r.full_name), r.sleeper_id);
     _nameMapCache = m;
     return m;
+}
+
+/**
+ * Compute live per-player points (half-PPR, from ESPN box scores) for every
+ * game that has started, keyed by sleeper_id. Only games in 'in'/'post' state
+ * are fetched. ESPN athlete names are name-bridged to sleeper_id (same cleanse
+ * bridge Fleaflicker uses); unmatched names are dropped.
+ */
+async function buildLivePoints(liveStates: Map<string, import("@/lib/nfl-live").LiveGameState>): Promise<Map<string, LivePoints>> {
+    const out = new Map<string, LivePoints>();
+    const played = [...liveStates.values()].filter(s => s.state === 'in' || s.state === 'post');
+    if (played.length === 0) return out;
+
+    const idByName = await nameToSleeperIdMap();
+    const perGame = await Promise.all(played.map(s => getLivePlayerStats(s.eventId)));
+    for (const stats of perGame) {
+        for (const st of stats) {
+            const id = idByName.get(cleanseName(st.name));
+            if (!id) continue; // unmatched name → skip (v1 accepts a few misses)
+            // If a name collides across games (rare), keep the higher point line.
+            const prev = out.get(id);
+            if (!prev || st.points > prev.points) {
+                out.set(id, { points: st.points, usage: st.usage, usageLabel: st.usageLabel });
+            }
+        }
+    }
+    return out;
 }
 
 // ── NFL game lookup: sleeper_id → {nflTeam, nflOpponent} ─────────────────────

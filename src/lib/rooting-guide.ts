@@ -54,9 +54,12 @@ export interface RootingPlayer {
     forLeagues: string[];
     /** League names where this player is my opponent's starter. */
     againstLeagues: string[];
-    /** Live fantasy points for this player (max across leagues that report it),
-     *  or null when no platform in play exposes points for him. */
+    /** Live fantasy points for this player (computed half-PPR from ESPN box
+     *  scores), or null when not playing / no stats yet. */
     points: number | null;
+    /** Light usage signal (targets + carries) and a short label, when available. */
+    usage?: number | null;
+    usageLabel?: string | null;
 }
 
 export interface RootingGame {
@@ -121,31 +124,50 @@ export function gameKeyFor(team: string | null, opponent: string | null): string
  * Build the rooting guide. `gameInfo` maps sleeper_id → PlayerGameInfo; players
  * missing from it fall into the UNKNOWN game bucket (never dropped).
  */
+/** Live per-player scoring (computed centrally, e.g. from ESPN box scores). */
+export interface LivePoints {
+    points: number;
+    usage?: number | null;
+    usageLabel?: string | null;
+}
+
 export function buildRootingGuide(
     leagues: LeagueMatchupInput[],
     gameInfo: Map<string, PlayerGameInfo>,
     week: number | null,
+    livePoints?: Map<string, LivePoints>,
 ): RootingGuide {
     // Accumulate per-sleeper_id: which leagues have it FOR vs AGAINST, + points.
-    interface Acc { forLeagues: string[]; againstLeagues: string[]; points: number | null; }
+    interface Acc { forLeagues: string[]; againstLeagues: string[]; points: number | null; usage: number | null; usageLabel: string | null; }
     const acc = new Map<string, Acc>();
     const ensure = (id: string): Acc => {
         let a = acc.get(id);
-        if (!a) { a = { forLeagues: [], againstLeagues: [], points: null }; acc.set(id, a); }
+        if (!a) { a = { forLeagues: [], againstLeagues: [], points: null, usage: null, usageLabel: null }; acc.set(id, a); }
         return a;
     };
 
     for (const lg of leagues) {
         for (const id of new Set(lg.myStarterIds)) ensure(id).forLeagues.push(lg.leagueName);
         for (const id of new Set(lg.oppStarterIds)) ensure(id).againstLeagues.push(lg.leagueName);
-        // Live points: take the max reported across leagues (same player, same
-        // real-life game → same points; max ignores leagues that report 0/absent).
+        // Fallback live points from a platform (only used when no central
+        // livePoints map is supplied for that player).
         if (lg.pointsById) {
             for (const [id, pts] of Object.entries(lg.pointsById)) {
                 if (typeof pts !== 'number') continue;
                 const a = ensure(id);
                 a.points = a.points == null ? pts : Math.max(a.points, pts);
             }
+        }
+    }
+
+    // Central live points (computed uniformly from ESPN) take precedence — a
+    // consistent number for every player regardless of platform.
+    if (livePoints) {
+        for (const [id, lp] of livePoints) {
+            const a = ensure(id);
+            a.points = lp.points;
+            a.usage = lp.usage ?? null;
+            a.usageLabel = lp.usageLabel ?? null;
         }
     }
 
@@ -180,6 +202,8 @@ export function buildRootingGuide(
             forLeagues: a.forLeagues,
             againstLeagues: a.againstLeagues,
             points: a.points,
+            usage: a.usage,
+            usageLabel: a.usageLabel,
         });
         if (isFor) game.forCount++;
         if (isAgainst) game.againstCount++;

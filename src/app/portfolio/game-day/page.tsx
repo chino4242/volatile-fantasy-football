@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Loader2, ThumbsUp, ThumbsDown, Clock } from 'lucide-react';
 import { useAuth } from '@/hooks/useUser';
 import { useMyTeams } from '@/hooks/useMyTeams';
@@ -19,6 +19,10 @@ export default function GameDayPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+    // Sleeper_ids whose points rose since the last poll → brief "bumped" highlight.
+    const [bumpedIds, setBumpedIds] = useState<Set<string>>(new Set());
+    // Previous poll's points per sleeper_id, for diffing.
+    const prevPointsRef = useRef<Map<string, number>>(new Map());
 
     // Assemble refs + fetch the guide. `isPoll` skips the full-page spinner so a
     // background refresh doesn't flash the loading state.
@@ -54,7 +58,30 @@ export default function GameDayPage() {
             });
             if (!res.ok) throw new Error(`${res.status}`);
             const json = await res.json();
-            if (!signal?.cancelled) { setGuide(json.guide); setLastUpdated(Date.now()); }
+            if (!signal?.cancelled) {
+                const g: RootingGuide = json.guide;
+                // Diff points vs the previous poll → highlight players who rose.
+                const prev = prevPointsRef.current;
+                const next = new Map<string, number>();
+                const bumped = new Set<string>();
+                for (const game of g.games) {
+                    for (const p of game.players) {
+                        if (p.points == null) continue;
+                        next.set(p.sleeper_id, p.points);
+                        const before = prev.get(p.sleeper_id);
+                        // Only flag as "bumped" on a poll (prev had a value) and a real increase.
+                        if (before != null && p.points > before + 0.01) bumped.add(p.sleeper_id);
+                    }
+                }
+                prevPointsRef.current = next;
+                setGuide(g);
+                setLastUpdated(Date.now());
+                if (isPoll && bumped.size > 0) {
+                    setBumpedIds(bumped);
+                    // Clear the highlight after a few seconds so it's a subtle pulse.
+                    setTimeout(() => { if (!signal?.cancelled) setBumpedIds(new Set()); }, 6000);
+                }
+            }
         } catch (e: any) {
             if (!signal?.cancelled && !isPoll) setError(e.message || 'Failed to load');
         } finally {
@@ -116,12 +143,12 @@ export default function GameDayPage() {
                     <div className="space-y-6">
                         {groupBySlot(guide.games).map(section => (
                             <div key={section.slot}>
-                                <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-2">{section.slot}</h2>
-                                <div className="space-y-4">
+                                <h2 className="sticky top-0 z-10 bg-zinc-50/90 dark:bg-zinc-950/90 backdrop-blur text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-2 py-1">{section.slot}</h2>
+                                <div className="space-y-3 sm:space-y-4">
                                     {section.games.map(game => (
-                                        <div key={game.gameKey} className="bg-white dark:bg-zinc-900 rounded-xl ring-1 ring-zinc-900/5 shadow-sm p-4">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <h3 className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                                        <div key={game.gameKey} className="bg-white dark:bg-zinc-900 rounded-xl ring-1 ring-zinc-900/5 shadow-sm p-3 sm:p-4">
+                                            <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                                                <h3 className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2 flex-wrap min-w-0">
                                                     {game.gameKey === 'UNKNOWN' ? 'No game data' : (
                                                         <span>
                                                             {game.teams[0]}{game.live?.teamScores[0] != null ? ` ${game.live.teamScores[0]}` : ''}
@@ -145,7 +172,7 @@ export default function GameDayPage() {
                                                 </div>
                                             </div>
                                             <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                                {game.players.map(p => <PlayerRow key={p.sleeper_id} p={p} />)}
+                                                {game.players.map(p => <PlayerRow key={p.sleeper_id} p={p} bumped={bumpedIds.has(p.sleeper_id)} />)}
                                             </ul>
                                         </div>
                                     ))}
@@ -258,9 +285,9 @@ function GameStatus({ game }: { game: RootingGame }) {
     return null;
 }
 
-function PlayerRow({ p }: { p: RootingPlayer }) {
+function PlayerRow({ p, bumped }: { p: RootingPlayer; bumped?: boolean }) {
     return (
-        <li className="flex items-center justify-between gap-2 py-1.5">
+        <li className={`flex items-center justify-between gap-2 py-1.5 -mx-1 px-1 rounded transition-colors duration-1000 ${bumped ? 'bg-yellow-100 dark:bg-yellow-500/15' : ''}`}>
             <div className="flex items-center gap-2 min-w-0">
                 {p.side === 'both' ? (
                     <span className="flex-shrink-0 flex items-center gap-0.5">
@@ -274,18 +301,23 @@ function PlayerRow({ p }: { p: RootingPlayer }) {
                 )}
                 <span className="text-sm text-zinc-800 dark:text-zinc-200 truncate">{p.full_name}</span>
                 <span className="text-[10px] text-zinc-400 flex-shrink-0">{p.nflTeam} · {p.position}</span>
-                {p.points != null && (
-                    <span className="text-xs font-mono font-semibold text-zinc-700 dark:text-zinc-300 flex-shrink-0">{p.points.toFixed(1)}</span>
-                )}
+                {p.usageLabel && <span className="text-[10px] text-zinc-400 flex-shrink-0 hidden sm:inline">· {p.usageLabel}</span>}
             </div>
-            <div className="text-[11px] flex-shrink-0 text-right">
-                {p.forLeagues.length > 0 && (
-                    <span className="text-green-600 dark:text-green-400" title={p.forLeagues.join(', ')}>FOR ×{p.forLeagues.length}</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+                {p.points != null && (
+                    <span className={`text-sm font-mono font-semibold tabular-nums ${bumped ? 'text-yellow-700 dark:text-yellow-300' : 'text-zinc-800 dark:text-zinc-200'}`}>
+                        {p.points.toFixed(1)}
+                    </span>
                 )}
-                {p.forLeagues.length > 0 && p.againstLeagues.length > 0 && <span className="text-zinc-300 mx-1">·</span>}
-                {p.againstLeagues.length > 0 && (
-                    <span className="text-red-600 dark:text-red-400" title={p.againstLeagues.join(', ')}>AGAINST ×{p.againstLeagues.length}</span>
-                )}
+                <div className="text-[11px] text-right w-[92px]">
+                    {p.forLeagues.length > 0 && (
+                        <span className="text-green-600 dark:text-green-400" title={p.forLeagues.join(', ')}>FOR ×{p.forLeagues.length}</span>
+                    )}
+                    {p.forLeagues.length > 0 && p.againstLeagues.length > 0 && <span className="text-zinc-300 mx-1">·</span>}
+                    {p.againstLeagues.length > 0 && (
+                        <span className="text-red-600 dark:text-red-400" title={p.againstLeagues.join(', ')}>AGAINST ×{p.againstLeagues.length}</span>
+                    )}
+                </div>
             </div>
         </li>
     );

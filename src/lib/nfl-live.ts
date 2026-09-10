@@ -23,6 +23,8 @@ function fixAbbr(a: string): string {
 }
 
 export interface LiveGameState {
+    /** ESPN event id — for fetching the per-player box score. */
+    eventId: string;
     /** 'pre' | 'in' | 'post' */
     state: 'pre' | 'in' | 'post';
     /** Home/away abbrs (normalized) + scores. */
@@ -68,7 +70,7 @@ export async function getLiveGameStates(): Promise<Map<string, LiveGameState>> {
 
             const shortLabel = labelFor(state, period, clock, ev?.status?.type?.shortDetail);
 
-            const gs: LiveGameState = { state, home, away, homeScore, awayScore, period, clock, shortLabel };
+            const gs: LiveGameState = { eventId: String(ev.id), state, home, away, homeScore, awayScore, period, clock, shortLabel };
             // Index by the sorted team-pair key so it lines up with RootingGame.gameKey.
             out.set(gameKeyFor(home, away), gs);
         }
