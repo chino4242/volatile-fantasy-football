@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useCallback } from 'react';
-import { Loader2, TrendingUp, TrendingDown, Minus, ArrowRight, AlertTriangle } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Loader2, ArrowRight, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '@/hooks/useUser';
 import { useMyTeams } from '@/hooks/useMyTeams';
 import { useSeasonMode } from '@/hooks/useSeasonMode';
 import { TagManager } from './TagManager';
+import { ActionCenter } from '@/components/portfolio/ActionCenter';
+import { buildActionCenter, buildLeagueActions, tierFor, type ActionCenterInput, type TierBand, type ActionItem } from '@/lib/action-center';
 import {
     type PortfolioLeague,
     type PortfolioLeagueRef,
@@ -34,7 +36,7 @@ export default function PortfolioPage() {
         isLoading: authLoading,
     } = useAuth();
     const { getMyTeam, setMyTeam, loaded: myTeamsLoaded } = useMyTeams();
-    const { showFor } = useSeasonMode();
+    const { showFor, mode: seasonMode } = useSeasonMode();
 
     const [refs, setRefs] = useState<PortfolioLeagueRef[] | null>(null);
     const [leagues, setLeagues] = useState<Record<string, LoadedLeague>>({});
@@ -126,9 +128,124 @@ export default function PortfolioPage() {
     // When the buy/sell board changes, re-fetch all leagues so tagged buys surface.
     const handleTagsChanged = useCallback(() => setReloadKey(k => k + 1), []);
 
+    // Fleaflicker pending/incoming trades → feed the Action Center "Trades" group.
+    const [pendingTrades, setPendingTrades] = useState<Record<string, { id: string; headline: string; detail?: string }[]>>({});
+    // Weekly DST streaming rankings (shared across leagues) → "Stream a defense".
+    const [dstRankings, setDstRankings] = useState<{ sleeper_id: string; rank: number | null; tier: number | null; spread: number | null; opponent: string | null; name: string | null }[]>([]);
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/portfolio/dst-rankings')
+            .then(r => r.ok ? r.json() : { list: [] })
+            .then(json => { if (!cancelled) setDstRankings(json.list || []); })
+            .catch(() => { /* ignore — best-effort */ });
+        return () => { cancelled = true; };
+    }, []);
+    useEffect(() => {
+        let cancelled = false;
+        for (const l of Object.values(leagues)) {
+            if (!l.data || l.ref.platform !== 'fleaflicker') continue;
+            const key = `${l.ref.platform}:${l.ref.leagueId}`;
+            const myTeamId = getMyTeam(l.ref.platform, l.ref.leagueId);
+            if (!myTeamId) continue;
+            const qs = new URLSearchParams({ platform: 'fleaflicker', leagueId: l.ref.leagueId, myTeamId });
+            fetch(`/api/portfolio/pending-trades?${qs.toString()}`)
+                .then(r => r.ok ? r.json() : { trades: [] })
+                .then(json => { if (!cancelled) setPendingTrades(prev => ({ ...prev, [key]: json.trades || [] })); })
+                .catch(() => { /* ignore — trades are best-effort */ });
+        }
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [leagues, getMyTeam]);
+
     const loading = authLoading || enumerating || !myTeamsLoaded;
     const loaded = Object.values(leagues);
     const anyData = loaded.some(l => l.data);
+
+    // Action Center model — aggregate recommended actions across all loaded
+    // leagues, re-prioritized by season mode. Passive team health stays in the
+    // dashboard below (LeagueCard), not here.
+    const actionCenter = useMemo(() => {
+        const inputs: ActionCenterInput[] = loaded
+            .filter(l => l.data)
+            .map(l => ({
+                league: l.data!,
+                myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
+                pendingTrades: pendingTrades[`${l.ref.platform}:${l.ref.leagueId}`],
+                dstRankings,
+            }));
+        if (inputs.length === 0) return null;
+        return buildActionCenter(inputs, { seasonMode });
+    }, [loaded, getMyTeam, seasonMode, pendingTrades, dstRankings]);
+
+    // Current NFL week — from any loaded league that carries weekly rankings.
+    const currentWeek = useMemo(() => {
+        for (const l of loaded) {
+            if (l.data?.weeklyWeek != null) return l.data.weeklyWeek;
+        }
+        return null;
+    }, [loaded]);
+
+    // Per-league lineup-fix count (from the same engine) so the dashboard's
+    // "⚠ N lineup" pill never disagrees with the Action Center.
+    const lineupCountByKey = useMemo(() => {
+        const map: Record<string, number> = {};
+        if (!actionCenter?.byType) return map;
+        for (const g of actionCenter.byType) {
+            if (g.kind !== 'lineup') continue;
+            for (const it of g.items) {
+                const k = `${it.platform}:${it.leagueId}`;
+                map[k] = (map[k] ?? 0) + 1;
+            }
+        }
+        return map;
+    }, [actionCenter]);
+
+    // Per-league in-season actions (waiver swaps + DEF streaming) rendered INSIDE
+    // each league card. Only in-season; off-season shows these in the by-team
+    // Action Center instead.
+    const leagueActionsByKey = useMemo(() => {
+        const map: Record<string, ActionItem[]> = {};
+        if (seasonMode !== 'in-season') return map;
+        for (const l of loaded) {
+            if (!l.data) continue;
+            const key = `${l.ref.platform}:${l.ref.leagueId}`;
+            map[key] = buildLeagueActions({
+                league: l.data,
+                myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
+                dstRankings,
+            });
+        }
+        return map;
+    }, [loaded, getMyTeam, seasonMode, dstRankings]);
+
+    // Partition loaded leagues into tier bands (top/middle/lower) for the
+    // dashboard. Leagues whose my-team is unknown go to `unassigned` (they show
+    // the picker). Within a band: needs-action-first, then value desc.
+    const banded = useMemo(() => {
+        const bands: Record<TierBand, LoadedLeague[]> = { top: [], middle: [], lower: [] };
+        const unassigned: LoadedLeague[] = [];
+        for (const l of loaded) {
+            if (!l.data) { unassigned.push(l); continue; }
+            const rid = getMyTeam(l.ref.platform, l.ref.leagueId);
+            const myTeam = rid ? l.data.teams.find(t => t.rosterId === rid) : undefined;
+            if (!myTeam) { unassigned.push(l); continue; }
+            const { band } = tierFor(labelTeam(myTeam, l.data).state, l.data.leagueType);
+            bands[band].push(l);
+        }
+        const sortKey = (l: LoadedLeague) => {
+            const k = `${l.ref.platform}:${l.ref.leagueId}`;
+            const lineups = lineupCountByKey[k] ?? 0;
+            const val = l.data ? teamMarketValue(l.data.teams.find(t => t.rosterId === getMyTeam(l.ref.platform, l.ref.leagueId)) ?? l.data.teams[0]) : 0;
+            return { lineups, val };
+        };
+        for (const b of ['top', 'middle', 'lower'] as TierBand[]) {
+            bands[b].sort((a, z) => {
+                const ka = sortKey(a), kz = sortKey(z);
+                return (kz.lineups - ka.lineups) || (kz.val - ka.val);
+            });
+        }
+        return { bands, unassigned };
+    }, [loaded, getMyTeam, lineupCountByKey]);
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -152,27 +269,52 @@ export default function PortfolioPage() {
                     <div className="flex items-center gap-2 text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading your leagues…</div>
                 )}
 
+                {!loading && anyData && (
+                    <ActionCenter model={actionCenter} currentWeek={currentWeek} />
+                )}
+
                 {!loading && refs && refs.length === 0 && (
                     <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 ring-1 ring-zinc-900/5 text-zinc-600 dark:text-zinc-400">
                         No leagues found. Connect Sleeper / Fleaflicker on the <Link href="/" className="text-indigo-600 hover:underline">home page</Link>, or sync Yahoo / MyFFPC.
                     </div>
                 )}
 
-                {!loading && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                        {loaded.map(({ ref, data, error }) => {
-                            const key = `${ref.platform}:${ref.leagueId}`;
-                            return (
-                                <LeagueCard
-                                    key={key}
-                                    refInfo={ref}
-                                    data={data}
-                                    error={error}
-                                    myRosterId={getMyTeam(ref.platform, ref.leagueId)}
-                                    onPickMyTeam={(rosterId) => setMyTeam(ref.platform, ref.leagueId, rosterId)}
+                {!loading && anyData && (
+                    <div className="space-y-8">
+                        <div className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Your teams — strengths &amp; weaknesses</div>
+                        {(['top', 'middle', 'lower'] as TierBand[]).map(band =>
+                            banded.bands[band].length === 0 ? null : (
+                                <BandSection
+                                    key={band}
+                                    band={band}
+                                    leagues={banded.bands[band]}
+                                    getMyTeam={getMyTeam}
+                                    setMyTeam={setMyTeam}
+                                    lineupCountByKey={lineupCountByKey}
+                                    leagueActionsByKey={leagueActionsByKey}
                                 />
-                            );
-                        })}
+                            )
+                        )}
+                        {banded.unassigned.length > 0 && (
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-zinc-300 mb-3">
+                                    <span className="h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+                                    Pick your team <span className="text-xs font-normal text-zinc-400">{banded.unassigned.length} league{banded.unassigned.length !== 1 ? 's' : ''}</span>
+                                </div>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                                    {banded.unassigned.map(({ ref, data, error }) => (
+                                        <LeagueCard
+                                            key={`${ref.platform}:${ref.leagueId}`}
+                                            refInfo={ref} data={data} error={error}
+                                            myRosterId={getMyTeam(ref.platform, ref.leagueId)}
+                                            onPickMyTeam={(rosterId) => setMyTeam(ref.platform, ref.leagueId, rosterId)}
+                                            lineupCount={0}
+                                            leagueActions={leagueActionsByKey[`${ref.platform}:${ref.leagueId}`] ?? []}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
                 {!loading && refs && refs.length > 0 && !anyData && (
@@ -184,20 +326,65 @@ export default function PortfolioPage() {
 }
 
 const PLATFORM_LABEL: Record<string, string> = { sleeper: 'Sleeper', fleaflicker: 'Fleaflicker', yahoo: 'Yahoo', myffpc: 'MyFFPC' };
-const STATE_STYLE: Record<string, { icon: React.ReactNode; cls: string; label: string }> = {
-    contender: { icon: <TrendingUp className="h-3.5 w-3.5" />, cls: 'text-green-700 bg-green-100 dark:text-green-300 dark:bg-green-900/40', label: 'Contender' },
-    middle: { icon: <Minus className="h-3.5 w-3.5" />, cls: 'text-zinc-600 bg-zinc-100 dark:text-zinc-300 dark:bg-zinc-800', label: 'Middle' },
-    rebuild: { icon: <TrendingDown className="h-3.5 w-3.5" />, cls: 'text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40', label: 'Rebuild' },
+
+const BAND_META: Record<TierBand, { dot: string; label: string }> = {
+    top: { dot: 'bg-green-500', label: 'Top tier' },
+    middle: { dot: 'bg-zinc-400', label: 'Middle' },
+    lower: { dot: 'bg-amber-500', label: 'Lower tier' },
 };
 
+const TIER_PILL: Record<TierBand, string> = {
+    top: 'text-green-700 bg-green-100 dark:text-green-300 dark:bg-green-900/40',
+    middle: 'text-zinc-600 bg-zinc-100 dark:text-zinc-300 dark:bg-zinc-800',
+    lower: 'text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40',
+};
+
+function BandSection({
+    band, leagues, getMyTeam, setMyTeam, lineupCountByKey, leagueActionsByKey,
+}: {
+    band: TierBand;
+    leagues: LoadedLeague[];
+    getMyTeam: (p: string, l: string) => string | null;
+    setMyTeam: (p: string, l: string, r: string) => void;
+    lineupCountByKey: Record<string, number>;
+    leagueActionsByKey: Record<string, ActionItem[]>;
+}) {
+    const meta = BAND_META[band];
+    return (
+        <div>
+            <div className="flex items-center gap-2 text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-3">
+                <span className={`h-2.5 w-2.5 rounded-full ${meta.dot}`} />
+                {meta.label}
+                <span className="text-xs font-medium text-zinc-400">{leagues.length} team{leagues.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {leagues.map(({ ref, data, error }) => {
+                    const key = `${ref.platform}:${ref.leagueId}`;
+                    return (
+                        <LeagueCard
+                            key={key} refInfo={ref} data={data} error={error}
+                            myRosterId={getMyTeam(ref.platform, ref.leagueId)}
+                            onPickMyTeam={(rosterId) => setMyTeam(ref.platform, ref.leagueId, rosterId)}
+                            lineupCount={lineupCountByKey[key] ?? 0}
+                            leagueActions={leagueActionsByKey[key] ?? []}
+                        />
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
 function LeagueCard({
-    refInfo, data, error, myRosterId, onPickMyTeam,
+    refInfo, data, error, myRosterId, onPickMyTeam, lineupCount, leagueActions,
 }: {
     refInfo: PortfolioLeagueRef;
     data: PortfolioLeague | null;
     error?: string;
     myRosterId: string | null;
     onPickMyTeam: (rosterId: string) => void;
+    lineupCount: number;
+    leagueActions: ActionItem[];
 }) {
     const title = data?.name || refInfo.name || `${PLATFORM_LABEL[refInfo.platform]} League`;
     const dbHref = (refInfo.platform === 'yahoo' || refInfo.platform === 'myffpc')
@@ -219,17 +406,19 @@ function LeagueCard({
             {!data && !error && <div className="flex items-center gap-2 text-sm text-zinc-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…</div>}
             {error && <div className="text-sm text-red-500">Failed to load ({error})</div>}
 
-            {data && <LeagueInsights data={data} myRosterId={myRosterId} onPickMyTeam={onPickMyTeam} />}
+            {data && <LeagueInsights data={data} myRosterId={myRosterId} onPickMyTeam={onPickMyTeam} lineupCount={lineupCount} leagueActions={leagueActions} />}
         </div>
     );
 }
 
 function LeagueInsights({
-    data, myRosterId, onPickMyTeam,
+    data, myRosterId, onPickMyTeam, lineupCount, leagueActions,
 }: {
     data: PortfolioLeague;
     myRosterId: string | null;
     onPickMyTeam: (rosterId: string) => void;
+    lineupCount: number;
+    leagueActions: ActionItem[];
 }) {
     const myTeam = myRosterId ? data.teams.find(t => t.rosterId === myRosterId) || null : null;
     const fas = undervaluedFreeAgents(data);
@@ -259,15 +448,20 @@ function LeagueInsights({
 
     const label = labelTeam(myTeam, data);
     const weak = weakestStarter(myTeam);
-    const st = STATE_STYLE[label.state];
+    const tier = tierFor(label.state, data.leagueType);
     const lineup = optimizePortfolioTeam(data, myTeam);
     const lineupSwaps = lineup && !lineup.isOptimal ? lineup.swaps.length : 0;
 
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${st.cls}`}>{st.icon} {st.label}</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${TIER_PILL[tier.band]}`}>{tier.label}</span>
+                    {lineupCount > 0 && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40">
+                            <AlertTriangle className="h-3 w-3" /> {lineupCount} lineup
+                        </span>
+                    )}
                     <span className="text-xs text-zinc-500">{myTeam.ownerName}</span>
                 </div>
                 <button onClick={() => onPickMyTeam('')} className="text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">change</button>
@@ -294,34 +488,73 @@ function LeagueInsights({
                 ) : <div className="text-sm text-zinc-400">{weak.note}</div>}
             </div>
 
+            {leagueActions.length > 0 && (
+                <div>
+                    <div className="text-xs font-medium text-zinc-500 mb-1">Recommended pickups</div>
+                    <ul className="space-y-1.5">
+                        {leagueActions.map(a => (
+                            <li key={a.id} className="flex items-center justify-between gap-2 text-sm">
+                                <span className="text-zinc-800 dark:text-zinc-200 truncate">
+                                    {a.kind === 'stream' && <span className="text-sky-500 mr-1">🛡️</span>}
+                                    {a.headline}
+                                    {a.detail && <span className="ml-1 text-xs font-semibold text-green-600 dark:text-green-400">{a.detail}</span>}
+                                </span>
+                                <Link href={a.deepLink} className="flex-shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">Open →</Link>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
             <UndervaluedList fas={fas} />
         </div>
     );
 }
 
+/**
+ * Collapsed scouting hint — pure "my board vs market" edge, NOT actionable
+ * waivers (those live in the Action Center). Shows top few names + edge,
+ * collapsed by default, no analyst essays (those are click-through only).
+ */
 function UndervaluedList({ fas }: { fas: ReturnType<typeof undervaluedFreeAgents> }) {
+    const [open, setOpen] = useState(false);
+    if (fas.length === 0) {
+        return (
+            <div>
+                <div className="text-xs font-medium text-zinc-500 mb-1">Scouting <span className="text-zinc-400 font-normal">(your board vs market)</span></div>
+                <div className="text-sm text-zinc-400">No standout edges right now.</div>
+            </div>
+        );
+    }
+    const top = fas.slice(0, 3);
+    const rest = fas.length - top.length;
+    const nameLine = (f: ReturnType<typeof undervaluedFreeAgents>[number]) =>
+        `${f.player.full_name}${f.rankEdge != null ? ` +${f.rankEdge}` : ''}`;
     return (
         <div>
-            <div className="text-xs font-medium text-zinc-500 mb-1">Undervalued free agents <span className="text-zinc-400 font-normal">(your board vs market)</span></div>
-            {fas.length === 0 ? (
-                <div className="text-sm text-zinc-400">No standout edges right now.</div>
-            ) : (
-                <ul className="space-y-1">
-                    {fas.map(({ player, rankEdge, reason, note }) => (
-                        <li key={player.sleeper_id} className="text-sm text-zinc-800 dark:text-zinc-200">
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="truncate">
-                                    {reason === 'buy' && <span className="text-[10px] font-bold text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 rounded px-1 mr-1">BUY</span>}
-                                    {reason === 'add' && <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 rounded px-1 mr-1">ADD</span>}
-                                    {player.full_name} <span className="text-zinc-400">({player.position})</span>
-                                </span>
-                                {rankEdge != null ? (
-                                    <span className="text-xs text-green-600 dark:text-green-400 flex-shrink-0" title={`Your rank ${player.myRank} vs market ${player.marketRank}`}>+{rankEdge} edge</span>
-                                ) : (
-                                    <span className="text-xs text-zinc-400 flex-shrink-0">{reason === 'add' ? 'analyst add' : 'tagged'}</span>
-                                )}
-                            </div>
-                            {note && <div className="text-[11px] text-zinc-400 mt-0.5 line-clamp-2">{note}</div>}
+            <button
+                onClick={() => setOpen(v => !v)}
+                className="w-full flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+                Scouting <span className="text-zinc-400 font-normal">(your board vs market)</span>
+                {open ? <ChevronUp className="h-3 w-3 ml-auto" /> : <ChevronDown className="h-3 w-3 ml-auto" />}
+            </button>
+            {/* Always-visible one-liner of the top few */}
+            <div className="text-[13px] text-zinc-600 dark:text-zinc-400 mt-1">
+                {top.map(nameLine).join(' · ')}{rest > 0 && !open ? ` · +${rest} more` : ''}
+            </div>
+            {open && (
+                <ul className="mt-1.5 space-y-1">
+                    {fas.map(f => (
+                        <li key={f.player.sleeper_id} className="flex items-center justify-between gap-2 text-sm text-zinc-800 dark:text-zinc-200">
+                            <Link href={`/portfolio/player/${f.player.sleeper_id}`} className="truncate hover:text-indigo-600 dark:hover:text-indigo-400">
+                                {f.reason === 'buy' && <span className="text-[10px] font-bold text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 rounded px-1 mr-1">BUY</span>}
+                                {f.reason === 'add' && <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 rounded px-1 mr-1">ADD</span>}
+                                {f.player.full_name} <span className="text-zinc-400">({f.player.position})</span>
+                            </Link>
+                            {f.rankEdge != null && (
+                                <span className="text-xs text-green-600 dark:text-green-400 flex-shrink-0" title={`Your rank ${f.player.myRank} vs market ${f.player.marketRank}`}>+{f.rankEdge}</span>
+                            )}
                         </li>
                     ))}
                 </ul>

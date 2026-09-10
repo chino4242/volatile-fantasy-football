@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portfolio Hub — In-season (hi-fi, light)</title>
+<style>
+  :root{
+    --bg:#fafafa; --card:#ffffff; --ink:#18181b; --ink2:#3f3f46; --dim:#71717a; --dimmer:#a1a1aa;
+    --line:rgba(24,24,27,.06); --ring:rgba(24,24,27,.08);
+    --indigo:#4f46e5; --indigo-soft:#eef2ff;
+    --amber:#b45309; --amber-soft:#fffbeb; --amber-line:#fde68a;
+    --green:#15803d; --green-soft:#f0fdf4; --green-line:#bbf7d0;
+    --red:#b91c1c; --red-soft:#fef2f2;
+    --zinc100:#f4f4f5; --zinc200:#e4e4e7;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1100px;margin:0 auto;padding:28px 20px 64px;}
+  a{color:inherit;text-decoration:none;}
+  .crumb{font-size:13px;color:var(--dim);margin-bottom:4px;}
+  h1{font-size:28px;font-weight:800;letter-spacing:-.02em;margin:0;}
+  .sub{font-size:13px;color:var(--dim);margin-top:4px;}
+  .toggle{float:right;display:inline-flex;background:var(--zinc100);border-radius:999px;padding:3px;font-size:12px;font-weight:600;gap:2px;}
+  .toggle span{padding:4px 12px;border-radius:999px;color:var(--dim);}
+  .toggle .on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.06);}
+
+  /* Action Center shell */
+  .ac{margin:22px 0 30px;}
+  .ac-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .ac-title{font-size:16px;font-weight:700;}
+  .ac-count{font-size:12px;color:var(--dim);}
+
+  /* Each action-type group = its own breathing sub-card */
+  .grp{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.04);
+    box-shadow:0 1px 2px rgba(0,0,0,.04),0 0 0 1px var(--ring);margin-bottom:14px;overflow:hidden;}
+  .grp-head{display:flex;align-items:center;gap:8px;padding:12px 16px;font-weight:600;font-size:13px;
+    border-bottom:1px solid var(--line);}
+  .grp-head .n{margin-left:auto;font-size:12px;color:var(--dim);font-weight:500;}
+  .grp.lineup .grp-head{background:var(--amber-soft);color:var(--amber);}
+  .grp.trade  .grp-head{background:var(--indigo-soft);color:var(--indigo);}
+  .grp.waiver .grp-head{background:var(--green-soft);color:var(--green);}
+  .scope{font-size:10px;font-weight:700;letter-spacing:.03em;background:#fff;border:1px solid var(--indigo);
+    color:var(--indigo);border-radius:6px;padding:0 6px;}
+
+  .item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);}
+  .item:last-child{border-bottom:0;}
+  .item .main{flex:1;min-width:0;}
+  .item .line1{font-size:14px;}
+  .item .line1 b{font-weight:700;}
+  .lg{display:inline-block;font-size:11px;color:var(--dim);background:var(--zinc100);border-radius:6px;
+    padding:1px 7px;margin-top:4px;}
+  .acts{display:flex;gap:8px;flex-shrink:0;}
+  .btn{font-size:12px;font-weight:600;border-radius:8px;padding:6px 11px;white-space:nowrap;}
+  .btn-primary{background:var(--indigo);color:#fff;}
+  .btn-ghost{background:#fff;border:1px solid var(--zinc200);color:var(--ink2);}
+  .edge{font-size:12px;font-weight:700;color:var(--green);}
+  .val-even{font-size:12px;font-weight:600;color:var(--dim);}
+  .manual{padding:11px 16px;font-size:13px;color:var(--dim);display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fcfcfd;}
+
+  /* Dashboard */
+  .dash-head{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--dimmer);margin:6px 0 12px;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .tcard{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 0 0 1px var(--ring);padding:18px;}
+  .tcard .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}
+  .tname{font-weight:700;font-size:15px;}
+  .meta{font-size:12px;color:var(--dim);}
+  .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;border-radius:999px;padding:2px 9px;}
+  .p-cont{background:var(--green-soft);color:var(--green);}
+  .p-mid{background:var(--zinc100);color:var(--ink2);}
+  .p-reb{background:var(--amber-soft);color:var(--amber);}
+  .p-flag{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-line);}
+  .health{margin-top:10px;font-size:13px;color:var(--ink2);}
+  .health .k{color:var(--dim);}
+  .open{font-size:12px;color:var(--indigo);font-weight:600;margin-top:12px;display:inline-block;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toggle"><span>❄ Off-season</span><span class="on">🔥 In-season</span></div>
+  <div class="crumb">Home / <b style="color:var(--ink2)">Portfolio</b></div>
+  <h1>Portfolio</h1>
+  <div class="sub">Your cross-league command center · 12 leagues</div>
+
+  <!-- ACTION CENTER -->
+  <div class="ac">
+    <div class="ac-head">
+      <span class="ac-title">⚡ Needs attention this week</span>
+      <span class="ac-count">4 lineup fixes · 1 trade · 3 waiver adds</span>
+    </div>
+
+    <!-- LINEUP GROUP -->
+    <div class="grp lineup">
+      <div class="grp-head">⚠ Lineup fixes <span class="n">4 across 3 leagues</span></div>
+      <div class="item">
+        <div class="main">
+          <div class="line1">Start <b>Jaylen Waddle</b> over Romeo Doubs <span style="color:var(--dim)">· FLEX · +6 proj</span></div>
+          <span class="lg">Fun with Friends · Sleeper</span>
+        </div>
+        <div class="acts"><a class="btn btn-primary">Open Sleeper ↗</a><a class="btn btn-ghost">✓ On purpose</a></div>
+      </div>
+      <div class="item">
+        <div class="main">
+          <div class="line1">Start <b>Rico Dowdle</b> over Kaytron Allen <span style="color:var(--dim)">· RB2</span></div>
+          <span class="lg">Late Round Dads · Sleeper</span>
+        </div>
+        <div class="acts"><a class="btn btn-primary">Open Sleeper ↗</a><a class="btn btn-ghost">✓ On purpose</a></div>
+      </div>
+    </div>
+
+    <!-- TRADE GROUP -->
+    <div class="grp trade">
+      <div class="grp-head">🔀 Trades to review <span class="scope">Fleaflicker</span> <span class="n">1 incoming</span></div>
+      <div class="item">
+        <div class="main">
+          <div class="line1">You get <b>Garrett Wilson</b> ↔ give Breece Hall <span class="val-even">· even market value</span></div>
+          <span class="lg">FF League · Fleaflicker</span>
+        </div>
+        <div class="acts"><a class="btn btn-primary">Evaluate ↗</a></div>
+      </div>
+      <div class="manual">
+        <span>Got an offer in another league? Paste it to evaluate <span style="color:var(--dimmer)">— Sleeper · Yahoo · MyFFPC</span></span>
+        <a class="btn btn-ghost">Evaluate a trade</a>
+      </div>
+    </div>
+
+    <!-- WAIVER GROUP -->
+    <div class="grp waiver">
+      <div class="grp-head">➕ Waiver adds worth it <span class="n">3 available</span></div>
+      <div class="item">
+        <div class="main">
+          <div class="line1"><b>Cedric Tillman</b> <span style="color:var(--dim)">(WR)</span> &nbsp;<span class="edge">+188 edge</span></div>
+          <span class="lg">Forte-Year Olds · Sleeper</span>
+        </div>
+        <div class="acts"><a class="btn btn-primary">Open Sleeper ↗</a></div>
+      </div>
+      <div class="item">
+        <div class="main">
+          <div class="line1"><b>Dont'e Thornton</b> <span style="color:var(--dim)">(WR)</span> &nbsp;<span class="edge">+145 edge</span></div>
+          <span class="lg">Late Round Dads · Sleeper</span>
+        </div>
+        <div class="acts"><a class="btn btn-primary">Open Sleeper ↗</a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="dash-head">Your teams — needs-action first</div>
+  <div class="grid">
+    <div class="tcard">
+      <div class="top">
+        <span class="tname">Forte-Year Old Virgins</span>
+        <span class="pill p-flag">⚠ 1 lineup</span>
+      </div>
+      <div class="meta">Sleeper · 1QB · dynasty · Kaioty</div>
+      <div class="health"><span class="pill p-cont">▲ Contender</span> &nbsp; Top-heavy value (119% of median) · core age 26.1</div>
+      <div class="health"><span class="k">Weakest starter:</span> Rico Dowdle (RB) · mkt 1,948</div>
+      <div class="health"><span class="k">Undervalued FAs:</span> Tillman +188 · Thornton +145 · Slayton +141</div>
+      <a class="open">Open league →</a>
+    </div>
+
+    <div class="tcard">
+      <div class="top">
+        <span class="tname">Insurance Survivors</span>
+        <span class="pill p-mid">Middle</span>
+      </div>
+      <div class="meta">Yahoo · 1QB · redraft · Warren Peace</div>
+      <div class="health">Roster value 101% of league median · no urgent actions</div>
+      <div class="health"><span class="k">Weakest starter:</span> David Montgomery (RB)</div>
+      <a class="open">Open league →</a>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

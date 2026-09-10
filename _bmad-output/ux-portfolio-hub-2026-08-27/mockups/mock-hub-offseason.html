@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Portfolio Hub — Off-season (hi-fi, light)</title>
+<style>
+  :root{
+    --bg:#fafafa; --card:#ffffff; --ink:#18181b; --ink2:#3f3f46; --dim:#71717a; --dimmer:#a1a1aa;
+    --line:rgba(24,24,27,.06); --ring:rgba(24,24,27,.08);
+    --indigo:#4f46e5; --indigo-soft:#eef2ff;
+    --amber:#b45309; --amber-soft:#fffbeb; --amber-line:#fde68a;
+    --green:#15803d; --green-soft:#f0fdf4; --green-line:#bbf7d0;
+    --red:#b91c1c; --red-soft:#fef2f2; --red-line:#fecaca;
+    --zinc100:#f4f4f5; --zinc200:#e4e4e7;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1100px;margin:0 auto;padding:28px 20px 64px;}
+  a{color:inherit;text-decoration:none;}
+  .crumb{font-size:13px;color:var(--dim);margin-bottom:4px;}
+  h1{font-size:28px;font-weight:800;letter-spacing:-.02em;margin:0;}
+  .sub{font-size:13px;color:var(--dim);margin-top:4px;}
+  .toggle{float:right;display:inline-flex;background:var(--zinc100);border-radius:999px;padding:3px;font-size:12px;font-weight:600;gap:2px;}
+  .toggle span{padding:4px 12px;border-radius:999px;color:var(--dim);}
+  .toggle .on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.06);}
+
+  .ac{margin:22px 0 30px;}
+  .ac-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .ac-title{font-size:16px;font-weight:700;}
+  .ac-count{font-size:12px;color:var(--dim);}
+
+  /* Off-season: group PER TEAM */
+  .team-grp{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 0 0 1px var(--ring);margin-bottom:14px;overflow:hidden;}
+  .tg-head{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);}
+  .tg-name{font-weight:700;font-size:14px;}
+  .tg-weak{margin-left:auto;font-size:12px;color:var(--dim);}
+  .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;border-radius:999px;padding:2px 9px;}
+  .p-cont{background:var(--green-soft);color:var(--green);}
+  .p-mid{background:var(--zinc100);color:var(--ink2);}
+  .p-reb{background:var(--amber-soft);color:var(--amber);}
+  .badge{font-size:10px;font-weight:700;color:var(--dim);background:var(--zinc100);border-radius:5px;padding:1px 6px;}
+
+  .item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);}
+  .item:last-child{border-bottom:0;}
+  .item .main{flex:1;min-width:0;}
+  .mv{display:inline-flex;align-items:center;gap:6px;font-size:14px;}
+  .ic{width:20px;height:20px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;}
+  .ic-add{background:var(--green-soft);color:var(--green);}
+  .ic-trade{background:var(--indigo-soft);color:var(--indigo);}
+  .ic-sell{background:var(--red-soft);color:var(--red);}
+  .lg{display:inline-block;font-size:11px;color:var(--dim);background:var(--zinc100);border-radius:6px;padding:1px 7px;margin-top:4px;}
+  .edge{font-size:12px;font-weight:700;color:var(--green);}
+  .btn{font-size:12px;font-weight:600;border-radius:8px;padding:6px 11px;white-space:nowrap;flex-shrink:0;}
+  .btn-primary{background:var(--indigo);color:#fff;}
+  .btn-ghost{background:#fff;border:1px solid var(--zinc200);color:var(--ink2);}
+
+  /* Dashboard bands */
+  .dash-head{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--dimmer);margin:22px 0 4px;}
+  .band{margin-bottom:8px;}
+  .band-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;margin:16px 0 10px;}
+  .dot{width:9px;height:9px;border-radius:999px;}
+  .d-top{background:#22c55e;} .d-mid{background:#a1a1aa;} .d-low{background:#f59e0b;}
+  .band-n{font-size:12px;color:var(--dim);font-weight:500;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .tcard{background:var(--card);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 0 0 1px var(--ring);padding:18px;}
+  .tcard .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}
+  .tname{font-weight:700;font-size:15px;}
+  .meta{font-size:12px;color:var(--dim);}
+  .health{margin-top:10px;font-size:13px;color:var(--ink2);}
+  .health .k{color:var(--dim);}
+  .strong{color:var(--green);} .thin{color:var(--amber);}
+  .open{font-size:12px;color:var(--indigo);font-weight:600;margin-top:12px;display:inline-block;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toggle"><span class="on">❄ Off-season</span><span>🔥 In-season</span></div>
+  <div class="crumb">Home / <b style="color:var(--ink2)">Portfolio</b></div>
+  <h1>Portfolio</h1>
+  <div class="sub">Your cross-league command center · 12 leagues</div>
+
+  <!-- ACTION CENTER — grouped by team -->
+  <div class="ac">
+    <div class="ac-head">
+      <span class="ac-title">🎯 Moves to strengthen your teams</span>
+      <span class="ac-count">grouped by team</span>
+    </div>
+
+    <div class="team-grp">
+      <div class="tg-head">
+        <span class="tg-name">Forte-Year Old Virgins</span>
+        <span class="pill p-cont">▲ Contender</span> <span class="badge">DYNASTY</span>
+        <span class="tg-weak">weakness: RB depth</span>
+      </div>
+      <div class="item">
+        <div class="main">
+          <div class="mv"><span class="ic ic-add">＋</span> Add <b style="margin:0 4px">Cedric Tillman</b> (WR) &nbsp;<span class="edge">+188 edge</span></div>
+          <span class="lg">available on waivers</span>
+        </div>
+        <a class="btn btn-primary">Open Sleeper ↗</a>
+      </div>
+      <div class="item">
+        <div class="main">
+          <div class="mv"><span class="ic ic-trade">⇄</span> Trade for RB — send WR surplus, target a startable back</div>
+          <span class="lg">3 fair 1-for-1s found</span>
+        </div>
+        <a class="btn btn-ghost">See trades ↗</a>
+      </div>
+    </div>
+
+    <div class="team-grp">
+      <div class="tg-head">
+        <span class="tg-name">Late Round Dads</span>
+        <span class="pill p-reb">▼ Rebuild</span> <span class="badge">DYNASTY</span>
+        <span class="tg-weak">aging core (28.4)</span>
+      </div>
+      <div class="item">
+        <div class="main">
+          <div class="mv"><span class="ic ic-sell">↘</span> Sell window: <b style="margin:0 4px">Derrick Henry</b> (RB) — cash the vet for youth</div>
+          <span class="lg">tagged SELL · 2 buyers identified</span>
+        </div>
+        <a class="btn btn-ghost">See trades ↗</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD — banded -->
+  <div class="dash-head">Your teams — strengths &amp; weaknesses</div>
+
+  <div class="band-head"><span class="dot d-top"></span> Top tier <span class="band-n">3 teams</span></div>
+  <div class="grid">
+    <div class="tcard">
+      <div class="top"><span class="tname">Forte-Year Old Virgins</span><span class="pill p-cont">▲ Contender</span></div>
+      <div class="meta">Sleeper · 1QB · dynasty</div>
+      <div class="health"><span class="k">Strong:</span> <span class="strong">WR corps</span> &nbsp;·&nbsp; <span class="k">Thin:</span> <span class="thin">RB depth</span> · core age 26.1</div>
+      <a class="open">Open league →</a>
+    </div>
+    <div class="tcard">
+      <div class="top"><span class="tname">Insurance Survivors</span><span class="pill p-cont">▲ Contender</span></div>
+      <div class="meta">Yahoo · 1QB · redraft</div>
+      <div class="health"><span class="k">Strong:</span> <span class="strong">RB</span> &nbsp;·&nbsp; value 118% of median</div>
+      <a class="open">Open league →</a>
+    </div>
+  </div>
+
+  <div class="band-head"><span class="dot d-mid"></span> Middle <span class="band-n">6 teams</span></div>
+  <div class="grid">
+    <div class="tcard">
+      <div class="top"><span class="tname">Product Tech Leaders</span><span class="pill p-mid">In the mix</span></div>
+      <div class="meta">Yahoo · 1QB · redraft</div>
+      <div class="health"><span class="k">Balanced</span> · value 99% of median · no glaring holes</div>
+      <a class="open">Open league →</a>
+    </div>
+    <div class="tcard">
+      <div class="top"><span class="tname">$77 Dynasty League</span><span class="pill p-mid">Middle</span></div>
+      <div class="meta">MyFFPC · 1QB · dynasty</div>
+      <div class="health"><span class="k">Thin:</span> <span class="thin">TE</span> · core age 25.0</div>
+      <a class="open">Open league →</a>
+    </div>
+  </div>
+
+  <div class="band-head"><span class="dot d-low"></span> Lower tier <span class="band-n">3 teams</span></div>
+  <div class="grid">
+    <div class="tcard">
+      <div class="top"><span class="tname">Late Round Dads</span><span class="pill p-reb">▼ Rebuild</span></div>
+      <div class="meta">Sleeper · SF · dynasty</div>
+      <div class="health"><span class="k">Aging core</span> (28.4) · sell-window vets flagged</div>
+      <a class="open">Open league →</a>
+    </div>
+    <div class="tcard">
+      <div class="top"><span class="tname">Bench Warmers</span><span class="pill p-reb">▼ Falling behind</span></div>
+      <div class="meta">Fleaflicker · 1QB · redraft</div>
+      <div class="health">value 84% of median · needs multiple upgrades</div>
+      <a class="open">Open league →</a>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

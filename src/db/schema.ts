@@ -568,13 +568,15 @@ export const playerTags = pgTable("player_tags", {
 export const weeklyRankings = pgTable("weekly_rankings", {
     sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "cascade" }),
     week: integer("week").notNull(),
-    kind: text("kind").notNull(), // 'flex' | 'qb'
+    kind: text("kind").notNull(), // 'flex' | 'qb' | 'dst'
     rank: integer("rank"),                 // overall rank within the kind (1 = best)
-    position: text("position"),            // player's position (RB/WR/TE/QB) as listed
+    position: text("position"),            // player's position (RB/WR/TE/QB/DEF) as listed
     team: text("team"),                    // NFL team abbr
     opponent: text("opponent"),            // this week's opponent
     total: decimal("total", { precision: 6, scale: 2 }), // projected/total points
     pos_matchup: integer("pos_matchup"),   // opponent's rank vs this position (1 = toughest)
+    tier: integer("tier"),                 // streaming tier (1 = best); used by DST rankings
+    spread: decimal("spread", { precision: 5, scale: 1 }), // point spread (negative = favored); DST rankings
     player_name: text("player_name"),      // raw name from the CSV (for unmatched rows)
     updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => {

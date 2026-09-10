@@ -8,7 +8,7 @@ import { useState } from 'react';
  */
 export function WeeklyRankingsForm() {
     const [file, setFile] = useState<File | null>(null);
-    const [kind, setKind] = useState<'flex' | 'qb'>('flex');
+    const [kind, setKind] = useState<'flex' | 'qb' | 'dst'>('flex');
     const [week, setWeek] = useState<number>(1);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
@@ -39,12 +39,13 @@ export function WeeklyRankingsForm() {
 
     return (
         <div className="bg-zinc-900 rounded-xl ring-1 ring-white/10 p-6">
-            <h2 className="text-lg font-semibold text-white mb-1">Weekly Rankings (QB / Flex)</h2>
+            <h2 className="text-lg font-semibold text-white mb-1">Weekly Rankings (QB / Flex / DST)</h2>
             <p className="text-sm text-zinc-400 mb-4">
-                Upload a start/sit CSV for a specific week. Columns: Rank, FLEX (or QB), Team, Opponent, Total, Pos, Matchup.
+                Upload a start/sit CSV for a specific week. Flex/QB columns: Rank, FLEX (or QB), Team, Opponent, Total, Pos, Matchup.
+                DST columns: Rank, Defense, Opponent, Spread, Tier (full team names OK, e.g. &quot;Los Angeles Chargers&quot;).
             </p>
             <form onSubmit={submit} className="space-y-4">
-                <div className="flex gap-4">
+                <div className="flex gap-4 flex-wrap">
                     <label className="flex items-center space-x-2 bg-zinc-800/50 px-4 py-3 rounded-lg cursor-pointer border border-zinc-700 hover:border-zinc-500">
                         <input type="radio" checked={kind === 'flex'} onChange={() => setKind('flex')} className="text-blue-500" />
                         <span className="text-white">Flex</span>
@@ -52,6 +53,10 @@ export function WeeklyRankingsForm() {
                     <label className="flex items-center space-x-2 bg-zinc-800/50 px-4 py-3 rounded-lg cursor-pointer border border-zinc-700 hover:border-zinc-500">
                         <input type="radio" checked={kind === 'qb'} onChange={() => setKind('qb')} className="text-blue-500" />
                         <span className="text-white">QB</span>
+                    </label>
+                    <label className="flex items-center space-x-2 bg-zinc-800/50 px-4 py-3 rounded-lg cursor-pointer border border-zinc-700 hover:border-zinc-500">
+                        <input type="radio" checked={kind === 'dst'} onChange={() => setKind('dst')} className="text-blue-500" />
+                        <span className="text-white">DST</span>
                     </label>
                     <label className="flex items-center gap-2 bg-zinc-800/50 px-4 py-3 rounded-lg border border-zinc-700">
                         <span className="text-white text-sm">Week</span>
