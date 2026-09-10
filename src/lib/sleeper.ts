@@ -398,13 +398,19 @@ export interface SleeperMatchupEntry {
     roster_id: number;
     matchup_id: number | null;
     starters: string[]; // sleeper_ids; DEF appears as bare team abbr (e.g. "DEN")
+    /** Live per-player fantasy points, keyed by RAW sleeper id (bare abbr for DEF). */
+    players_points: Record<string, number>;
+    /** Live team total fantasy points. */
+    points: number | null;
 }
 
 /** Fetch a week's matchups. Entries sharing a matchup_id are head-to-head. Each
- *  entry's `starters[]` is that roster's starting lineup for the week. */
+ *  entry's `starters[]` is that roster's starting lineup for the week, and
+ *  `players_points` carries live per-player fantasy points during games. Uses a
+ *  short LIVE TTL so polling gets fresh in-game numbers. */
 export async function getSleeperMatchups(leagueId: string, week: number): Promise<SleeperMatchupEntry[]> {
     const cacheKey = `sleeper:matchups:${leagueId}:${week}`;
-    const cached = cache.get<SleeperMatchupEntry[]>(cacheKey, TTL.LEAGUE_DATA);
+    const cached = cache.get<SleeperMatchupEntry[]>(cacheKey, TTL.LIVE);
     if (cached) return cached;
     try {
         const res = await fetch(`${BASE_URL}/league/${leagueId}/matchups/${week}`, { cache: 'no-store' });
@@ -414,6 +420,8 @@ export async function getSleeperMatchups(leagueId: string, week: number): Promis
             roster_id: e.roster_id,
             matchup_id: e.matchup_id ?? null,
             starters: Array.isArray(e.starters) ? e.starters : [],
+            players_points: (e.players_points && typeof e.players_points === 'object') ? e.players_points : {},
+            points: typeof e.points === 'number' ? e.points : null,
         }));
         cache.set(cacheKey, entries);
         return entries;

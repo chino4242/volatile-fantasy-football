@@ -29,6 +29,9 @@ export interface LeagueMatchupInput {
     /** Data freshness: ISO date string of the last DB sync (Yahoo/MyFFPC), or
      *  'live' for API-backed platforms (Sleeper/Fleaflicker) fetched per request. */
     lastSynced?: string | 'live' | null;
+    /** Live per-player fantasy points (sleeper_id → points) for this league, when
+     *  the platform exposes them (Sleeper/Fleaflicker). Absent → no live points. */
+    pointsById?: Record<string, number>;
 }
 
 /** Minimal player metadata + NFL-game placement for a sleeper_id. */
@@ -51,6 +54,12 @@ export interface RootingPlayer {
     forLeagues: string[];
     /** League names where this player is my opponent's starter. */
     againstLeagues: string[];
+    /** Live fantasy points for this player (computed half-PPR from ESPN box
+     *  scores), or null when not playing / no stats yet. */
+    points: number | null;
+    /** Light usage signal (targets + carries) and a short label, when available. */
+    usage?: number | null;
+    usageLabel?: string | null;
 }
 
 export interface RootingGame {
@@ -62,12 +71,26 @@ export interface RootingGame {
     /** Convenience counts for sorting/urgency. */
     forCount: number;
     againstCount: number;
+    /** Live fantasy-point totals: sum of points for players I'm rooting FOR /
+     *  AGAINST in this game (a 'both' player counts on both sides). null-safe. */
+    forPoints: number;
+    againstPoints: number;
     /** Day/slot metadata (stamped from the NFL schedule, when available). */
     slot?: string | null;
     slotOrder?: number | null;
     weekday?: string | null;
     gametime?: string | null;
     kickoffSort?: number | null;
+    /** Live NFL game-state (stamped from ESPN scoreboard by the route). */
+    live?: {
+        state: 'pre' | 'in' | 'post';
+        homeScore: number | null;
+        awayScore: number | null;
+        /** Whether teams[0]/teams[1] are home — for aligning scores to the pair. */
+        shortLabel: string;
+        /** Score aligned to teams[0] and teams[1] respectively. */
+        teamScores: [number | null, number | null];
+    } | null;
 }
 
 /** One data source (league) + how fresh its data is, for the freshness line. */
@@ -101,30 +124,58 @@ export function gameKeyFor(team: string | null, opponent: string | null): string
  * Build the rooting guide. `gameInfo` maps sleeper_id → PlayerGameInfo; players
  * missing from it fall into the UNKNOWN game bucket (never dropped).
  */
+/** Live per-player scoring (computed centrally, e.g. from ESPN box scores). */
+export interface LivePoints {
+    points: number;
+    usage?: number | null;
+    usageLabel?: string | null;
+}
+
 export function buildRootingGuide(
     leagues: LeagueMatchupInput[],
     gameInfo: Map<string, PlayerGameInfo>,
     week: number | null,
+    livePoints?: Map<string, LivePoints>,
 ): RootingGuide {
-    // Accumulate per-sleeper_id: which leagues have it FOR vs AGAINST.
-    interface Acc { forLeagues: string[]; againstLeagues: string[]; }
+    // Accumulate per-sleeper_id: which leagues have it FOR vs AGAINST, + points.
+    interface Acc { forLeagues: string[]; againstLeagues: string[]; points: number | null; usage: number | null; usageLabel: string | null; }
     const acc = new Map<string, Acc>();
     const ensure = (id: string): Acc => {
         let a = acc.get(id);
-        if (!a) { a = { forLeagues: [], againstLeagues: [] }; acc.set(id, a); }
+        if (!a) { a = { forLeagues: [], againstLeagues: [], points: null, usage: null, usageLabel: null }; acc.set(id, a); }
         return a;
     };
 
     for (const lg of leagues) {
         for (const id of new Set(lg.myStarterIds)) ensure(id).forLeagues.push(lg.leagueName);
         for (const id of new Set(lg.oppStarterIds)) ensure(id).againstLeagues.push(lg.leagueName);
+        // Fallback live points from a platform (only used when no central
+        // livePoints map is supplied for that player).
+        if (lg.pointsById) {
+            for (const [id, pts] of Object.entries(lg.pointsById)) {
+                if (typeof pts !== 'number') continue;
+                const a = ensure(id);
+                a.points = a.points == null ? pts : Math.max(a.points, pts);
+            }
+        }
+    }
+
+    // Central live points (computed uniformly from ESPN) take precedence — a
+    // consistent number for every player regardless of platform.
+    if (livePoints) {
+        for (const [id, lp] of livePoints) {
+            const a = ensure(id);
+            a.points = lp.points;
+            a.usage = lp.usage ?? null;
+            a.usageLabel = lp.usageLabel ?? null;
+        }
     }
 
     // Build RootingPlayers, then bucket into games.
     const gamesByKey = new Map<string, RootingGame>();
     const ensureGame = (key: string, teams: [string, string]): RootingGame => {
         let g = gamesByKey.get(key);
-        if (!g) { g = { gameKey: key, teams, players: [], forCount: 0, againstCount: 0 }; gamesByKey.set(key, g); }
+        if (!g) { g = { gameKey: key, teams, players: [], forCount: 0, againstCount: 0, forPoints: 0, againstPoints: 0 }; gamesByKey.set(key, g); }
         return g;
     };
 
@@ -150,9 +201,16 @@ export function buildRootingGuide(
             side,
             forLeagues: a.forLeagues,
             againstLeagues: a.againstLeagues,
+            points: a.points,
+            usage: a.usage,
+            usageLabel: a.usageLabel,
         });
         if (isFor) game.forCount++;
         if (isAgainst) game.againstCount++;
+        if (a.points != null) {
+            if (isFor) game.forPoints += a.points;
+            if (isAgainst) game.againstPoints += a.points;
+        }
     }
 
     // Sort players within a game: by NFL team, then side (both, then for, then

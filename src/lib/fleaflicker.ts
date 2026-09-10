@@ -366,6 +366,9 @@ export interface FleaflickerMatchup {
     awayTeamName: string;
     homeStarterNames: string[];
     awayStarterNames: string[];
+    /** Live fantasy points per starter, keyed by player nameFull (bridged to
+     *  sleeper_id by the caller). Present once games are live; empty pre-game. */
+    pointsByName: Record<string, number>;
 }
 
 export async function getFleaflickerWeekMatchups(leagueId: string, week: number): Promise<FleaflickerMatchup[]> {
@@ -378,6 +381,14 @@ export async function getFleaflickerWeekMatchups(leagueId: string, week: number)
                 const box = await fetch(`${BASE_URL}/FetchLeagueBoxscore?sport=NFL&league_id=${leagueId}&fantasy_game_id=${g.id}`, { cache: 'no-store' }).then(r => r.json());
                 const homeStarterNames: string[] = [];
                 const awayStarterNames: string[] = [];
+                const pointsByName: Record<string, number> = {};
+                // Fleaflicker exposes live scored fantasy points per player as
+                // `viewingActualPoints: {value}` (mirrors viewingProjectedPoints).
+                const readPts = (side: any) => {
+                    const name = side?.proPlayer?.nameFull;
+                    const val = side?.viewingActualPoints?.value;
+                    if (name && typeof val === 'number') pointsByName[name] = val;
+                };
                 for (const grp of box?.lineups || []) {
                     if (grp.group !== 'START') continue;
                     for (const slot of grp.slots || []) {
@@ -385,6 +396,8 @@ export async function getFleaflickerWeekMatchups(leagueId: string, week: number)
                         const an = slot.away?.proPlayer?.nameFull;
                         if (hn) homeStarterNames.push(hn);
                         if (an) awayStarterNames.push(an);
+                        readPts(slot.home);
+                        readPts(slot.away);
                     }
                 }
                 out.push({
@@ -394,6 +407,7 @@ export async function getFleaflickerWeekMatchups(leagueId: string, week: number)
                     awayTeamName: g.away?.name || `Team ${g.away?.id}`,
                     homeStarterNames,
                     awayStarterNames,
+                    pointsByName,
                 });
             } catch { /* skip this game */ }
         }));

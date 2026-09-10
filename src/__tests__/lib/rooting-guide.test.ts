@@ -94,3 +94,84 @@ describe('buildRootingGuide — sources (data freshness)', () => {
         expect(g.sources.find(s => s.platform === 'myffpc')!.lastSynced).toBeNull();
     });
 });
+
+
+describe('buildRootingGuide — live points', () => {
+    const gi = new Map<string, PlayerGameInfo>([
+        ['cmc', info('Christian McCaffrey', 'RB', 'SF', 'LAR')],
+        ['puka', info('Puka Nacua', 'WR', 'LAR', 'SF')],
+    ]);
+
+    it('folds per-player points onto RootingPlayer + FOR/AGAINST game totals', () => {
+        const leagues: LeagueMatchupInput[] = [
+            // I start CMC (FOR); opponent starts Puka (AGAINST). Points supplied.
+            {
+                leagueId: 'a', leagueName: 'A', platform: 'sleeper',
+                myStarterIds: ['cmc'], oppStarterIds: ['puka'],
+                pointsById: { cmc: 12.4, puka: 18.1 },
+            },
+        ];
+        const g = buildRootingGuide(leagues, gi, 1);
+        const game = g.games.find(x => x.gameKey === 'LAR@SF')!;
+        expect(game).toBeTruthy();
+        const cmc = game.players.find(p => p.sleeper_id === 'cmc')!;
+        const puka = game.players.find(p => p.sleeper_id === 'puka')!;
+        expect(cmc.points).toBe(12.4);
+        expect(puka.points).toBe(18.1);
+        expect(game.forPoints).toBeCloseTo(12.4);
+        expect(game.againstPoints).toBeCloseTo(18.1);
+    });
+
+    it('a BOTH player contributes points to both sides; missing points → null', () => {
+        const leagues: LeagueMatchupInput[] = [
+            { leagueId: 'a', leagueName: 'A', platform: 'sleeper', myStarterIds: ['cmc'], oppStarterIds: [], pointsById: { cmc: 10 } },
+            { leagueId: 'b', leagueName: 'B', platform: 'fleaflicker', myStarterIds: [], oppStarterIds: ['cmc'] }, // no points here
+        ];
+        const g = buildRootingGuide(leagues, gi, 1);
+        const cmc = g.games.flatMap(x => x.players).find(p => p.sleeper_id === 'cmc')!;
+        expect(cmc.side).toBe('both');
+        expect(cmc.points).toBe(10); // max across leagues (B reported none)
+        const game = g.games.find(x => x.players.some(p => p.sleeper_id === 'cmc'))!;
+        expect(game.forPoints).toBeCloseTo(10);
+        expect(game.againstPoints).toBeCloseTo(10); // both-side player counts on both
+    });
+
+    it('leaves points null when no platform reports them', () => {
+        const leagues: LeagueMatchupInput[] = [
+            { leagueId: 'a', leagueName: 'A', platform: 'yahoo', myStarterIds: ['cmc'], oppStarterIds: [] },
+        ];
+        const g = buildRootingGuide(leagues, gi, 1);
+        const cmc = g.games.flatMap(x => x.players).find(p => p.sleeper_id === 'cmc')!;
+        expect(cmc.points).toBeNull();
+        const game = g.games.find(x => x.players.some(p => p.sleeper_id === 'cmc'))!;
+        expect(game.forPoints).toBe(0);
+    });
+});
+
+
+describe('buildRootingGuide — central livePoints precedence', () => {
+    const gi = new Map<string, PlayerGameInfo>([['cmc', info('Christian McCaffrey', 'RB', 'SF', 'LAR')]]);
+
+    it('central livePoints override platform pointsById + carry usage', () => {
+        const leagues: LeagueMatchupInput[] = [
+            { leagueId: 'a', leagueName: 'A', platform: 'sleeper', myStarterIds: ['cmc'], oppStarterIds: [], pointsById: { cmc: 8.0 } },
+        ];
+        const live = new Map([['cmc', { points: 15.5, usage: 20, usageLabel: '6 tgt · 14 car' }]]);
+        const g = buildRootingGuide(leagues, gi, 1, live);
+        const cmc = g.games.flatMap(x => x.players).find(p => p.sleeper_id === 'cmc')!;
+        expect(cmc.points).toBe(15.5);           // ESPN wins over platform's 8.0
+        expect(cmc.usage).toBe(20);
+        expect(cmc.usageLabel).toBe('6 tgt · 14 car');
+        const game = g.games.find(x => x.players.some(p => p.sleeper_id === 'cmc'))!;
+        expect(game.forPoints).toBeCloseTo(15.5);
+    });
+
+    it('falls back to platform points when no central live entry', () => {
+        const leagues: LeagueMatchupInput[] = [
+            { leagueId: 'a', leagueName: 'A', platform: 'sleeper', myStarterIds: ['cmc'], oppStarterIds: [], pointsById: { cmc: 8.0 } },
+        ];
+        const g = buildRootingGuide(leagues, gi, 1, new Map()); // empty central map
+        const cmc = g.games.flatMap(x => x.players).find(p => p.sleeper_id === 'cmc')!;
+        expect(cmc.points).toBe(8.0);
+    });
+});
