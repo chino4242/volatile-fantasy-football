@@ -29,6 +29,9 @@ export interface LeagueMatchupInput {
     /** Data freshness: ISO date string of the last DB sync (Yahoo/MyFFPC), or
      *  'live' for API-backed platforms (Sleeper/Fleaflicker) fetched per request. */
     lastSynced?: string | 'live' | null;
+    /** Live per-player fantasy points (sleeper_id → points) for this league, when
+     *  the platform exposes them (Sleeper/Fleaflicker). Absent → no live points. */
+    pointsById?: Record<string, number>;
 }
 
 /** Minimal player metadata + NFL-game placement for a sleeper_id. */
@@ -51,6 +54,9 @@ export interface RootingPlayer {
     forLeagues: string[];
     /** League names where this player is my opponent's starter. */
     againstLeagues: string[];
+    /** Live fantasy points for this player (max across leagues that report it),
+     *  or null when no platform in play exposes points for him. */
+    points: number | null;
 }
 
 export interface RootingGame {
@@ -62,12 +68,26 @@ export interface RootingGame {
     /** Convenience counts for sorting/urgency. */
     forCount: number;
     againstCount: number;
+    /** Live fantasy-point totals: sum of points for players I'm rooting FOR /
+     *  AGAINST in this game (a 'both' player counts on both sides). null-safe. */
+    forPoints: number;
+    againstPoints: number;
     /** Day/slot metadata (stamped from the NFL schedule, when available). */
     slot?: string | null;
     slotOrder?: number | null;
     weekday?: string | null;
     gametime?: string | null;
     kickoffSort?: number | null;
+    /** Live NFL game-state (stamped from ESPN scoreboard by the route). */
+    live?: {
+        state: 'pre' | 'in' | 'post';
+        homeScore: number | null;
+        awayScore: number | null;
+        /** Whether teams[0]/teams[1] are home — for aligning scores to the pair. */
+        shortLabel: string;
+        /** Score aligned to teams[0] and teams[1] respectively. */
+        teamScores: [number | null, number | null];
+    } | null;
 }
 
 /** One data source (league) + how fresh its data is, for the freshness line. */
@@ -106,25 +126,34 @@ export function buildRootingGuide(
     gameInfo: Map<string, PlayerGameInfo>,
     week: number | null,
 ): RootingGuide {
-    // Accumulate per-sleeper_id: which leagues have it FOR vs AGAINST.
-    interface Acc { forLeagues: string[]; againstLeagues: string[]; }
+    // Accumulate per-sleeper_id: which leagues have it FOR vs AGAINST, + points.
+    interface Acc { forLeagues: string[]; againstLeagues: string[]; points: number | null; }
     const acc = new Map<string, Acc>();
     const ensure = (id: string): Acc => {
         let a = acc.get(id);
-        if (!a) { a = { forLeagues: [], againstLeagues: [] }; acc.set(id, a); }
+        if (!a) { a = { forLeagues: [], againstLeagues: [], points: null }; acc.set(id, a); }
         return a;
     };
 
     for (const lg of leagues) {
         for (const id of new Set(lg.myStarterIds)) ensure(id).forLeagues.push(lg.leagueName);
         for (const id of new Set(lg.oppStarterIds)) ensure(id).againstLeagues.push(lg.leagueName);
+        // Live points: take the max reported across leagues (same player, same
+        // real-life game → same points; max ignores leagues that report 0/absent).
+        if (lg.pointsById) {
+            for (const [id, pts] of Object.entries(lg.pointsById)) {
+                if (typeof pts !== 'number') continue;
+                const a = ensure(id);
+                a.points = a.points == null ? pts : Math.max(a.points, pts);
+            }
+        }
     }
 
     // Build RootingPlayers, then bucket into games.
     const gamesByKey = new Map<string, RootingGame>();
     const ensureGame = (key: string, teams: [string, string]): RootingGame => {
         let g = gamesByKey.get(key);
-        if (!g) { g = { gameKey: key, teams, players: [], forCount: 0, againstCount: 0 }; gamesByKey.set(key, g); }
+        if (!g) { g = { gameKey: key, teams, players: [], forCount: 0, againstCount: 0, forPoints: 0, againstPoints: 0 }; gamesByKey.set(key, g); }
         return g;
     };
 
@@ -150,9 +179,14 @@ export function buildRootingGuide(
             side,
             forLeagues: a.forLeagues,
             againstLeagues: a.againstLeagues,
+            points: a.points,
         });
         if (isFor) game.forCount++;
         if (isAgainst) game.againstCount++;
+        if (a.points != null) {
+            if (isFor) game.forPoints += a.points;
+            if (isAgainst) game.againstPoints += a.points;
+        }
     }
 
     // Sort players within a game: by NFL team, then side (both, then for, then

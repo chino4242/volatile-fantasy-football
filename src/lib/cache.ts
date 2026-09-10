@@ -45,4 +45,5 @@ export const TTL = {
   USER_LEAGUES: 5 * 60 * 1000,      // 5 minutes
   FLEAFLICKER_LEAGUE: 2 * 60 * 1000,  // 2 minutes
   FLEAFLICKER_ROSTERS: 2 * 60 * 1000, // 2 minutes
+  LIVE: 20 * 1000,                  // 20 seconds — live in-game scoring (polled)
 } as const;

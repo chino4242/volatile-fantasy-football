@@ -8,6 +8,7 @@ import { getFleaflickerWeekMatchups } from "@/lib/fleaflicker";
 import { resolveYahooMatchup, resolveMyffpcMatchup } from "@/lib/db-matchups";
 import { getLatestWeek } from "@/lib/weekly-rankings";
 import { getWeekSchedule } from "@/lib/nfl-schedule";
+import { getLiveGameStates } from "@/lib/nfl-live";
 import {
     buildRootingGuide,
     type LeagueMatchupInput,
@@ -63,6 +64,9 @@ export async function POST(request: NextRequest) {
         const guide = buildRootingGuide(leagues, gameInfo, week);
         guide.unresolvedLeagues = unresolved;
 
+        // Live NFL game-state (ESPN) — uniform across all platforms.
+        const liveStates = await getLiveGameStates();
+
         // Stamp each game with its NFL day/slot from the schedule, then order by
         // kickoff (day, then time). UNKNOWN bucket sinks to the bottom.
         if (week != null) {
@@ -74,6 +78,20 @@ export async function POST(request: NextRequest) {
                     g.weekday = sg.weekday; g.gametime = sg.gametime; g.kickoffSort = sg.kickoffSort;
                 } else {
                     g.slot = null; g.slotOrder = 99; g.kickoffSort = 999999;
+                }
+                // Live score/clock, with scores aligned to g.teams[0]/[1].
+                const ls = liveStates.get(g.gameKey);
+                if (ls) {
+                    const t0IsHome = g.teams[0] === ls.home;
+                    g.live = {
+                        state: ls.state,
+                        homeScore: ls.homeScore,
+                        awayScore: ls.awayScore,
+                        shortLabel: ls.shortLabel,
+                        teamScores: t0IsHome ? [ls.homeScore, ls.awayScore] : [ls.awayScore, ls.homeScore],
+                    };
+                } else {
+                    g.live = null;
                 }
             }
             guide.games.sort((a, b) => (a.kickoffSort ?? 999999) - (b.kickoffSort ?? 999999) || (b.forCount + b.againstCount) - (a.forCount + a.againstCount));
@@ -93,11 +111,23 @@ async function resolveSleeper(leagueId: string, myRosterId: string, leagueName: 
     const mine = entries.find(e => String(e.roster_id) === String(myRosterId));
     if (!mine || mine.matchup_id == null) return null;
     const opp = entries.find(e => e.matchup_id === mine.matchup_id && String(e.roster_id) !== String(myRosterId));
+
+    // Live per-player points → keyed by NORMALIZED sleeper_id (DEF_{ABBR}) to
+    // match the starter ids and the players table.
+    const pointsById: Record<string, number> = {};
+    for (const e of [mine, opp]) {
+        if (!e) continue;
+        for (const [rawId, pts] of Object.entries(e.players_points)) {
+            if (typeof pts === 'number') pointsById[normalizeSleeperStarterId(rawId)] = pts;
+        }
+    }
+
     return {
         leagueId, leagueName, platform: "sleeper",
         myStarterIds: mine.starters.map(normalizeSleeperStarterId),
         oppStarterIds: (opp?.starters || []).map(normalizeSleeperStarterId),
         lastSynced: "live",
+        pointsById,
     };
 }
 
@@ -115,12 +145,19 @@ async function resolveFleaflicker(leagueId: string, myTeamId: string, leagueName
     // Bridge names → sleeper_id.
     const idByName = await nameToSleeperIdMap();
     const toIds = (names: string[]) => names.map(n => idByName.get(cleanseName(n))).filter((x): x is string => !!x);
+    // Live points: bridge name-keyed points → sleeper_id.
+    const pointsById: Record<string, number> = {};
+    for (const [name, pts] of Object.entries(game.pointsByName)) {
+        const id = idByName.get(cleanseName(name));
+        if (id && typeof pts === 'number') pointsById[id] = pts;
+    }
     return {
         leagueId, leagueName, platform: "fleaflicker",
         myStarterIds: toIds(myNames),
         oppStarterIds: toIds(oppNames),
         opponentName: iAmHome ? game.awayTeamName : game.homeTeamName,
         lastSynced: "live",
+        pointsById,
     };
 }
 
