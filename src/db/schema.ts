@@ -52,6 +52,11 @@ export const rosters = pgTable("rosters", {
     fpts_decimal: integer("fpts_decimal"),
     fpts_against: decimal("fpts_against", { precision: 10, scale: 2 }),
     fpts_against_decimal: integer("fpts_against_decimal"),
+    /** Persisted weekly H2H opponent (Yahoo/MyFFPC) — this team's opponent's
+     *  roster_id for `opponent_week`, written by the local sync so the For &
+     *  Against page can resolve the AGAINST side on Vercel without a live scrape. */
+    opponent_roster_id: text("opponent_roster_id"),
+    opponent_week: integer("opponent_week"),
     updated_at: timestamp("updated_at").defaultNow(),
 });
 
