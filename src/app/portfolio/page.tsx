@@ -8,7 +8,7 @@ import { useMyTeams } from '@/hooks/useMyTeams';
 import { useSeasonMode } from '@/hooks/useSeasonMode';
 import { TagManager } from './TagManager';
 import { ActionCenter } from '@/components/portfolio/ActionCenter';
-import { buildActionCenter, tierFor, type ActionCenterInput, type TierBand } from '@/lib/action-center';
+import { buildActionCenter, buildLeagueActions, tierFor, type ActionCenterInput, type TierBand, type ActionItem } from '@/lib/action-center';
 import {
     type PortfolioLeague,
     type PortfolioLeagueRef,
@@ -200,6 +200,24 @@ export default function PortfolioPage() {
         return map;
     }, [actionCenter]);
 
+    // Per-league in-season actions (waiver swaps + DEF streaming) rendered INSIDE
+    // each league card. Only in-season; off-season shows these in the by-team
+    // Action Center instead.
+    const leagueActionsByKey = useMemo(() => {
+        const map: Record<string, ActionItem[]> = {};
+        if (seasonMode !== 'in-season') return map;
+        for (const l of loaded) {
+            if (!l.data) continue;
+            const key = `${l.ref.platform}:${l.ref.leagueId}`;
+            map[key] = buildLeagueActions({
+                league: l.data,
+                myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
+                dstRankings,
+            });
+        }
+        return map;
+    }, [loaded, getMyTeam, seasonMode, dstRankings]);
+
     // Partition loaded leagues into tier bands (top/middle/lower) for the
     // dashboard. Leagues whose my-team is unknown go to `unassigned` (they show
     // the picker). Within a band: needs-action-first, then value desc.
@@ -273,6 +291,7 @@ export default function PortfolioPage() {
                                     getMyTeam={getMyTeam}
                                     setMyTeam={setMyTeam}
                                     lineupCountByKey={lineupCountByKey}
+                                    leagueActionsByKey={leagueActionsByKey}
                                 />
                             )
                         )}
@@ -290,6 +309,7 @@ export default function PortfolioPage() {
                                             myRosterId={getMyTeam(ref.platform, ref.leagueId)}
                                             onPickMyTeam={(rosterId) => setMyTeam(ref.platform, ref.leagueId, rosterId)}
                                             lineupCount={0}
+                                            leagueActions={leagueActionsByKey[`${ref.platform}:${ref.leagueId}`] ?? []}
                                         />
                                     ))}
                                 </div>
@@ -320,13 +340,14 @@ const TIER_PILL: Record<TierBand, string> = {
 };
 
 function BandSection({
-    band, leagues, getMyTeam, setMyTeam, lineupCountByKey,
+    band, leagues, getMyTeam, setMyTeam, lineupCountByKey, leagueActionsByKey,
 }: {
     band: TierBand;
     leagues: LoadedLeague[];
     getMyTeam: (p: string, l: string) => string | null;
     setMyTeam: (p: string, l: string, r: string) => void;
     lineupCountByKey: Record<string, number>;
+    leagueActionsByKey: Record<string, ActionItem[]>;
 }) {
     const meta = BAND_META[band];
     return (
@@ -345,6 +366,7 @@ function BandSection({
                             myRosterId={getMyTeam(ref.platform, ref.leagueId)}
                             onPickMyTeam={(rosterId) => setMyTeam(ref.platform, ref.leagueId, rosterId)}
                             lineupCount={lineupCountByKey[key] ?? 0}
+                            leagueActions={leagueActionsByKey[key] ?? []}
                         />
                     );
                 })}
@@ -354,7 +376,7 @@ function BandSection({
 }
 
 function LeagueCard({
-    refInfo, data, error, myRosterId, onPickMyTeam, lineupCount,
+    refInfo, data, error, myRosterId, onPickMyTeam, lineupCount, leagueActions,
 }: {
     refInfo: PortfolioLeagueRef;
     data: PortfolioLeague | null;
@@ -362,6 +384,7 @@ function LeagueCard({
     myRosterId: string | null;
     onPickMyTeam: (rosterId: string) => void;
     lineupCount: number;
+    leagueActions: ActionItem[];
 }) {
     const title = data?.name || refInfo.name || `${PLATFORM_LABEL[refInfo.platform]} League`;
     const dbHref = (refInfo.platform === 'yahoo' || refInfo.platform === 'myffpc')
@@ -383,18 +406,19 @@ function LeagueCard({
             {!data && !error && <div className="flex items-center gap-2 text-sm text-zinc-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…</div>}
             {error && <div className="text-sm text-red-500">Failed to load ({error})</div>}
 
-            {data && <LeagueInsights data={data} myRosterId={myRosterId} onPickMyTeam={onPickMyTeam} lineupCount={lineupCount} />}
+            {data && <LeagueInsights data={data} myRosterId={myRosterId} onPickMyTeam={onPickMyTeam} lineupCount={lineupCount} leagueActions={leagueActions} />}
         </div>
     );
 }
 
 function LeagueInsights({
-    data, myRosterId, onPickMyTeam, lineupCount,
+    data, myRosterId, onPickMyTeam, lineupCount, leagueActions,
 }: {
     data: PortfolioLeague;
     myRosterId: string | null;
     onPickMyTeam: (rosterId: string) => void;
     lineupCount: number;
+    leagueActions: ActionItem[];
 }) {
     const myTeam = myRosterId ? data.teams.find(t => t.rosterId === myRosterId) || null : null;
     const fas = undervaluedFreeAgents(data);
@@ -463,6 +487,24 @@ function LeagueInsights({
                     </div>
                 ) : <div className="text-sm text-zinc-400">{weak.note}</div>}
             </div>
+
+            {leagueActions.length > 0 && (
+                <div>
+                    <div className="text-xs font-medium text-zinc-500 mb-1">Recommended pickups</div>
+                    <ul className="space-y-1.5">
+                        {leagueActions.map(a => (
+                            <li key={a.id} className="flex items-center justify-between gap-2 text-sm">
+                                <span className="text-zinc-800 dark:text-zinc-200 truncate">
+                                    {a.kind === 'stream' && <span className="text-sky-500 mr-1">🛡️</span>}
+                                    {a.headline}
+                                    {a.detail && <span className="ml-1 text-xs font-semibold text-green-600 dark:text-green-400">{a.detail}</span>}
+                                </span>
+                                <Link href={a.deepLink} className="flex-shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">Open →</Link>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             <UndervaluedList fas={fas} />
         </div>

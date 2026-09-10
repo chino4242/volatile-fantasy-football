@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildActionCenter, tierFor, type ActionCenterInput } from '@/lib/action-center';
+import { buildActionCenter, buildLeagueActions, tierFor, type ActionCenterInput } from '@/lib/action-center';
 import type { PortfolioLeague, PortfolioTeam, PortfolioPlayer } from '@/lib/portfolio';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -83,15 +83,16 @@ describe('tierFor', () => {
     });
 });
 
-describe('buildActionCenter — in-season', () => {
-    it('groups by action type in order lineup → trade → waiver', () => {
+describe('buildActionCenter — in-season (urgent-only: lineup + trade)', () => {
+    it('cross-league Action Center contains ONLY lineup + trade (no waiver/stream)', () => {
         const ac = buildActionCenter([leagueWithActions()], { seasonMode: 'in-season', week: 3 });
         expect(ac.seasonMode).toBe('in-season');
-        expect(ac.isEmpty).toBe(false);
         expect(ac.byType).toBeDefined();
         const kinds = ac.byType!.map(g => g.kind);
-        // No trades wired → lineup then waiver, in that relative order.
-        expect(kinds).toEqual(['lineup', 'waiver']);
+        // Only lineup here (no trades wired); waiver moved to per-league cards.
+        expect(kinds).toEqual(['lineup']);
+        expect(kinds).not.toContain('waiver');
+        expect(kinds).not.toContain('stream');
     });
 
     it('derives a lineup action from a sub-optimal lineup', () => {
@@ -103,19 +104,19 @@ describe('buildActionCenter — in-season', () => {
         expect(ac.counts.lineup).toBe(lineupGrp.items.length);
     });
 
-    it('derives an actionable waiver ADD→DROP swap (upgrades only)', () => {
-        const ac = buildActionCenter([leagueWithActions()], { seasonMode: 'in-season', week: 3 });
-        const waiverGrp = ac.byType!.find(g => g.kind === 'waiver')!;
-        const item = waiverGrp.items.find(i => i.headline.includes('Upgrade Guy'))!;
-        expect(item).toBeDefined();
-        // Actionable: names the drop and shows a positive value gain.
-        expect(item.headline).toMatch(/drop /);
-        expect(item.detail).toMatch(/^\+/);
-        // The non-upgrade FA ("Scrub") must NOT surface.
-        expect(waiverGrp.items.some(i => i.headline.includes('Scrub'))).toBe(false);
+    it('urgent strip is empty (quiet) when only waiver/stream exist', () => {
+        // A team with no lineup issue + no trades, but an available upgrade FA.
+        const my = team('1', 'Chino', [
+            P({ sleeper_id: 'qb1', position: 'QB', is_starter: true, weeklyRank: 5 }),
+            P({ sleeper_id: 'wr1', position: 'WR', is_starter: true, weeklyRank: 5 }),
+            P({ sleeper_id: 'wr3', position: 'WR', is_starter: false, marketValue: 300 }),
+        ]);
+        const lg = league({ teams: [my, team('2', 'R', [])], freeAgents: [P({ full_name: 'FA', position: 'WR', marketValue: 3000 })], rosterPositions: ['QB', 'WR', 'BN'] });
+        const ac = buildActionCenter([{ league: lg, myRosterId: '1' }], { seasonMode: 'in-season', week: 3, waiverPerLeague: 3 });
+        expect(ac.isEmpty).toBe(true); // urgent-only strip is quiet
     });
 
-    it('emits Fleaflicker-scoped trade items when pending trades are supplied', () => {
+    it('emits Fleaflicker-scoped trade items in the urgent strip', () => {
         const input = leagueWithActions();
         input.league = { ...input.league, platform: 'fleaflicker', leagueId: 'FF1' };
         input.pendingTrades = [{ id: 't1', headline: 'You get X ↔ give Y', detail: 'even value' }];
@@ -123,7 +124,25 @@ describe('buildActionCenter — in-season', () => {
         const tradeGrp = ac.byType!.find(g => g.kind === 'trade')!;
         expect(tradeGrp).toBeDefined();
         expect(tradeGrp.items[0].scope).toBe('fleaflicker');
-        expect(ac.byType!.map(g => g.kind)).toEqual(['lineup', 'trade', 'waiver']);
+        expect(ac.byType!.map(g => g.kind)).toEqual(['lineup', 'trade']);
+    });
+});
+
+describe('buildLeagueActions — per-league waiver + stream (rendered in the card)', () => {
+    it('produces an actionable waiver ADD→DROP swap (upgrades only)', () => {
+        const items = buildLeagueActions(leagueWithActions());
+        const item = items.find(i => i.headline.includes('Upgrade Guy'))!;
+        expect(item).toBeDefined();
+        expect(item.kind).toBe('waiver');
+        expect(item.headline).toMatch(/drop /);
+        expect(item.detail).toMatch(/^\+/);
+        expect(items.some(i => i.headline.includes('Scrub'))).toBe(false);
+    });
+
+    it('returns nothing when my-team is unknown', () => {
+        const input = leagueWithActions();
+        input.myRosterId = null;
+        expect(buildLeagueActions(input)).toEqual([]);
     });
 });
 
@@ -143,42 +162,39 @@ describe('buildActionCenter — DEF streaming (redraft only)', () => {
     }
 
     it('recommends the best available defense when it beats my starter', () => {
-        const ac = buildActionCenter([redraftWithDef(25)], { seasonMode: 'in-season', week: 3 });
-        const grp = ac.byType!.find(g => g.kind === 'stream')!;
-        expect(grp).toBeDefined();
-        expect(grp.items[0].headline).toMatch(/Stream Los Angeles Chargers.*drop/);
-        expect(grp.items[0].detail).toMatch(/vs ARI/);
+        const items = buildLeagueActions(redraftWithDef(25));
+        const stream = items.find(i => i.kind === 'stream')!;
+        expect(stream).toBeDefined();
+        expect(stream.headline).toMatch(/Stream Los Angeles Chargers.*drop/);
+        expect(stream.detail).toMatch(/vs ARI/);
     });
 
     it('recommends when I have no defense at all', () => {
-        const ac = buildActionCenter([redraftWithDef(null)], { seasonMode: 'in-season', week: 3 });
-        const grp = ac.byType!.find(g => g.kind === 'stream')!;
-        expect(grp.items[0].headline).toMatch(/^Stream Los Angeles Chargers \(DEF\)/);
+        const items = buildLeagueActions(redraftWithDef(null));
+        const stream = items.find(i => i.kind === 'stream')!;
+        expect(stream.headline).toMatch(/^Stream Los Angeles Chargers \(DEF\)/);
     });
 
     it('does NOT recommend when my defense is already good', () => {
         // My DEF rank 2; best available rank 1 → not a >=3-spot upgrade.
-        const ac = buildActionCenter([redraftWithDef(2)], { seasonMode: 'in-season', week: 3 });
-        expect(ac.byType?.find(g => g.kind === 'stream')).toBeUndefined();
+        const items = buildLeagueActions(redraftWithDef(2));
+        expect(items.some(i => i.kind === 'stream')).toBe(false);
     });
 
     it('never recommends streaming in a dynasty league', () => {
         const input = redraftWithDef(25);
         input.league = { ...input.league, leagueType: 'dynasty' };
-        const ac = buildActionCenter([input], { seasonMode: 'in-season', week: 3 });
-        expect(ac.byType?.find(g => g.kind === 'stream')).toBeUndefined();
+        expect(buildLeagueActions(input).some(i => i.kind === 'stream')).toBe(false);
     });
 
     it('never recommends a defense already rostered in the league', () => {
-        // Make Dallas (rostered by opp) the top-ranked; it must be skipped.
         const input = redraftWithDef(25);
         input.dstRankings = [
             { sleeper_id: 'DEF_DAL', rank: 1, tier: 1, spread: -10, opponent: 'NYG', name: 'Dallas Cowboys' },
             { sleeper_id: 'DEF_LAC', rank: 2, tier: 1, spread: -9, opponent: 'ARI', name: 'Los Angeles Chargers' },
         ];
-        const ac = buildActionCenter([input], { seasonMode: 'in-season', week: 3 });
-        const grp = ac.byType!.find(g => g.kind === 'stream')!;
-        expect(grp.items[0].headline).toMatch(/Los Angeles Chargers/); // not Dallas
+        const stream = buildLeagueActions(input).find(i => i.kind === 'stream')!;
+        expect(stream.headline).toMatch(/Los Angeles Chargers/); // not Dallas
     });
 });
 

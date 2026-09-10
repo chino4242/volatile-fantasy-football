@@ -122,7 +122,10 @@ const KIND_LABEL: Record<ActionKind, string> = {
     sell: 'Sell-window',
 };
 
-const KIND_ORDER: ActionKind[] = ['lineup', 'trade', 'stream', 'waiver', 'sell'];
+// The cross-league Action Center (top of the hub) shows ONLY urgent, time-
+// sensitive actions. Waiver adds + DEF streaming are per-league concerns and
+// render inside each league card instead (see buildLeagueActions).
+const URGENT_KINDS: ActionKind[] = ['lineup', 'trade'];
 
 /**
  * Deep-link target for a league/team. v1 links to the in-app league view (the
@@ -330,14 +333,17 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
     }
 
     const counts = { lineup: lineup.length, trade: trade.length, waiver: waiver.length, stream: stream.length, sell: 0 };
-    const isEmpty = lineup.length + trade.length + waiver.length + stream.length === 0;
+    // The cross-league Action Center is urgent-only (lineup + trade). Waiver +
+    // stream are surfaced per-league in the cards, so they don't gate the quiet
+    // state of the top strip.
+    const urgentEmpty = lineup.length + trade.length === 0;
 
     if (seasonMode === 'in-season') {
         const byKind: Record<ActionKind, ActionItem[]> = { lineup, trade, waiver, stream, sell: [] };
-        const byType: ActionTypeGroup[] = KIND_ORDER
+        const byType: ActionTypeGroup[] = URGENT_KINDS
             .filter(k => byKind[k].length > 0)
             .map(k => ({ kind: k, label: KIND_LABEL[k], items: byKind[k] }));
-        return { seasonMode, isEmpty, byType, counts };
+        return { seasonMode, isEmpty: urgentEmpty, byType, counts };
     }
 
     // Off-season → group by TEAM (only leagues where my-team is known).
@@ -351,9 +357,10 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
         const label = labelTeam(team, league);
         const { band, label: tierLabel } = tierFor(label.state, league.leagueType);
 
-        // Strengthen-moves for this team: actionable waiver swaps + trades if any.
+        // Strengthen-moves for this team: actionable waiver swaps + streaming + trades.
         const items: ActionItem[] = [
             ...waiverItems(input, waiverPerLeague),
+            ...streamItems(input),
             ...tradeItems(input),
         ].slice(0, perTeamLimit);
 
@@ -372,4 +379,17 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
     }
 
     return { seasonMode, isEmpty: byTeam.length === 0, byTeam, counts };
+}
+
+/**
+ * Per-league in-season recommendations rendered INSIDE that league's card:
+ * actionable waiver ADD→DROP swaps + a DEF streaming suggestion (redraft only).
+ * Kept out of the cross-league Action Center (which is urgent-only). Returns []
+ * when my-team is unknown (both are roster-specific).
+ */
+export function buildLeagueActions(input: ActionCenterInput, waiverPerLeague = 3): ActionItem[] {
+    return [
+        ...waiverItems(input, waiverPerLeague),
+        ...streamItems(input),
+    ];
 }
