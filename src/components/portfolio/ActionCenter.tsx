@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowRightLeft, PlusCircle, ArrowUpRight, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, PlusCircle, ArrowUpRight, CheckCircle2, ChevronDown, ChevronUp, Shield } from 'lucide-react';
 import type { ActionCenter as ActionCenterModel, ActionTypeGroup, TeamActionGroup, ActionItem, ActionKind, TierBand } from '@/lib/action-center';
 import { useLineupAcks } from '@/hooks/useLineupAcks';
 import { ackKeyFor } from '@/lib/lineup-acks';
@@ -32,6 +32,11 @@ const GROUP_STYLE: Record<ActionKind, { icon: React.ReactNode; head: string; rin
         head: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300',
         ring: 'ring-green-900/5',
     },
+    stream: {
+        icon: <Shield className="h-4 w-4" />,
+        head: 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
+        ring: 'ring-sky-900/5',
+    },
     sell: {
         icon: <ArrowRightLeft className="h-4 w-4" />,
         head: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',
@@ -45,6 +50,7 @@ function summaryLine(counts: ActionCenterModel['counts']): string {
     const parts: string[] = [];
     if (counts.lineup) parts.push(`${counts.lineup} lineup fix${counts.lineup !== 1 ? 'es' : ''}`);
     if (counts.trade) parts.push(`${counts.trade} trade${counts.trade !== 1 ? 's' : ''}`);
+    if (counts.stream) parts.push(`${counts.stream} defense${counts.stream !== 1 ? 's' : ''}`);
     if (counts.waiver) parts.push(`${counts.waiver} waiver add${counts.waiver !== 1 ? 's' : ''}`);
     return parts.join(' · ');
 }
@@ -101,6 +107,7 @@ export function ActionCenter({ model, currentWeek }: { model: ActionCenterModel 
     const shownCounts = {
         lineup: filteredByType.find(g => g.kind === 'lineup')?.items.length ?? 0,
         trade: filteredByType.find(g => g.kind === 'trade')?.items.length ?? 0,
+        stream: filteredByType.find(g => g.kind === 'stream')?.items.length ?? 0,
         waiver: filteredByType.find(g => g.kind === 'waiver')?.items.length ?? 0,
         sell: 0,
     };

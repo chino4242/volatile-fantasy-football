@@ -34,7 +34,7 @@ import {
 } from './transaction-suggestions';
 
 export type SeasonMode = 'in-season' | 'off-season';
-export type ActionKind = 'lineup' | 'trade' | 'waiver' | 'sell';
+export type ActionKind = 'lineup' | 'trade' | 'waiver' | 'sell' | 'stream';
 export type TierBand = 'top' | 'middle' | 'lower';
 
 /** One pending/incoming trade offer for a league (Fleaflicker-only today). */
@@ -45,12 +45,24 @@ export interface PendingTradeInput {
     deepLink?: string;
 }
 
+/** A weekly DST streaming ranking row for a league's DEF recommendation. */
+export interface DstRankInput {
+    sleeper_id: string;     // DEF_{ABBR}
+    rank: number | null;
+    tier: number | null;
+    spread: number | null;
+    opponent: string | null;
+    name: string | null;    // e.g. "Los Angeles Chargers"
+}
+
 /** Per-league input the engine consumes (UI supplies these after loading). */
 export interface ActionCenterInput {
     league: PortfolioLeague;
     myRosterId: string | null;
     /** Optional pending/incoming trades (Fleaflicker). Absent → no auto trade items. */
     pendingTrades?: PendingTradeInput[];
+    /** Optional weekly DST streaming rankings (the full uploaded list). Absent → no stream items. */
+    dstRankings?: DstRankInput[];
 }
 
 export interface ActionCenterOptions {
@@ -99,17 +111,18 @@ export interface ActionCenter {
     isEmpty: boolean;
     byType?: ActionTypeGroup[];
     byTeam?: TeamActionGroup[];
-    counts: { lineup: number; trade: number; waiver: number; sell: number };
+    counts: { lineup: number; trade: number; waiver: number; stream: number; sell: number };
 }
 
 const KIND_LABEL: Record<ActionKind, string> = {
     lineup: 'Lineup fixes',
     trade: 'Trades to review',
     waiver: 'Waiver adds',
+    stream: 'Stream a defense',
     sell: 'Sell-window',
 };
 
-const KIND_ORDER: ActionKind[] = ['lineup', 'trade', 'waiver', 'sell'];
+const KIND_ORDER: ActionKind[] = ['lineup', 'trade', 'stream', 'waiver', 'sell'];
 
 /**
  * Deep-link target for a league/team. v1 links to the in-app league view (the
@@ -233,6 +246,70 @@ function tradeItems(input: ActionCenterInput): ActionItem[] {
     }));
 }
 
+/**
+ * DEF streaming: for REDRAFT leagues, recommend the best-ranked AVAILABLE defense
+ * (per the weekly DST rankings) when it beats my current starter's ranking — a
+ * DST-for-DST swap that keeps a legal lineup (never drops my only DEF for nothing).
+ * Requires a known my-team + a supplied DST list. Dynasty leagues are skipped
+ * (streaming defenses is a redraft activity).
+ */
+function streamItems(input: ActionCenterInput): ActionItem[] {
+    const { league, myRosterId, dstRankings } = input;
+    if (!dstRankings || dstRankings.length === 0) return [];
+    if (league.leagueType !== 'redraft') return [];
+    if (!myRosterId) return [];
+    const myTeam = league.teams.find(t => t.rosterId === myRosterId);
+    if (!myTeam) return [];
+
+    // Rank lookup from the uploaded list.
+    const rankById = new Map<string, DstRankInput>();
+    for (const d of dstRankings) rankById.set(d.sleeper_id, d);
+
+    // Defenses rostered anywhere in the league = unavailable.
+    const rosteredDef = new Set<string>();
+    for (const t of league.teams) {
+        for (const p of t.players) {
+            if ((p.position === 'DEF' || p.position === 'DST') && p.sleeper_id) rosteredDef.add(p.sleeper_id);
+        }
+    }
+
+    // My current DEF (if any) + its rank.
+    const myDef = myTeam.players.find(p => (p.position === 'DEF' || p.position === 'DST'));
+    const myRank = myDef ? (rankById.get(myDef.sleeper_id)?.rank ?? null) : null;
+
+    // Best-ranked available defense from the list.
+    const bestAvailable = dstRankings
+        .filter(d => d.rank != null && !rosteredDef.has(d.sleeper_id))
+        .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))[0];
+    if (!bestAvailable) return [];
+
+    // Recommend only if it's a genuine upgrade: I have no DEF, my DEF isn't ranked
+    // this week, or the available one is meaningfully better (>= 3 rank spots).
+    const isUpgrade = myRank == null || (bestAvailable.rank != null && bestAvailable.rank <= myRank - 3);
+    if (!isUpgrade) return [];
+
+    const link = deepLinkFor(league.platform, league.leagueId);
+    const oppNote = bestAvailable.opponent ? `vs ${bestAvailable.opponent}` : '';
+    const tierNote = bestAvailable.tier != null ? `tier ${bestAvailable.tier}` : '';
+    const spreadNote = bestAvailable.spread != null ? `${bestAvailable.spread > 0 ? '+' : ''}${bestAvailable.spread}` : '';
+    const detailBits = [oppNote, tierNote, spreadNote].filter(Boolean).join(' · ');
+    const headline = myDef
+        ? `Stream ${bestAvailable.name ?? bestAvailable.sleeper_id} · drop ${myDef.full_name}`
+        : `Stream ${bestAvailable.name ?? bestAvailable.sleeper_id} (DEF)`;
+
+    return [{
+        id: `stream:${league.platform}:${league.leagueId}:${bestAvailable.sleeper_id}`,
+        kind: 'stream' as const,
+        headline,
+        detail: detailBits || undefined,
+        leagueName: league.name,
+        platform: league.platform,
+        leagueId: league.leagueId,
+        deepLink: link,
+        meta: { defId: bestAvailable.sleeper_id, rank: bestAvailable.rank, myRank },
+    }];
+}
+
 // ── Public entry ─────────────────────────────────────────────────────────────
 
 export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCenterOptions): ActionCenter {
@@ -243,18 +320,20 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
     const lineup: ActionItem[] = [];
     const trade: ActionItem[] = [];
     const waiver: ActionItem[] = [];
+    const stream: ActionItem[] = [];
 
     for (const input of inputs) {
         lineup.push(...lineupItems(input));
         trade.push(...tradeItems(input));
+        stream.push(...streamItems(input));
         waiver.push(...waiverItems(input, waiverPerLeague));
     }
 
-    const counts = { lineup: lineup.length, trade: trade.length, waiver: waiver.length, sell: 0 };
-    const isEmpty = lineup.length + trade.length + waiver.length === 0;
+    const counts = { lineup: lineup.length, trade: trade.length, waiver: waiver.length, stream: stream.length, sell: 0 };
+    const isEmpty = lineup.length + trade.length + waiver.length + stream.length === 0;
 
     if (seasonMode === 'in-season') {
-        const byKind: Record<ActionKind, ActionItem[]> = { lineup, trade, waiver, sell: [] };
+        const byKind: Record<ActionKind, ActionItem[]> = { lineup, trade, waiver, stream, sell: [] };
         const byType: ActionTypeGroup[] = KIND_ORDER
             .filter(k => byKind[k].length > 0)
             .map(k => ({ kind: k, label: KIND_LABEL[k], items: byKind[k] }));

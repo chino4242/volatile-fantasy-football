@@ -15,7 +15,18 @@ export interface WeeklyRankInfo {
     rank: number | null;
     total: number | null;
     posMatchup: number | null;
-    kind: 'flex' | 'qb' | null;
+    kind: 'flex' | 'qb' | 'dst' | null;
+}
+
+/** A weekly DST streaming ranking row (one per defense in the uploaded list). */
+export interface WeeklyDstRank {
+    sleeper_id: string;
+    rank: number | null;
+    tier: number | null;
+    spread: number | null;
+    opponent: string | null;
+    team: string | null;
+    name: string | null;
 }
 
 /** The most recent week that has any weekly_rankings rows, or null if none. */
@@ -45,9 +56,9 @@ function toNum(v: unknown): number | null {
 export async function getWeeklyRanks(
     sleeperIds: string[],
     week?: number,
-): Promise<{ week: number | null; byId: Map<string, { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo }> }> {
+): Promise<{ week: number | null; byId: Map<string, { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo; dst?: WeeklyRankInfo }> }> {
     const wk = week ?? (await getLatestWeek());
-    const byId = new Map<string, { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo }>();
+    const byId = new Map<string, { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo; dst?: WeeklyRankInfo }>();
     if (wk == null || sleeperIds.length === 0) return { week: wk, byId };
 
     const rows = await db
@@ -68,13 +79,50 @@ export async function getWeeklyRanks(
             rank: r.rank ?? null,
             total: toNum(r.total),
             posMatchup: r.pos_matchup ?? null,
-            kind: (r.kind as 'flex' | 'qb') ?? null,
+            kind: (r.kind as 'flex' | 'qb' | 'dst') ?? null,
         };
         if (r.kind === 'qb') entry.qb = info;
+        else if (r.kind === 'dst') entry.dst = info;
         else entry.flex = info;
         byId.set(r.sleeper_id, entry);
     }
     return { week: wk, byId };
+}
+
+/**
+ * All DST streaming rankings for a week (the full uploaded list, not filtered to
+ * a roster). Used to recommend the best available defense to stream per league.
+ * Ordered by rank ascending (best first). Only rows that resolved to a DEF id.
+ */
+export async function getWeeklyDstRankings(week?: number): Promise<{ week: number | null; list: WeeklyDstRank[] }> {
+    const wk = week ?? (await getLatestWeek());
+    if (wk == null) return { week: wk, list: [] };
+    const rows = await db
+        .select({
+            sleeper_id: weeklyRankings.sleeper_id,
+            rank: weeklyRankings.rank,
+            tier: weeklyRankings.tier,
+            spread: weeklyRankings.spread,
+            opponent: weeklyRankings.opponent,
+            team: weeklyRankings.team,
+            player_name: weeklyRankings.player_name,
+        })
+        .from(weeklyRankings)
+        .where(and(eq(weeklyRankings.week, wk), eq(weeklyRankings.kind, 'dst')));
+
+    const list: WeeklyDstRank[] = rows
+        .filter(r => r.sleeper_id)
+        .map(r => ({
+            sleeper_id: r.sleeper_id as string,
+            rank: r.rank ?? null,
+            tier: r.tier ?? null,
+            spread: toNum(r.spread),
+            opponent: r.opponent ?? null,
+            team: r.team ?? null,
+            name: r.player_name ?? null,
+        }))
+        .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
+    return { week: wk, list };
 }
 
 /**
@@ -85,11 +133,12 @@ export async function getWeeklyRanks(
  */
 export function rankForPosition(
     position: string | null,
-    entry: { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo } | undefined,
+    entry: { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo; dst?: WeeklyRankInfo } | undefined,
 ): WeeklyRankInfo {
     const empty: WeeklyRankInfo = { rank: null, total: null, posMatchup: null, kind: null };
     if (!entry) return empty;
     if (position === 'QB') return entry.qb ?? entry.flex ?? empty;
+    if (position === 'DEF' || position === 'DST') return entry.dst ?? empty;
     return entry.flex ?? entry.qb ?? empty;
 }
 

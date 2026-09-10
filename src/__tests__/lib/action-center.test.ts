@@ -127,6 +127,61 @@ describe('buildActionCenter — in-season', () => {
     });
 });
 
+describe('buildActionCenter — DEF streaming (redraft only)', () => {
+    // My redraft team has a bad DEF (rank 25); a top DEF (rank 1) is available.
+    function redraftWithDef(myDefRank: number | null, opts: { availTopRank?: number } = {}): ActionCenterInput {
+        const myDef = myDefRank != null ? [P({ sleeper_id: 'DEF_NYG', position: 'DEF', is_starter: true })] : [];
+        const my = team('1', 'Chino', [P({ sleeper_id: 'qb1', position: 'QB', is_starter: true }), ...myDef]);
+        const opp = team('2', 'Rival', [P({ sleeper_id: 'DEF_DAL', position: 'DEF' })]); // Dallas rostered → unavailable
+        const lg = league({ teams: [my, opp], leagueType: 'redraft', rosterPositions: ['QB', 'DST', 'BN'] });
+        const dstRankings = [
+            { sleeper_id: 'DEF_LAC', rank: opts.availTopRank ?? 1, tier: 1, spread: -10, opponent: 'ARI', name: 'Los Angeles Chargers' },
+            { sleeper_id: 'DEF_DAL', rank: 12, tier: 3, spread: -3, opponent: 'NYG', name: 'Dallas Cowboys' },
+            { sleeper_id: 'DEF_NYG', rank: myDefRank ?? 99, tier: 5, spread: 3, opponent: 'DAL', name: 'New York Giants' },
+        ];
+        return { league: lg, myRosterId: '1', dstRankings };
+    }
+
+    it('recommends the best available defense when it beats my starter', () => {
+        const ac = buildActionCenter([redraftWithDef(25)], { seasonMode: 'in-season', week: 3 });
+        const grp = ac.byType!.find(g => g.kind === 'stream')!;
+        expect(grp).toBeDefined();
+        expect(grp.items[0].headline).toMatch(/Stream Los Angeles Chargers.*drop/);
+        expect(grp.items[0].detail).toMatch(/vs ARI/);
+    });
+
+    it('recommends when I have no defense at all', () => {
+        const ac = buildActionCenter([redraftWithDef(null)], { seasonMode: 'in-season', week: 3 });
+        const grp = ac.byType!.find(g => g.kind === 'stream')!;
+        expect(grp.items[0].headline).toMatch(/^Stream Los Angeles Chargers \(DEF\)/);
+    });
+
+    it('does NOT recommend when my defense is already good', () => {
+        // My DEF rank 2; best available rank 1 → not a >=3-spot upgrade.
+        const ac = buildActionCenter([redraftWithDef(2)], { seasonMode: 'in-season', week: 3 });
+        expect(ac.byType?.find(g => g.kind === 'stream')).toBeUndefined();
+    });
+
+    it('never recommends streaming in a dynasty league', () => {
+        const input = redraftWithDef(25);
+        input.league = { ...input.league, leagueType: 'dynasty' };
+        const ac = buildActionCenter([input], { seasonMode: 'in-season', week: 3 });
+        expect(ac.byType?.find(g => g.kind === 'stream')).toBeUndefined();
+    });
+
+    it('never recommends a defense already rostered in the league', () => {
+        // Make Dallas (rostered by opp) the top-ranked; it must be skipped.
+        const input = redraftWithDef(25);
+        input.dstRankings = [
+            { sleeper_id: 'DEF_DAL', rank: 1, tier: 1, spread: -10, opponent: 'NYG', name: 'Dallas Cowboys' },
+            { sleeper_id: 'DEF_LAC', rank: 2, tier: 1, spread: -9, opponent: 'ARI', name: 'Los Angeles Chargers' },
+        ];
+        const ac = buildActionCenter([input], { seasonMode: 'in-season', week: 3 });
+        const grp = ac.byType!.find(g => g.kind === 'stream')!;
+        expect(grp.items[0].headline).toMatch(/Los Angeles Chargers/); // not Dallas
+    });
+});
+
 describe('buildActionCenter — off-season', () => {
     it('groups by team with tier + weakness + moves', () => {
         const ac = buildActionCenter([leagueWithActions()], { seasonMode: 'off-season', week: 3 });
@@ -154,7 +209,7 @@ describe('buildActionCenter — edge cases', () => {
         const lg = league({ teams: [my], freeAgents: [], rosterPositions: ['QB', 'BN'] });
         const ac = buildActionCenter([{ league: lg, myRosterId: '1' }], { seasonMode: 'in-season', week: 3 });
         expect(ac.isEmpty).toBe(true);
-        expect(ac.counts).toEqual({ lineup: 0, trade: 0, waiver: 0, sell: 0 });
+        expect(ac.counts).toEqual({ lineup: 0, trade: 0, waiver: 0, stream: 0, sell: 0 });
     });
 
     it('does not throw and yields no personalized actions when my-team is unknown', () => {

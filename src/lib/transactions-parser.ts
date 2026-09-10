@@ -22,7 +22,8 @@ export interface ParsedTransaction {
 }
 
 // NFL team name → abbr, for turning "the Dallas Cowboys Defense" into a DST.
-const TEAM_NAME_TO_ABBR: Record<string, string> = {
+// Exported so the weekly-DST upload can resolve full team names → DEF_{ABBR}.
+export const TEAM_NAME_TO_ABBR: Record<string, string> = {
     cardinals: 'ARI', falcons: 'ATL', ravens: 'BAL', bills: 'BUF', panthers: 'CAR',
     bears: 'CHI', bengals: 'CIN', browns: 'CLE', cowboys: 'DAL', broncos: 'DEN',
     lions: 'DET', packers: 'GB', texans: 'HOU', colts: 'IND', jaguars: 'JAX',

@@ -130,6 +130,16 @@ export default function PortfolioPage() {
 
     // Fleaflicker pending/incoming trades → feed the Action Center "Trades" group.
     const [pendingTrades, setPendingTrades] = useState<Record<string, { id: string; headline: string; detail?: string }[]>>({});
+    // Weekly DST streaming rankings (shared across leagues) → "Stream a defense".
+    const [dstRankings, setDstRankings] = useState<{ sleeper_id: string; rank: number | null; tier: number | null; spread: number | null; opponent: string | null; name: string | null }[]>([]);
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/portfolio/dst-rankings')
+            .then(r => r.ok ? r.json() : { list: [] })
+            .then(json => { if (!cancelled) setDstRankings(json.list || []); })
+            .catch(() => { /* ignore — best-effort */ });
+        return () => { cancelled = true; };
+    }, []);
     useEffect(() => {
         let cancelled = false;
         for (const l of Object.values(leagues)) {
@@ -161,10 +171,11 @@ export default function PortfolioPage() {
                 league: l.data!,
                 myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
                 pendingTrades: pendingTrades[`${l.ref.platform}:${l.ref.leagueId}`],
+                dstRankings,
             }));
         if (inputs.length === 0) return null;
         return buildActionCenter(inputs, { seasonMode });
-    }, [loaded, getMyTeam, seasonMode, pendingTrades]);
+    }, [loaded, getMyTeam, seasonMode, pendingTrades, dstRankings]);
 
     // Current NFL week — from any loaded league that carries weekly rankings.
     const currentWeek = useMemo(() => {
