@@ -64,18 +64,24 @@ async function yahooFetch(path: string): Promise<string | null> {
     } catch { return null; }
 }
 
-/** Scrape the Yahoo matchup page for my team → the opponent team number. */
+/** Scrape the Yahoo matchup page for my team → the opponent team number.
+ *  The matchup page links to exactly the two teams in the H2H (mine + opponent)
+ *  via /f1/{league}/{teamNum} hrefs. We collect those team numbers and take the
+ *  one that isn't mine. (Class-based selectors like `Fz-xxl` are brittle — Yahoo
+ *  periodically obfuscates class names — so we key off the stable href pattern.) */
 async function yahooOpponentTeamNum(yahooLeagueId: string, myTeamNum: string): Promise<string | null> {
     const html = await yahooFetch(`/f1/${yahooLeagueId}/${myTeamNum}/matchup`);
     if (!html) return null;
     const $ = load(html);
-    // The matchup module has exactly two prominent team-name links (F-link Fz-xxl).
+    const hrefRe = new RegExp(`/f1/${yahooLeagueId}/(\\d+)(?:$|[/?#])`);
     const nums = new Set<string>();
-    $('a.F-link.Fz-xxl, a[class*="Fz-xxl"]').each((_, a) => {
-        const m = ($(a).attr('href') || '').match(new RegExp(`/f1/${yahooLeagueId}/(\\d+)(?:$|[/?])`));
+    $('a[href*="/f1/"]').each((_, a) => {
+        const m = ($(a).attr('href') || '').match(hrefRe);
         if (m) nums.add(m[1]);
     });
     const others = [...nums].filter(n => n !== String(myTeamNum));
+    // The matchup page should reference exactly one other team (the opponent).
+    // If more slip through (nav links etc.), prefer the first non-self.
     return others[0] || null;
 }
 
