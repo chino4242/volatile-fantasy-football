@@ -78,6 +78,24 @@ describe('buildRootingGuide', () => {
         expect(g.games[g.games.length - 1].gameKey).toBe('UNKNOWN');
     });
 
+    it('does not surface a platform pointsById player who is not a starter', () => {
+        // pointsById covers a platform's whole roster (Sleeper players_points
+        // includes bench). Only players actually started FOR/AGAINST should
+        // appear — a benched player in pointsById must not leak into UNKNOWN.
+        const leagues: LeagueMatchupInput[] = [
+            {
+                leagueId: 'a', leagueName: 'A', platform: 'sleeper',
+                myStarterIds: ['gibbs'], oppStarterIds: [],
+                pointsById: { gibbs: 18.0, benchwarmer: 25.0 }, // benchwarmer is rostered but not started
+            },
+        ];
+        const g = buildRootingGuide(leagues, gameInfo, 1);
+        const all = g.games.flatMap(x => x.players);
+        expect(all.find(p => p.sleeper_id === 'gibbs')?.points).toBe(18.0);
+        expect(all.find(p => p.sleeper_id === 'benchwarmer')).toBeUndefined();
+        expect(g.games.find(x => x.gameKey === 'UNKNOWN')).toBeUndefined();
+    });
+
     it('does not surface live-scored players who are not a rooting interest', () => {
         // livePoints covers many ESPN players league-wide; only players actually
         // started FOR/AGAINST in a league should appear. A non-rostered player

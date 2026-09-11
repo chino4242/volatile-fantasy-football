@@ -150,11 +150,15 @@ export function buildRootingGuide(
         for (const id of new Set(lg.myStarterIds)) ensure(id).forLeagues.push(lg.leagueName);
         for (const id of new Set(lg.oppStarterIds)) ensure(id).againstLeagues.push(lg.leagueName);
         // Fallback live points from a platform (only used when no central
-        // livePoints map is supplied for that player).
+        // livePoints map is supplied for that player). ONLY annotate players who
+        // are already a rooting interest — pointsById covers a platform's entire
+        // roster (Sleeper players_points includes bench), so ensure() here would
+        // inject every bench player into the guide (no side, no game → UNKNOWN).
         if (lg.pointsById) {
             for (const [id, pts] of Object.entries(lg.pointsById)) {
                 if (typeof pts !== 'number') continue;
-                const a = ensure(id);
+                const a = acc.get(id);
+                if (!a) continue;
                 a.points = a.points == null ? pts : Math.max(a.points, pts);
             }
         }
