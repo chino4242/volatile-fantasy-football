@@ -77,6 +77,26 @@ describe('buildRootingGuide', () => {
         // UNKNOWN sorts last.
         expect(g.games[g.games.length - 1].gameKey).toBe('UNKNOWN');
     });
+
+    it('does not surface live-scored players who are not a rooting interest', () => {
+        // livePoints covers many ESPN players league-wide; only players actually
+        // started FOR/AGAINST in a league should appear. A non-rostered player
+        // in the livePoints map must NOT leak into the guide (previously they
+        // fell into the UNKNOWN "No game data" bucket with a bare id).
+        const leagues: LeagueMatchupInput[] = [
+            { leagueId: 'a', leagueName: 'A', platform: 'sleeper', myStarterIds: ['gibbs'], oppStarterIds: [] },
+        ];
+        const livePoints = new Map([
+            ['gibbs', { points: 12.5, usage: 10, usageLabel: '10 car' }],
+            ['not_rostered', { points: 30, usage: 5, usageLabel: '5 tgt' }], // nobody starts this player
+        ]);
+        const g = buildRootingGuide(leagues, gameInfo, 1, livePoints);
+        const all = g.games.flatMap(x => x.players);
+        expect(all.find(p => p.sleeper_id === 'gibbs')?.points).toBe(12.5);
+        expect(all.find(p => p.sleeper_id === 'not_rostered')).toBeUndefined();
+        // No UNKNOWN bucket created for the stray live-scored player.
+        expect(g.games.find(x => x.gameKey === 'UNKNOWN')).toBeUndefined();
+    });
 });
 
 
