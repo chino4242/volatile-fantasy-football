@@ -172,7 +172,7 @@ export default function AdminPage() {
                         <input
                             id="file-upload"
                             type="file"
-                            accept=".csv, .xlsx, .xls"
+                            accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,application/octet-stream"
                             onChange={handleFileChange}
                             className="block w-full text-sm text-zinc-400
                 file:mr-4 file:py-2.5 file:px-4
@@ -258,7 +258,7 @@ export default function AdminPage() {
                         <input
                             id="custom-file-upload"
                             type="file"
-                            accept=".csv,.txt,.tsv"
+                            accept=".csv,.txt,.tsv,text/csv,text/plain,text/tab-separated-values,application/octet-stream"
                             onChange={(e) => setCustomFile(e.target.files?.[0] || null)}
                             className="block w-full text-sm text-zinc-400
                 file:mr-4 file:py-2.5 file:px-4

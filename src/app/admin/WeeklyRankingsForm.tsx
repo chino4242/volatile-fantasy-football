@@ -64,7 +64,7 @@ export function WeeklyRankingsForm() {
                             className="w-16 bg-zinc-900 text-white rounded px-2 py-1 border border-zinc-700" />
                     </label>
                 </div>
-                <input id="weekly-file" type="file" accept=".csv" onChange={e => setFile(e.target.files?.[0] || null)}
+                <input id="weekly-file" type="file" accept=".csv,text/csv,application/vnd.ms-excel,text/plain,application/octet-stream" onChange={e => setFile(e.target.files?.[0] || null)}
                     className="block w-full text-sm text-zinc-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-500" />
                 <button type="submit" disabled={loading}
                     className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-500 disabled:opacity-50">
