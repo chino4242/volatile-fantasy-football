@@ -72,6 +72,12 @@ function slotFor(weekday: string, gametime: string): { slot: string; slotOrder: 
 
 /**
  * Get a Map of gameKey → ScheduledGame for a given season+week. Cached.
+ *
+ * Data source: the nflverse `games.csv` served over HTTPS via GitHub raw. We do
+ * NOT use `@camfleety/nfl-data-js`'s importSchedules here because that library
+ * pulls the schedule from habitatring over plain HTTP (http://www.habitatring.com/games.csv),
+ * which fails on Vercel (no cleartext egress) → every game silently fell into
+ * the "Other" bucket. The GitHub raw mirror is the same file over HTTPS.
  */
 export async function getWeekSchedule(week: number, season?: number): Promise<Map<string, ScheduledGame>> {
     const yr = season ?? currentNflSeason();
@@ -81,11 +87,10 @@ export async function getWeekSchedule(week: number, season?: number): Promise<Ma
     if (cached) return build(cached);
 
     try {
-        const mod = await import('@camfleety/nfl-data-js');
-        const all = await (mod as any).importSchedules([yr]);
+        const rows = await fetchScheduleRows();
         const out: ScheduledGame[] = [];
-        for (const g of all || []) {
-            if (g.game_type !== 'REG' || g.week !== week) continue;
+        for (const g of rows) {
+            if (g.season !== yr || g.game_type !== 'REG' || g.week !== week) continue;
             const away = fixAbbr(g.away_team);
             const home = fixAbbr(g.home_team);
             const { slot, slotOrder } = slotFor(g.weekday, g.gametime);
@@ -102,7 +107,57 @@ export async function getWeekSchedule(week: number, season?: number): Promise<Ma
         }
         cache.set(cacheKey, out);
         return build(out);
-    } catch {
+    } catch (err) {
+        console.error(`[nfl-schedule] failed to load schedule for ${yr} week ${week}:`, err);
         return new Map();
     }
+}
+
+const SCHEDULE_URL = 'https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv';
+
+interface RawScheduleRow {
+    season: number;
+    game_type: string;
+    week: number;
+    weekday: string;
+    gametime: string;
+    away_team: string;
+    home_team: string;
+}
+
+/** Fetch + parse the nflverse games.csv (all seasons). Only the columns we need
+ *  are extracted; values in those columns never contain commas, so a simple
+ *  split is safe (no quoted-field handling required). */
+async function fetchScheduleRows(): Promise<RawScheduleRow[]> {
+    const res = await fetch(SCHEDULE_URL, {
+        headers: { 'user-agent': 'volatile-fantasy-football/1.0' },
+        cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`schedule fetch ${res.status} ${res.statusText}`);
+    const text = await res.text();
+    const lines = text.split('\n');
+    if (lines.length < 2) return [];
+    const header = lines[0].split(',');
+    const idx = (name: string) => header.indexOf(name);
+    const iSeason = idx('season'), iType = idx('game_type'), iWeek = idx('week'),
+        iWeekday = idx('weekday'), iGametime = idx('gametime'),
+        iAway = idx('away_team'), iHome = idx('home_team');
+    const out: RawScheduleRow[] = [];
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line) continue;
+        const c = line.split(',');
+        const season = parseInt(c[iSeason], 10);
+        const week = parseInt(c[iWeek], 10);
+        if (!Number.isFinite(season) || !Number.isFinite(week)) continue;
+        out.push({
+            season, week,
+            game_type: c[iType] || '',
+            weekday: c[iWeekday] || '',
+            gametime: c[iGametime] || '',
+            away_team: c[iAway] || '',
+            home_team: c[iHome] || '',
+        });
+    }
+    return out;
 }

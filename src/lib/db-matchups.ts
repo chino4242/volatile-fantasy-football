@@ -30,7 +30,7 @@ const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (
  *  the real roster_id and by owner name (for opponent matching). */
 async function loadLeagueRostersWithStarters(appLeagueId: string) {
     const rs = await db.select({ id: rosters.id, roster_id: rosters.roster_id, owner_name: rosters.owner_name })
-        .from(rosters).where(eq(rosters.league_id, appLeagueId));
+        .from(rosters).where(eq(rosters.league_id, appLeagueId)).orderBy(rosters.id);
     const rpAll = await db.select({ roster_id: rosterPlayers.roster_id, sleeper_id: rosterPlayers.sleeper_id, is_starter: rosterPlayers.is_starter })
         .from(rosterPlayers);
     const startersByRosterUuid = new Map<string, string[]>();
