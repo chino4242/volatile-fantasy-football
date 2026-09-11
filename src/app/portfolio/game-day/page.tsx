@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Loader2, ThumbsUp, ThumbsDown, Clock } from 'lucide-react';
+import { Loader2, ThumbsUp, ThumbsDown, Clock, Users, List, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/hooks/useUser';
 import { useMyTeams } from '@/hooks/useMyTeams';
 import type { RootingGuide, RootingPlayer, RootingGame, RootingSource } from '@/lib/rooting-guide';
@@ -146,35 +146,7 @@ export default function GameDayPage() {
                                 <h2 className="sticky top-0 z-10 bg-zinc-50/90 dark:bg-zinc-950/90 backdrop-blur text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-2 py-1">{section.slot}</h2>
                                 <div className="space-y-3 sm:space-y-4">
                                     {section.games.map(game => (
-                                        <div key={game.gameKey} className="bg-white dark:bg-zinc-900 rounded-xl ring-1 ring-zinc-900/5 shadow-sm p-3 sm:p-4">
-                                            <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-                                                <h3 className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2 flex-wrap min-w-0">
-                                                    {game.gameKey === 'UNKNOWN' ? 'No game data' : (
-                                                        <span>
-                                                            {game.teams[0]}{game.live?.teamScores[0] != null ? ` ${game.live.teamScores[0]}` : ''}
-                                                            <span className="text-zinc-400 font-normal"> vs </span>
-                                                            {game.teams[1]}{game.live?.teamScores[1] != null ? ` ${game.live.teamScores[1]}` : ''}
-                                                        </span>
-                                                    )}
-                                                    <GameStatus game={game} />
-                                                </h3>
-                                                <div className="flex items-center gap-2.5 text-xs">
-                                                    {game.forCount > 0 && (
-                                                        <span className="text-green-600 dark:text-green-400 flex items-center gap-0.5">
-                                                            <ThumbsUp className="h-3 w-3" /> {game.forCount}{game.forPoints > 0 && <span className="font-mono font-semibold ml-0.5">{game.forPoints.toFixed(1)}</span>}
-                                                        </span>
-                                                    )}
-                                                    {game.againstCount > 0 && (
-                                                        <span className="text-red-600 dark:text-red-400 flex items-center gap-0.5">
-                                                            <ThumbsDown className="h-3 w-3" /> {game.againstCount}{game.againstPoints > 0 && <span className="font-mono font-semibold ml-0.5">{game.againstPoints.toFixed(1)}</span>}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                                {game.players.map(p => <PlayerRow key={p.sleeper_id} p={p} bumped={bumpedIds.has(p.sleeper_id)} />)}
-                                            </ul>
-                                        </div>
+                                        <GameCard key={game.gameKey} game={game} bumpedIds={bumpedIds} />
                                     ))}
                                 </div>
                             </div>
@@ -285,11 +257,157 @@ function GameStatus({ game }: { game: RootingGame }) {
     return null;
 }
 
-function PlayerRow({ p, bumped }: { p: RootingPlayer; bumped?: boolean }) {
+function GameCard({ game, bumpedIds }: { game: RootingGame; bumpedIds: Set<string> }) {
+    // Default to the per-league breakdown; the toggle collapses to the combined
+    // aggregate list on demand.
+    const [byLeague, setByLeague] = useState(true);
+    const isUnknown = game.gameKey === 'UNKNOWN';
+    // The per-league breakdown only makes sense for real games with actual
+    // FOR/AGAINST starters. Bench-only games (no rooting interest) skip the
+    // toggle — they just show the collapsed "My bench" strip.
+    const hasStarters = game.forCount > 0 || game.againstCount > 0;
+    const canGroup = !isUnknown && hasStarters;
+
+    return (
+        <div className="bg-white dark:bg-zinc-900 rounded-xl ring-1 ring-zinc-900/5 shadow-sm p-3 sm:p-4">
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                <h3 className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2 flex-wrap min-w-0">
+                    {isUnknown ? 'No game data' : (
+                        <span>
+                            {game.teams[0]}{game.live?.teamScores[0] != null ? ` ${game.live.teamScores[0]}` : ''}
+                            <span className="text-zinc-400 font-normal"> vs </span>
+                            {game.teams[1]}{game.live?.teamScores[1] != null ? ` ${game.live.teamScores[1]}` : ''}
+                        </span>
+                    )}
+                    <GameStatus game={game} />
+                </h3>
+                <div className="flex items-center gap-2.5 text-xs">
+                    {game.forCount > 0 && (
+                        <span className="text-green-600 dark:text-green-400 flex items-center gap-0.5">
+                            <ThumbsUp className="h-3 w-3" /> {game.forCount}{game.forPoints > 0 && <span className="font-mono font-semibold ml-0.5">{game.forPoints.toFixed(1)}</span>}
+                        </span>
+                    )}
+                    {game.againstCount > 0 && (
+                        <span className="text-red-600 dark:text-red-400 flex items-center gap-0.5">
+                            <ThumbsDown className="h-3 w-3" /> {game.againstCount}{game.againstPoints > 0 && <span className="font-mono font-semibold ml-0.5">{game.againstPoints.toFixed(1)}</span>}
+                        </span>
+                    )}
+                    {canGroup && (
+                        <button
+                            type="button"
+                            onClick={() => setByLeague(v => !v)}
+                            className="inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-indigo-600 dark:hover:text-indigo-400 rounded px-1.5 py-0.5 ring-1 ring-zinc-200 dark:ring-zinc-700 transition-colors"
+                            aria-pressed={byLeague}
+                            title={byLeague ? 'Show combined list' : 'Break down by league matchup'}
+                        >
+                            {byLeague ? <List className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+                            {byLeague ? 'Combined' : 'By league'}
+                        </button>
+                    )}
+                </div>
+            </div>
+            {byLeague && canGroup ? (
+                <ByLeagueBreakdown game={game} bumpedIds={bumpedIds} />
+            ) : hasStarters ? (
+                <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {game.players.filter(p => p.side !== 'bench').map(p => <PlayerRow key={p.sleeper_id} p={p} bumped={bumpedIds.has(p.sleeper_id)} />)}
+                </ul>
+            ) : null}
+            <MyBenchStrip game={game} bumpedIds={bumpedIds} />
+        </div>
+    );
+}
+
+/**
+ * Combined "My bench" strip at the bottom of a game card: players I roster in
+ * this game but start nowhere (and who aren't an opponent's starter). Deduped
+ * across my leagues; opponent benches are never shown. Collapsed by default so
+ * it stays glanceable (and keeps bench-only games quiet) — tap to expand.
+ */
+function MyBenchStrip({ game, bumpedIds }: { game: RootingGame; bumpedIds: Set<string> }) {
+    const [open, setOpen] = useState(false);
+    const bench = game.players.filter(p => p.side === 'bench');
+    if (bench.length === 0) return null;
+    return (
+        <div className="mt-2 pt-2 border-t border-dashed border-zinc-200 dark:border-zinc-700">
+            <button
+                type="button"
+                onClick={() => setOpen(v => !v)}
+                className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                aria-expanded={open}
+            >
+                {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                My bench ({bench.length})
+            </button>
+            {open && (
+                <ul className="divide-y divide-zinc-100 dark:divide-zinc-800 opacity-70 mt-0.5">
+                    {bench.map(p => <PlayerRow key={`bench-${p.sleeper_id}`} p={p} bumped={bumpedIds.has(p.sleeper_id)} hideBadge />)}
+                </ul>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Per-league breakdown of a single game: for each league that has a stake in
+ * this game, a FOR section then an AGAINST section. A player who is FOR in one
+ * league and AGAINST in another appears under both (duplication is intended —
+ * it mirrors how the matchup actually plays out per league).
+ */
+function ByLeagueBreakdown({ game, bumpedIds }: { game: RootingGame; bumpedIds: Set<string> }) {
+    // Pivot: leagueName → { for: players[], against: players[] }, preserving the
+    // game's existing player sort order within each list.
+    const byLeague = new Map<string, { forPlayers: RootingPlayer[]; againstPlayers: RootingPlayer[] }>();
+    const ensure = (name: string) => {
+        let e = byLeague.get(name);
+        if (!e) { e = { forPlayers: [], againstPlayers: [] }; byLeague.set(name, e); }
+        return e;
+    };
+    for (const p of game.players) {
+        for (const lg of p.forLeagues) ensure(lg).forPlayers.push(p);
+        for (const lg of p.againstLeagues) ensure(lg).againstPlayers.push(p);
+    }
+    const leagueNames = [...byLeague.keys()].sort((a, b) => a.localeCompare(b));
+
+    return (
+        <div className="space-y-3">
+            {leagueNames.map(name => {
+                const { forPlayers, againstPlayers } = byLeague.get(name)!;
+                return (
+                    <div key={name} className="rounded-lg bg-zinc-50 dark:bg-zinc-800/40 px-2.5 py-2">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1 truncate">{name}</div>
+                        {forPlayers.length > 0 && (
+                            <div className="mb-1.5">
+                                <div className="flex items-center gap-1 text-[10px] font-medium text-green-600 dark:text-green-400 mb-0.5">
+                                    <ThumbsUp className="h-3 w-3" /> FOR
+                                </div>
+                                <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                    {forPlayers.map(p => <PlayerRow key={`for-${p.sleeper_id}`} p={p} bumped={bumpedIds.has(p.sleeper_id)} hideBadge />)}
+                                </ul>
+                            </div>
+                        )}
+                        {againstPlayers.length > 0 && (
+                            <div>
+                                <div className="flex items-center gap-1 text-[10px] font-medium text-red-600 dark:text-red-400 mb-0.5">
+                                    <ThumbsDown className="h-3 w-3" /> AGAINST
+                                </div>
+                                <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                    {againstPlayers.map(p => <PlayerRow key={`against-${p.sleeper_id}`} p={p} bumped={bumpedIds.has(p.sleeper_id)} hideBadge />)}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+function PlayerRow({ p, bumped, hideBadge }: { p: RootingPlayer; bumped?: boolean; hideBadge?: boolean }) {
     return (
         <li className={`flex items-center justify-between gap-2 py-1.5 -mx-1 px-1 rounded transition-colors duration-1000 ${bumped ? 'bg-yellow-100 dark:bg-yellow-500/15' : ''}`}>
             <div className="flex items-center gap-2 min-w-0">
-                {p.side === 'both' ? (
+                {!hideBadge && (p.side === 'both' ? (
                     <span className="flex-shrink-0 flex items-center gap-0.5">
                         <ThumbsUp className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
                         <ThumbsDown className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
@@ -298,7 +416,7 @@ function PlayerRow({ p, bumped }: { p: RootingPlayer; bumped?: boolean }) {
                     <ThumbsUp className="h-3.5 w-3.5 text-green-600 dark:text-green-400 flex-shrink-0" />
                 ) : (
                     <ThumbsDown className="h-3.5 w-3.5 text-red-600 dark:text-red-400 flex-shrink-0" />
-                )}
+                ))}
                 <span className="text-sm text-zinc-800 dark:text-zinc-200 truncate">{p.full_name}</span>
                 <span className="text-[10px] text-zinc-400 flex-shrink-0">{p.nflTeam} · {p.position}</span>
                 {p.usageLabel && <span className="text-[10px] text-zinc-400 flex-shrink-0 hidden sm:inline">· {p.usageLabel}</span>}
@@ -309,15 +427,17 @@ function PlayerRow({ p, bumped }: { p: RootingPlayer; bumped?: boolean }) {
                         {p.points.toFixed(1)}
                     </span>
                 )}
-                <div className="text-[11px] text-right w-[92px]">
-                    {p.forLeagues.length > 0 && (
-                        <span className="text-green-600 dark:text-green-400" title={p.forLeagues.join(', ')}>FOR ×{p.forLeagues.length}</span>
-                    )}
-                    {p.forLeagues.length > 0 && p.againstLeagues.length > 0 && <span className="text-zinc-300 mx-1">·</span>}
-                    {p.againstLeagues.length > 0 && (
-                        <span className="text-red-600 dark:text-red-400" title={p.againstLeagues.join(', ')}>AGAINST ×{p.againstLeagues.length}</span>
-                    )}
-                </div>
+                {!hideBadge && (
+                    <div className="text-[11px] text-right w-[92px]">
+                        {p.forLeagues.length > 0 && (
+                            <span className="text-green-600 dark:text-green-400" title={p.forLeagues.join(', ')}>FOR ×{p.forLeagues.length}</span>
+                        )}
+                        {p.forLeagues.length > 0 && p.againstLeagues.length > 0 && <span className="text-zinc-300 mx-1">·</span>}
+                        {p.againstLeagues.length > 0 && (
+                            <span className="text-red-600 dark:text-red-400" title={p.againstLeagues.join(', ')}>AGAINST ×{p.againstLeagues.length}</span>
+                        )}
+                    </div>
+                )}
             </div>
         </li>
     );

@@ -66,8 +66,46 @@ describe('buildRootingGuide', () => {
         expect(gibbs.forLeagues).toEqual(['A', 'B', 'C']);
     });
 
-    it('buckets players with no game info into UNKNOWN, never drops them', () => {
+    it('marks my-bench players as side=bench with benchLeagues, without inflating FOR/AGAINST', () => {
         const leagues: LeagueMatchupInput[] = [
+            { leagueId: 'a', leagueName: 'A', platform: 'sleeper', myStarterIds: ['gibbs'], oppStarterIds: ['love'], myBenchIds: ['arsb'] },
+        ];
+        const g = buildRootingGuide(leagues, gameInfo, 1);
+        const det = g.games.find(x => x.gameKey === 'DET@GB')!;
+        const arsb = det.players.find(p => p.sleeper_id === 'arsb')!;
+        expect(arsb.side).toBe('bench');
+        expect(arsb.benchLeagues).toEqual(['A']);
+        // Bench doesn't count toward FOR/AGAINST tallies.
+        expect(det.forCount).toBe(1);   // gibbs only
+        expect(det.againstCount).toBe(1); // love only
+    });
+
+    it('a starter in any league always wins over bench (never shown as bench)', () => {
+        const leagues: LeagueMatchupInput[] = [
+            // Started in A, benched in B → should be FOR (starter wins), not bench.
+            { leagueId: 'a', leagueName: 'A', platform: 'sleeper', myStarterIds: ['gibbs'], oppStarterIds: [] },
+            { leagueId: 'b', leagueName: 'B', platform: 'sleeper', myStarterIds: [], oppStarterIds: [], myBenchIds: ['gibbs'] },
+        ];
+        const g = buildRootingGuide(leagues, gameInfo, 1);
+        const gibbs = g.games.flatMap(x => x.players).find(p => p.sleeper_id === 'gibbs')!;
+        expect(gibbs.side).toBe('for');
+        expect(gibbs.forLeagues).toEqual(['A']);
+        expect(gibbs.benchLeagues).toEqual([]); // cleared — starter precedence
+    });
+
+    it('dedupes a bench player across multiple of my leagues', () => {
+        const leagues: LeagueMatchupInput[] = [
+            { leagueId: 'a', leagueName: 'A', platform: 'sleeper', myStarterIds: [], oppStarterIds: [], myBenchIds: ['arsb'] },
+            { leagueId: 'b', leagueName: 'B', platform: 'sleeper', myStarterIds: [], oppStarterIds: [], myBenchIds: ['arsb'] },
+        ];
+        const g = buildRootingGuide(leagues, gameInfo, 1);
+        const benchRows = g.games.flatMap(x => x.players).filter(p => p.sleeper_id === 'arsb');
+        expect(benchRows).toHaveLength(1); // one row, not one per league
+        expect(benchRows[0].side).toBe('bench');
+        expect(benchRows[0].benchLeagues).toEqual(['A', 'B']);
+    });
+
+    it('buckets players with no game info into UNKNOWN, never drops them', () => {        const leagues: LeagueMatchupInput[] = [
             { leagueId: 'a', leagueName: 'A', platform: 'sleeper', myStarterIds: ['mystery'], oppStarterIds: [] },
         ];
         const g = buildRootingGuide(leagues, new Map(), 3);

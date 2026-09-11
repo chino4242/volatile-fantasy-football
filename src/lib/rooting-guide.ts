@@ -13,7 +13,7 @@
  * it resolved starter sets + the weekly game/team lookup.
  */
 
-export type RootingSide = 'for' | 'against' | 'both';
+export type RootingSide = 'for' | 'against' | 'both' | 'bench';
 
 /** Per-league resolved input: my starters vs my weekly opponent's starters. */
 export interface LeagueMatchupInput {
@@ -24,6 +24,10 @@ export interface LeagueMatchupInput {
     myStarterIds: string[];
     /** sleeper_ids in my H2H OPPONENT's starting lineup this week. */
     oppStarterIds: string[];
+    /** sleeper_ids on MY bench this week (rostered by me, not started). Only the
+     *  platforms that expose the full roster populate this (Sleeper/Yahoo/MyFFPC);
+     *  Fleaflicker omits it. Used for the "My bench" strip on each game card. */
+    myBenchIds?: string[];
     /** Opponent team display name (for context), optional. */
     opponentName?: string;
     /** Data freshness: ISO date string of the last DB sync (Yahoo/MyFFPC), or
@@ -54,6 +58,10 @@ export interface RootingPlayer {
     forLeagues: string[];
     /** League names where this player is my opponent's starter. */
     againstLeagues: string[];
+    /** League names where this player is on MY bench (rostered, not started).
+     *  Only meaningful when the player is NOT also a FOR/AGAINST starter — a
+     *  starter always takes precedence over bench. */
+    benchLeagues: string[];
     /** Live fantasy points for this player (computed half-PPR from ESPN box
      *  scores), or null when not playing / no stats yet. */
     points: number | null;
@@ -137,18 +145,21 @@ export function buildRootingGuide(
     week: number | null,
     livePoints?: Map<string, LivePoints>,
 ): RootingGuide {
-    // Accumulate per-sleeper_id: which leagues have it FOR vs AGAINST, + points.
-    interface Acc { forLeagues: string[]; againstLeagues: string[]; points: number | null; usage: number | null; usageLabel: string | null; }
+    // Accumulate per-sleeper_id: which leagues have it FOR vs AGAINST vs BENCH, + points.
+    interface Acc { forLeagues: string[]; againstLeagues: string[]; benchLeagues: string[]; points: number | null; usage: number | null; usageLabel: string | null; }
     const acc = new Map<string, Acc>();
     const ensure = (id: string): Acc => {
         let a = acc.get(id);
-        if (!a) { a = { forLeagues: [], againstLeagues: [], points: null, usage: null, usageLabel: null }; acc.set(id, a); }
+        if (!a) { a = { forLeagues: [], againstLeagues: [], benchLeagues: [], points: null, usage: null, usageLabel: null }; acc.set(id, a); }
         return a;
     };
 
     for (const lg of leagues) {
         for (const id of new Set(lg.myStarterIds)) ensure(id).forLeagues.push(lg.leagueName);
         for (const id of new Set(lg.oppStarterIds)) ensure(id).againstLeagues.push(lg.leagueName);
+        // My bench (rostered, not started) — shown as a distinct strip per game.
+        // These ARE players I want surfaced, so ensure() here is intentional.
+        for (const id of new Set(lg.myBenchIds || [])) ensure(id).benchLeagues.push(lg.leagueName);
         // Fallback live points from a platform (only used when no central
         // livePoints map is supplied for that player). ONLY annotate players who
         // are already a rooting interest — pointsById covers a platform's entire
@@ -191,7 +202,11 @@ export function buildRootingGuide(
         const info = gameInfo.get(id);
         const isFor = a.forLeagues.length > 0;
         const isAgainst = a.againstLeagues.length > 0;
-        const side: RootingSide = isFor && isAgainst ? 'both' : isFor ? 'for' : 'against';
+        const isStarter = isFor || isAgainst;
+        // A starter (FOR/AGAINST) always takes precedence over bench. A player is
+        // only 'bench' when I roster them somewhere but start them nowhere and
+        // they aren't an opponent's starter either.
+        const side: RootingSide = isFor && isAgainst ? 'both' : isFor ? 'for' : isAgainst ? 'against' : 'bench';
 
         const nflTeam = info?.nflTeam ?? null;
         const nflOpp = info?.nflOpponent ?? null;
@@ -209,10 +224,12 @@ export function buildRootingGuide(
             side,
             forLeagues: a.forLeagues,
             againstLeagues: a.againstLeagues,
+            benchLeagues: isStarter ? [] : a.benchLeagues, // starter wins → clear bench
             points: a.points,
             usage: a.usage,
             usageLabel: a.usageLabel,
         });
+        // Bench players don't count toward the FOR/AGAINST tallies or point totals.
         if (isFor) game.forCount++;
         if (isAgainst) game.againstCount++;
         if (a.points != null) {

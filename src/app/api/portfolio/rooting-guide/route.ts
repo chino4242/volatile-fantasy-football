@@ -63,8 +63,8 @@ export async function POST(request: NextRequest) {
             else unresolved.push(label);
         }
 
-        // Build the sleeper_id → NFL game lookup for every started player.
-        const allStarterIds = [...new Set(leagues.flatMap(l => [...l.myStarterIds, ...l.oppStarterIds]))];
+        // Build the sleeper_id → NFL game lookup for every started + benched player.
+        const allStarterIds = [...new Set(leagues.flatMap(l => [...l.myStarterIds, ...l.oppStarterIds, ...(l.myBenchIds || [])]))];
         const gameInfo = await buildGameInfo(allStarterIds, week);
 
         // Live NFL game-state (ESPN) — uniform across all platforms.
@@ -133,10 +133,19 @@ async function resolveSleeper(leagueId: string, myRosterId: string, leagueName: 
         }
     }
 
+    // My bench = everyone on my roster (players_points keys) who isn't a starter.
+    // Sleeper's players_points covers the full roster, so its keys are my roster.
+    const myStarterIds = mine.starters.map(normalizeSleeperStarterId);
+    const myStarterSet = new Set(myStarterIds);
+    const myBenchIds = Object.keys(mine.players_points)
+        .map(normalizeSleeperStarterId)
+        .filter(id => !myStarterSet.has(id));
+
     return {
         leagueId, leagueName, platform: "sleeper",
-        myStarterIds: mine.starters.map(normalizeSleeperStarterId),
+        myStarterIds,
         oppStarterIds: (opp?.starters || []).map(normalizeSleeperStarterId),
+        myBenchIds,
         lastSynced: "live",
         pointsById,
     };

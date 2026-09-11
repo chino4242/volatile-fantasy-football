@@ -34,10 +34,12 @@ async function loadLeagueRostersWithStarters(appLeagueId: string) {
     const rpAll = await db.select({ roster_id: rosterPlayers.roster_id, sleeper_id: rosterPlayers.sleeper_id, is_starter: rosterPlayers.is_starter })
         .from(rosterPlayers);
     const startersByRosterUuid = new Map<string, string[]>();
+    const benchByRosterUuid = new Map<string, string[]>();
     for (const rp of rpAll) {
-        if (!rp.roster_id || !rp.sleeper_id || !rp.is_starter) continue;
-        if (!startersByRosterUuid.has(rp.roster_id)) startersByRosterUuid.set(rp.roster_id, []);
-        startersByRosterUuid.get(rp.roster_id)!.push(rp.sleeper_id);
+        if (!rp.roster_id || !rp.sleeper_id) continue;
+        const map = rp.is_starter ? startersByRosterUuid : benchByRosterUuid;
+        if (!map.has(rp.roster_id)) map.set(rp.roster_id, []);
+        map.get(rp.roster_id)!.push(rp.sleeper_id);
     }
     // creation order = the same order the portfolio adapter uses for numericId (idx+1)
     return rs.map((r, idx) => ({
@@ -46,6 +48,7 @@ async function loadLeagueRostersWithStarters(appLeagueId: string) {
         uuid: r.id,
         ownerName: r.owner_name || `Team ${idx + 1}`,
         starters: startersByRosterUuid.get(r.id) || [],
+        bench: benchByRosterUuid.get(r.id) || [],
     }));
 }
 
@@ -85,6 +88,7 @@ export async function resolveDbMatchup(
         leagueId: appLeagueId, leagueName, platform,
         myStarterIds: mine.starters,
         oppStarterIds: opp.starters,
+        myBenchIds: mine.bench,
         opponentName: opp.ownerName,
         lastSynced: lg?.last_synced_at ? lg.last_synced_at.toISOString() : null,
     };
@@ -164,6 +168,7 @@ export async function resolveYahooMatchup(appLeagueId: string, myRosterId: strin
         leagueId: appLeagueId, leagueName, platform: 'yahoo',
         myStarterIds: mine.starters,
         oppStarterIds: opp.starters,
+        myBenchIds: mine.bench,
         opponentName: opp.ownerName,
         lastSynced: lg.last_synced_at ? lg.last_synced_at.toISOString() : null,
     };
@@ -197,6 +202,7 @@ export async function resolveMyffpcMatchup(appLeagueId: string, myRosterId: stri
         leagueId: appLeagueId, leagueName, platform: 'myffpc',
         myStarterIds: mine.starters,
         oppStarterIds: opp.starters,
+        myBenchIds: mine.bench,
         opponentName: opp.ownerName,
         lastSynced: lg?.last_synced_at ? lg.last_synced_at.toISOString() : null,
     };
