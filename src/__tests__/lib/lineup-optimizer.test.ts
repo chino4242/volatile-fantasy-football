@@ -69,3 +69,52 @@ describe('optimizeAndDiff', () => {
         expect(optimizeAndDiff(r, slots).isOptimal).toBe(true);
     });
 });
+
+describe('optimizeAndDiff — locked (already-played) players', () => {
+    const slots = buildSlots(['RB', 'BN']);
+
+    it('never suggests benching a LOCKED starter, even if a better bench player exists', () => {
+        // Locked starter already played; a higher-ranked bench RB is available,
+        // but we cannot un-play the locked starter → no swap.
+        const r = [
+            { ...P('locked_start', 'Locked Starter', 'RB', 40, true), locked: true },
+            P('better_bench', 'Better Bench', 'RB', 3, false),
+        ];
+        const d = optimizeAndDiff(r, slots);
+        expect(d.isOptimal).toBe(true);
+        expect(d.swaps).toHaveLength(0);
+        // The locked starter keeps the RB slot.
+        expect(d.optimal.find(a => a.slot === 'RB')?.player?.sleeper_id).toBe('locked_start');
+    });
+
+    it('never suggests starting a LOCKED bench player', () => {
+        // Locked bench player is higher-ranked but already played → cannot add.
+        const r = [
+            { ...P('locked_bench', 'Locked Bench', 'RB', 2, false), locked: true },
+            P('current_start', 'Current Starter', 'RB', 30, true),
+        ];
+        const d = optimizeAndDiff(r, slots);
+        expect(d.isOptimal).toBe(true);
+        expect(d.swaps).toHaveLength(0);
+        expect(d.optimal.find(a => a.slot === 'RB')?.player?.sleeper_id).toBe('current_start');
+    });
+
+    it('still optimizes among NOT-locked players around a locked starter', () => {
+        // Two RB slots. One locked starter holds a slot; the other slot should
+        // pick the best non-locked player (a swap for the second slot).
+        const twoRb = buildSlots(['RB', 'RB', 'BN']);
+        const r = [
+            { ...P('locked_start', 'Locked Starter', 'RB', 25, true), locked: true },
+            P('bad_start', 'Bad Starter', 'RB', 50, true),
+            P('good_bench', 'Good Bench', 'RB', 5, false),
+        ];
+        const d = optimizeAndDiff(r, twoRb);
+        // good_bench should replace bad_start in the second RB slot.
+        expect(d.swaps).toHaveLength(1);
+        expect(d.swaps[0].startPlayer.sleeper_id).toBe('good_bench');
+        expect(d.swaps[0].benchPlayer?.sleeper_id).toBe('bad_start');
+        // The locked starter is untouched.
+        const ids = d.optimal.map(a => a.player?.sleeper_id);
+        expect(ids).toContain('locked_start');
+    });
+});

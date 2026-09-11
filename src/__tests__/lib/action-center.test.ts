@@ -225,7 +225,7 @@ describe('buildActionCenter — edge cases', () => {
         const lg = league({ teams: [my], freeAgents: [], rosterPositions: ['QB', 'BN'] });
         const ac = buildActionCenter([{ league: lg, myRosterId: '1' }], { seasonMode: 'in-season', week: 3 });
         expect(ac.isEmpty).toBe(true);
-        expect(ac.counts).toEqual({ lineup: 0, trade: 0, waiver: 0, stream: 0, sell: 0 });
+        expect(ac.counts).toEqual({ lineup: 0, trade: 0, waiver: 0, waiverUpgrade: 0, stream: 0, sell: 0 });
     });
 
     it('does not throw and yields no personalized actions when my-team is unknown', () => {

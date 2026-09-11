@@ -32,9 +32,10 @@ import {
     type TxnPlayer,
     type TransactionSuggestion,
 } from './transaction-suggestions';
+import { findWaiverUpgrades, isBadgeWorthy, type WaiverUpgrade } from './waiver-upgrades';
 
 export type SeasonMode = 'in-season' | 'off-season';
-export type ActionKind = 'lineup' | 'trade' | 'waiver' | 'sell' | 'stream';
+export type ActionKind = 'lineup' | 'trade' | 'waiver' | 'waiver-upgrade' | 'sell' | 'stream';
 export type TierBand = 'top' | 'middle' | 'lower';
 
 /** One pending/incoming trade offer for a league (Fleaflicker-only today). */
@@ -63,6 +64,12 @@ export interface ActionCenterInput {
     pendingTrades?: PendingTradeInput[];
     /** Optional weekly DST streaming rankings (the full uploaded list). Absent → no stream items. */
     dstRankings?: DstRankInput[];
+    /**
+     * NFL team abbrs (our convention) whose game this week has already kicked off
+     * (state != 'pre'). Used to suppress weekly waiver upgrades for free agents
+     * who can no longer help this week. Absent → no game-time gating.
+     */
+    startedTeams?: Set<string>;
 }
 
 export interface ActionCenterOptions {
@@ -111,13 +118,14 @@ export interface ActionCenter {
     isEmpty: boolean;
     byType?: ActionTypeGroup[];
     byTeam?: TeamActionGroup[];
-    counts: { lineup: number; trade: number; waiver: number; stream: number; sell: number };
+    counts: { lineup: number; trade: number; waiver: number; waiverUpgrade: number; stream: number; sell: number };
 }
 
 const KIND_LABEL: Record<ActionKind, string> = {
     lineup: 'Lineup fixes',
     trade: 'Trades to review',
     waiver: 'Waiver adds',
+    'waiver-upgrade': 'Weekly waiver upgrades',
     stream: 'Stream a defense',
     sell: 'Sell-window',
 };
@@ -163,7 +171,7 @@ function lineupItems(input: ActionCenterInput): ActionItem[] {
     if (!myRosterId) return [];
     const team = league.teams.find(t => t.rosterId === myRosterId);
     if (!team) return [];
-    const opt = optimizePortfolioTeam(league, team);
+    const opt = optimizePortfolioTeam(league, team, input.startedTeams);
     if (!opt || opt.isOptimal || !opt.hasWeeklyData) return [];
     const link = deepLinkFor(league.platform, league.leagueId);
     return opt.swaps.map(s => {
@@ -228,6 +236,69 @@ function waiverItems(input: ActionCenterInput, limit: number): ActionItem[] {
             leagueId: league.leagueId,
             deepLink: link,
             meta: { addId: add.sleeper_id, dropId: drop?.sleeper_id ?? null, valueGain: s.valueGain },
+        };
+    });
+}
+
+/**
+ * Weekly waiver UPGRADE items (distinct from value-based `waiver` items): free
+ * agents who improve THIS WEEK's lineup by weekly rank, with the 3-tier
+ * drop guardrail (safe / caution / block→informational). In-season only — a
+ * weekly-lineup concern. For redraft the long-term lens is a rest-of-season
+ * placeholder (defaults to marketValue until real ROS data lands).
+ */
+function waiverUpgradeItems(input: ActionCenterInput, limit: number): ActionItem[] {
+    const { league, myRosterId } = input;
+    if (!myRosterId) return [];
+    const team = league.teams.find(t => t.rosterId === myRosterId);
+    if (!team) return [];
+
+    const config = buildRosterConfig(league.rosterPositions);
+    if (!config) return [];
+
+    // TODO(ros): when rest-of-season rankings ship, inject longTermValueOf for
+    // redraft leagues here (dynasty/keeper keep marketValue). For now marketValue
+    // is the stand-in long-term lens across all league types.
+    const upgrades = findWaiverUpgrades(team, league.freeAgents, league.rosterPositions, league.leagueType, {
+        coreCapacity: config.coreCapacity,
+        actualCoreCount: team.players.filter(p => p.position !== 'PICK').length,
+        maxSuggestions: limit,
+        startedTeams: input.startedTeams,
+    });
+
+    const link = deepLinkFor(league.platform, league.leagueId);
+    return upgrades.map((u: WaiverUpgrade) => {
+        const add = u.add;
+        const drop = u.drop;
+        const gain = u.weeklyRankGain != null ? `+${u.weeklyRankGain} wk rank` : null;
+        const headline = u.informational
+            ? `Waiver help at ${add.position ?? '—'}: ${add.full_name} — but no worthwhile drop`
+            : u.type === 'add'
+                ? `Add ${add.full_name} (${add.position ?? '—'}) — open spot, plays this week`
+                : `Add ${add.full_name} (${add.position ?? '—'}) · drop ${drop?.full_name ?? '—'}`;
+        const detailBits = [
+            u.cracksLineup ? 'cracks your lineup' : null,
+            gain,
+            u.tier === 'caution' && drop ? `⚠ ${drop.full_name} has value` : null,
+        ].filter(Boolean);
+        return {
+            id: `waiver-upgrade:${league.platform}:${league.leagueId}:${add.sleeper_id}->${drop?.sleeper_id ?? 'open'}`,
+            kind: 'waiver-upgrade' as const,
+            headline,
+            detail: detailBits.join(' · ') || undefined,
+            leagueName: league.name,
+            platform: league.platform,
+            leagueId: league.leagueId,
+            deepLink: link,
+            meta: {
+                addId: add.sleeper_id,
+                dropId: drop?.sleeper_id ?? null,
+                tier: u.tier,
+                informational: u.informational,
+                cracksLineup: u.cracksLineup,
+                weeklyRankGain: u.weeklyRankGain,
+                badgeWorthy: isBadgeWorthy(u),
+            },
         };
     });
 }
@@ -323,6 +394,7 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
     const lineup: ActionItem[] = [];
     const trade: ActionItem[] = [];
     const waiver: ActionItem[] = [];
+    const waiverUpgrade: ActionItem[] = [];
     const stream: ActionItem[] = [];
 
     for (const input of inputs) {
@@ -330,16 +402,21 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
         trade.push(...tradeItems(input));
         stream.push(...streamItems(input));
         waiver.push(...waiverItems(input, waiverPerLeague));
+        // Weekly waiver upgrades are an in-season concern.
+        if (seasonMode === 'in-season') waiverUpgrade.push(...waiverUpgradeItems(input, waiverPerLeague));
     }
 
-    const counts = { lineup: lineup.length, trade: trade.length, waiver: waiver.length, stream: stream.length, sell: 0 };
+    // Only badge-worthy upgrades (safe + actionable) count toward the visible
+    // tally — caution and informational items stay quiet by design.
+    const badgeWorthyUpgrades = waiverUpgrade.filter(i => i.meta?.badgeWorthy === true).length;
+    const counts = { lineup: lineup.length, trade: trade.length, waiver: waiver.length, waiverUpgrade: badgeWorthyUpgrades, stream: stream.length, sell: 0 };
     // The cross-league Action Center is urgent-only (lineup + trade). Waiver +
     // stream are surfaced per-league in the cards, so they don't gate the quiet
     // state of the top strip.
     const urgentEmpty = lineup.length + trade.length === 0;
 
     if (seasonMode === 'in-season') {
-        const byKind: Record<ActionKind, ActionItem[]> = { lineup, trade, waiver, stream, sell: [] };
+        const byKind: Record<ActionKind, ActionItem[]> = { lineup, trade, waiver, 'waiver-upgrade': waiverUpgrade, stream, sell: [] };
         const byType: ActionTypeGroup[] = URGENT_KINDS
             .filter(k => byKind[k].length > 0)
             .map(k => ({ kind: k, label: KIND_LABEL[k], items: byKind[k] }));
@@ -389,6 +466,9 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
  */
 export function buildLeagueActions(input: ActionCenterInput, waiverPerLeague = 3): ActionItem[] {
     return [
+        // Weekly upgrades surface more (top 5 shown in the card, rest behind
+        // "show more") — request a deeper list than the value-based waivers.
+        ...waiverUpgradeItems(input, 15),
         ...waiverItems(input, waiverPerLeague),
         ...streamItems(input),
     ];

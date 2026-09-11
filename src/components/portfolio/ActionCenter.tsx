@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowRightLeft, PlusCircle, ArrowUpRight, CheckCircle2, ChevronDown, ChevronUp, Shield } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, PlusCircle, ArrowUpRight, CheckCircle2, ChevronDown, ChevronUp, Shield, TrendingUp } from 'lucide-react';
 import type { ActionCenter as ActionCenterModel, ActionTypeGroup, TeamActionGroup, ActionItem, ActionKind, TierBand } from '@/lib/action-center';
 import { useLineupAcks } from '@/hooks/useLineupAcks';
 import { ackKeyFor } from '@/lib/lineup-acks';
@@ -31,6 +31,11 @@ const GROUP_STYLE: Record<ActionKind, { icon: React.ReactNode; head: string; rin
         icon: <PlusCircle className="h-4 w-4" />,
         head: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300',
         ring: 'ring-green-900/5',
+    },
+    'waiver-upgrade': {
+        icon: <TrendingUp className="h-4 w-4" />,
+        head: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+        ring: 'ring-emerald-900/5',
     },
     stream: {
         icon: <Shield className="h-4 w-4" />,
@@ -109,6 +114,7 @@ export function ActionCenter({ model, currentWeek }: { model: ActionCenterModel 
         trade: filteredByType.find(g => g.kind === 'trade')?.items.length ?? 0,
         stream: filteredByType.find(g => g.kind === 'stream')?.items.length ?? 0,
         waiver: filteredByType.find(g => g.kind === 'waiver')?.items.length ?? 0,
+        waiverUpgrade: 0,
         sell: 0,
     };
 

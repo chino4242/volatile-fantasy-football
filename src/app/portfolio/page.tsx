@@ -140,6 +140,17 @@ export default function PortfolioPage() {
             .catch(() => { /* ignore — best-effort */ });
         return () => { cancelled = true; };
     }, []);
+    // NFL teams whose game this week has already kicked off — used to suppress
+    // weekly waiver upgrades for free agents who can't help anymore this week.
+    const [startedTeams, setStartedTeams] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/nfl/started-teams')
+            .then(r => r.ok ? r.json() : { startedTeams: [] })
+            .then(json => { if (!cancelled) setStartedTeams(new Set<string>(json.startedTeams || [])); })
+            .catch(() => { /* ignore — fail open (no gating) */ });
+        return () => { cancelled = true; };
+    }, []);
     useEffect(() => {
         let cancelled = false;
         for (const l of Object.values(leagues)) {
@@ -172,10 +183,11 @@ export default function PortfolioPage() {
                 myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
                 pendingTrades: pendingTrades[`${l.ref.platform}:${l.ref.leagueId}`],
                 dstRankings,
+                startedTeams,
             }));
         if (inputs.length === 0) return null;
         return buildActionCenter(inputs, { seasonMode });
-    }, [loaded, getMyTeam, seasonMode, pendingTrades, dstRankings]);
+    }, [loaded, getMyTeam, seasonMode, pendingTrades, dstRankings, startedTeams]);
 
     // Current NFL week — from any loaded league that carries weekly rankings.
     const currentWeek = useMemo(() => {
@@ -213,10 +225,11 @@ export default function PortfolioPage() {
                 league: l.data,
                 myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
                 dstRankings,
+                startedTeams,
             });
         }
         return map;
-    }, [loaded, getMyTeam, seasonMode, dstRankings]);
+    }, [loaded, getMyTeam, seasonMode, dstRankings, startedTeams]);
 
     // Partition loaded leagues into tier bands (top/middle/lower) for the
     // dashboard. Leagues whose my-team is unknown go to `unassigned` (they show
@@ -292,6 +305,7 @@ export default function PortfolioPage() {
                                     setMyTeam={setMyTeam}
                                     lineupCountByKey={lineupCountByKey}
                                     leagueActionsByKey={leagueActionsByKey}
+                                    startedTeams={startedTeams}
                                 />
                             )
                         )}
@@ -340,7 +354,7 @@ const TIER_PILL: Record<TierBand, string> = {
 };
 
 function BandSection({
-    band, leagues, getMyTeam, setMyTeam, lineupCountByKey, leagueActionsByKey,
+    band, leagues, getMyTeam, setMyTeam, lineupCountByKey, leagueActionsByKey, startedTeams,
 }: {
     band: TierBand;
     leagues: LoadedLeague[];
@@ -348,6 +362,7 @@ function BandSection({
     setMyTeam: (p: string, l: string, r: string) => void;
     lineupCountByKey: Record<string, number>;
     leagueActionsByKey: Record<string, ActionItem[]>;
+    startedTeams?: Set<string>;
 }) {
     const meta = BAND_META[band];
     return (
@@ -367,6 +382,7 @@ function BandSection({
                             onPickMyTeam={(rosterId) => setMyTeam(ref.platform, ref.leagueId, rosterId)}
                             lineupCount={lineupCountByKey[key] ?? 0}
                             leagueActions={leagueActionsByKey[key] ?? []}
+                            startedTeams={startedTeams}
                         />
                     );
                 })}
@@ -376,7 +392,7 @@ function BandSection({
 }
 
 function LeagueCard({
-    refInfo, data, error, myRosterId, onPickMyTeam, lineupCount, leagueActions,
+    refInfo, data, error, myRosterId, onPickMyTeam, lineupCount, leagueActions, startedTeams,
 }: {
     refInfo: PortfolioLeagueRef;
     data: PortfolioLeague | null;
@@ -385,6 +401,7 @@ function LeagueCard({
     onPickMyTeam: (rosterId: string) => void;
     lineupCount: number;
     leagueActions: ActionItem[];
+    startedTeams?: Set<string>;
 }) {
     const title = data?.name || refInfo.name || `${PLATFORM_LABEL[refInfo.platform]} League`;
     const dbHref = (refInfo.platform === 'yahoo' || refInfo.platform === 'myffpc')
@@ -406,19 +423,20 @@ function LeagueCard({
             {!data && !error && <div className="flex items-center gap-2 text-sm text-zinc-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…</div>}
             {error && <div className="text-sm text-red-500">Failed to load ({error})</div>}
 
-            {data && <LeagueInsights data={data} myRosterId={myRosterId} onPickMyTeam={onPickMyTeam} lineupCount={lineupCount} leagueActions={leagueActions} />}
+            {data && <LeagueInsights data={data} myRosterId={myRosterId} onPickMyTeam={onPickMyTeam} lineupCount={lineupCount} leagueActions={leagueActions} startedTeams={startedTeams} />}
         </div>
     );
 }
 
 function LeagueInsights({
-    data, myRosterId, onPickMyTeam, lineupCount, leagueActions,
+    data, myRosterId, onPickMyTeam, lineupCount, leagueActions, startedTeams,
 }: {
     data: PortfolioLeague;
     myRosterId: string | null;
     onPickMyTeam: (rosterId: string) => void;
     lineupCount: number;
     leagueActions: ActionItem[];
+    startedTeams?: Set<string>;
 }) {
     const myTeam = myRosterId ? data.teams.find(t => t.rosterId === myRosterId) || null : null;
     const fas = undervaluedFreeAgents(data);
@@ -449,7 +467,7 @@ function LeagueInsights({
     const label = labelTeam(myTeam, data);
     const weak = weakestStarter(myTeam);
     const tier = tierFor(label.state, data.leagueType);
-    const lineup = optimizePortfolioTeam(data, myTeam);
+    const lineup = optimizePortfolioTeam(data, myTeam, startedTeams);
     const lineupSwaps = lineup && !lineup.isOptimal ? lineup.swaps.length : 0;
 
     return (
@@ -488,11 +506,13 @@ function LeagueInsights({
                 ) : <div className="text-sm text-zinc-400">{weak.note}</div>}
             </div>
 
-            {leagueActions.length > 0 && (
+            <WeeklyUpgradesList items={leagueActions.filter(a => a.kind === 'waiver-upgrade')} />
+
+            {leagueActions.filter(a => a.kind !== 'waiver-upgrade').length > 0 && (
                 <div>
                     <div className="text-xs font-medium text-zinc-500 mb-1">Recommended pickups</div>
                     <ul className="space-y-1.5">
-                        {leagueActions.map(a => (
+                        {leagueActions.filter(a => a.kind !== 'waiver-upgrade').map(a => (
                             <li key={a.id} className="flex items-center justify-between gap-2 text-sm">
                                 <span className="text-zinc-800 dark:text-zinc-200 truncate">
                                     {a.kind === 'stream' && <span className="text-sky-500 mr-1">🛡️</span>}
@@ -507,6 +527,55 @@ function LeagueInsights({
             )}
 
             <UndervaluedList fas={fas} />
+        </div>
+    );
+}
+
+/**
+ * Weekly waiver upgrades for a league card: free agents who improve THIS week's
+ * lineup (weekly-rank lens), with the 3-tier drop guardrail. Actionable safe
+ * items first; caution flagged (amber); informational ("help exists, no
+ * worthwhile drop") muted. Shows top 5, with a "show more" for the rest.
+ */
+function WeeklyUpgradesList({ items }: { items: ActionItem[] }) {
+    const [expanded, setExpanded] = useState(false);
+    if (items.length === 0) return null;
+    const TOP = 5;
+    const shown = expanded ? items : items.slice(0, TOP);
+    const extra = items.length - shown.length;
+    return (
+        <div>
+            <div className="text-xs font-medium text-zinc-500 mb-1">Weekly lineup upgrades <span className="text-zinc-400 font-normal">(this week)</span></div>
+            <ul className="space-y-1.5">
+                {shown.map(a => {
+                    const tier = (a.meta?.tier as string) ?? 'safe';
+                    const informational = a.meta?.informational === true;
+                    const cracks = a.meta?.cracksLineup === true;
+                    return (
+                        <li key={a.id} className={`flex items-center justify-between gap-2 text-sm ${informational ? 'opacity-60' : ''}`}>
+                            <span className="text-zinc-800 dark:text-zinc-200 truncate">
+                                {tier === 'caution' && !informational && <span className="text-amber-500 mr-1" title="Valuable drop — consider before dropping">⚠️</span>}
+                                {cracks && !informational && <span className="text-emerald-500 mr-1" title="Would crack your starting lineup">▲</span>}
+                                {a.headline}
+                                {a.detail && <span className="ml-1 text-xs text-zinc-400">· {a.detail}</span>}
+                            </span>
+                            {!informational && (
+                                <Link href={a.deepLink} className="flex-shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">Open →</Link>
+                            )}
+                        </li>
+                    );
+                })}
+            </ul>
+            {extra > 0 && (
+                <button onClick={() => setExpanded(true)} className="mt-1 text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+                    Show {extra} more
+                </button>
+            )}
+            {expanded && items.length > TOP && (
+                <button onClick={() => setExpanded(false)} className="mt-1 ml-3 text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+                    Show less
+                </button>
+            )}
         </div>
     );
 }

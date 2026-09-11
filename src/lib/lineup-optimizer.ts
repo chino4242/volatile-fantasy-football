@@ -31,6 +31,13 @@ export interface OptimizerPlayer {
     posMatchup: number | null;  // opponent rank vs position (higher = easier, preferred)
     /** Whether this player is CURRENTLY in the starting lineup. */
     isStarter: boolean;
+    /**
+     * True when this player's NFL game has already started (kickoff passed), so
+     * they are IMMOVABLE this week: a locked starter keeps their slot (can't be
+     * benched); a locked bench player can't be moved into the lineup. The
+     * optimizer only shuffles NOT-locked players among the remaining slots.
+     */
+    locked?: boolean;
 }
 
 /** A single starting slot and which positions may fill it. */
@@ -134,8 +141,37 @@ export function optimizeLineup(players: OptimizerPlayer[], slots: LineupSlot[]):
     const used = new Set<string>();
     const assignment = new Map<number, OptimizerPlayer | null>(); // original slot index → player
 
+    // Locked players whose game already started are immovable this week:
+    //  - a locked STARTER keeps a slot (can't be benched) → reserve one for them;
+    //  - a locked BENCH player can't be moved into the lineup → exclude from pool.
+    const lockedStarters = players.filter(p => p.locked && p.isStarter);
+    // Pool of players the optimizer may freely assign (everyone not locked).
+    const movablePool = players.filter(p => !p.locked);
+
+    // 1. Reserve slots for locked starters first, most-restrictive slot first, so
+    //    a locked QB claims a QB slot before a SUPER_FLEX. Each locked starter
+    //    takes the most restrictive slot it's eligible for that is still open.
+    const takenSlotIdx = new Set<number>();
+    for (const lp of lockedStarters) {
+        if (lp.position == null) continue;
+        // Find the most restrictive open slot this locked starter is eligible for.
+        const slotForLp = order.find(({ s, i }) =>
+            !takenSlotIdx.has(i) && s.eligible.has(lp.position as Position),
+        );
+        if (slotForLp) {
+            takenSlotIdx.add(slotForLp.i);
+            assignment.set(slotForLp.i, lp);
+            used.add(lp.sleeper_id);
+        }
+        // If no eligible slot is open, the locked starter can't be placed (rare:
+        // illegal current lineup); they simply aren't reflected as a slot holder,
+        // but they're still excluded from the movable pool so we never bench them.
+    }
+
+    // 2. Fill remaining slots from the movable pool (not-locked players only).
     for (const { s, i } of order) {
-        const cands = candidatesFor(s, players).filter(p => !used.has(p.sleeper_id));
+        if (takenSlotIdx.has(i)) continue; // reserved for a locked starter
+        const cands = candidatesFor(s, movablePool).filter(p => !used.has(p.sleeper_id));
         const pick = cands[0] || null;
         if (pick) used.add(pick.sleeper_id);
         assignment.set(i, pick);
@@ -154,13 +190,16 @@ export function optimizeAndDiff(players: OptimizerPlayer[], slots: LineupSlot[])
     const optimalIds = new Set(optimal.map(a => a.player?.sleeper_id).filter(Boolean) as string[]);
     const currentStarterIds = new Set(players.filter(p => p.isStarter).map(p => p.sleeper_id));
 
-    // Players who SHOULD start but currently don't.
+    // Players who SHOULD start but currently don't. A LOCKED player is never a
+    // valid "should start" — their game already began, so we can't add them.
     const shouldStart = optimal
-        .filter(a => a.player && !currentStarterIds.has(a.player.sleeper_id))
+        .filter(a => a.player && !a.player.locked && !currentStarterIds.has(a.player.sleeper_id))
         .map(a => ({ slot: a.slot, player: a.player as OptimizerPlayer }));
 
-    // Players currently starting who are NOT in the optimal lineup (bench candidates).
-    const shouldBench = players.filter(p => p.isStarter && !optimalIds.has(p.sleeper_id));
+    // Players currently starting who are NOT in the optimal lineup (bench
+    // candidates). A LOCKED starter is never benched — their game already began,
+    // so benching does nothing (points are locked in).
+    const shouldBench = players.filter(p => p.isStarter && !p.locked && !optimalIds.has(p.sleeper_id));
 
     // Pair each "should start" with a "should bench" of the SAME slot eligibility
     // where possible; fall back to worst-ranked bench candidate.

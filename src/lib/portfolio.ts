@@ -306,8 +306,14 @@ export function undervaluedFreeAgents(league: PortfolioLeague, minEdge = 15, lim
 import { buildSlots, optimizeAndDiff, type OptimizerPlayer, type OptimizerResult } from './lineup-optimizer';
 
 /** Run the lineup optimizer for one portfolio team. Returns null if the league
- *  has no slot config or no weekly rankings to act on. */
-export function optimizePortfolioTeam(league: PortfolioLeague, team: PortfolioTeam): (OptimizerResult & { hasWeeklyData: boolean }) | null {
+ *  has no slot config or no weekly rankings to act on. `startedTeams` (NFL team
+ *  abbrs whose game already kicked off) locks those players so the optimizer
+ *  never suggests starting/benching a player whose game is already underway. */
+export function optimizePortfolioTeam(
+    league: PortfolioLeague,
+    team: PortfolioTeam,
+    startedTeams?: Set<string>,
+): (OptimizerResult & { hasWeeklyData: boolean }) | null {
     if (!league.rosterPositions || league.rosterPositions.length === 0) return null;
     const slots = buildSlots(league.rosterPositions);
     const players: OptimizerPlayer[] = team.players.map(p => ({
@@ -318,6 +324,7 @@ export function optimizePortfolioTeam(league: PortfolioLeague, team: PortfolioTe
         total: p.weeklyTotal ?? null,
         posMatchup: p.weeklyPosMatchup ?? null,
         isStarter: p.is_starter,
+        locked: !!(startedTeams && p.team && startedTeams.has(p.team.toUpperCase())),
     }));
     const hasWeeklyData = players.some(p => p.rank != null);
     if (!hasWeeklyData) return null;
