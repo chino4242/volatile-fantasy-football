@@ -161,10 +161,14 @@ export function buildRootingGuide(
     }
 
     // Central live points (computed uniformly from ESPN) take precedence — a
-    // consistent number for every player regardless of platform.
+    // consistent number for every player regardless of platform. Only ANNOTATE
+    // players who are already a rooting interest (FOR/AGAINST in some league);
+    // never create new acc entries here, or every ESPN-scored player league-wide
+    // would leak into the guide (with no side + no gameInfo → UNKNOWN bucket).
     if (livePoints) {
         for (const [id, lp] of livePoints) {
-            const a = ensure(id);
+            const a = acc.get(id);
+            if (!a) continue;
             a.points = lp.points;
             a.usage = lp.usage ?? null;
             a.usageLabel = lp.usageLabel ?? null;
