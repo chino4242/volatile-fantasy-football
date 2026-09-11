@@ -92,7 +92,7 @@ export async function getDbLeagueData(platform: DbPlatform, leagueId: string): P
 
     const format = (league.scoring_format === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
 
-    const leagueRosters = await db.select().from(rosters).where(eq(rosters.league_id, leagueId));
+    const leagueRosters = await db.select().from(rosters).where(eq(rosters.league_id, leagueId)).orderBy(rosters.id);
     const rosterIds = leagueRosters.map(r => r.id);
     const allRosterPlayers = rosterIds.length > 0
         ? await db.select().from(rosterPlayers).where(inArray(rosterPlayers.roster_id, rosterIds))

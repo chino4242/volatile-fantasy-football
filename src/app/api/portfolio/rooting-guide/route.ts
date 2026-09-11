@@ -210,6 +210,24 @@ async function buildLivePoints(liveStates: Map<string, import("@/lib/nfl-live").
 }
 
 // ── NFL game lookup: sleeper_id → {nflTeam, nflOpponent} ─────────────────────
+
+/**
+ * Normalize NFL team abbreviations to a single canonical convention so the
+ * `players` table (uses JAX) and `weekly_rankings` (uses JAC) reconcile, and so
+ * the resulting gameKey matches the schedule (nfl-schedule.ts normalizes the
+ * same way via TEAM_ABBR_FIX). Without this, e.g. all 18 Jacksonville players
+ * failed the team→opponent lookup and fell into the UNKNOWN "No game data"
+ * bucket.
+ */
+const TEAM_ABBR_CANON: Record<string, string> = {
+    JAC: 'JAX', LA: 'LAR', WSH: 'WAS', OAK: 'LV', SD: 'LAC', STL: 'LAR',
+};
+function normTeam(a: string | null | undefined): string | null {
+    if (!a) return null;
+    const up = a.toUpperCase();
+    return TEAM_ABBR_CANON[up] || up;
+}
+
 async function buildGameInfo(sleeperIds: string[], week: number | null): Promise<Map<string, PlayerGameInfo>> {
     const out = new Map<string, PlayerGameInfo>();
     if (sleeperIds.length === 0) return out;
@@ -232,7 +250,11 @@ async function buildGameInfo(sleeperIds: string[], week: number | null): Promise
             .where(eq(weeklyRankings.week, week));
         for (const r of wr) {
             if (r.sleeper_id) weeklyById.set(r.sleeper_id, { team: r.team, opponent: r.opponent });
-            if (r.team && r.opponent) teamOpponent.set(r.team.toUpperCase(), r.opponent.toUpperCase());
+            if (r.team && r.opponent) {
+                const t = normTeam(r.team);
+                const o = normTeam(r.opponent);
+                if (t && o) teamOpponent.set(t, o);
+            }
         }
     }
 
@@ -241,9 +263,11 @@ async function buildGameInfo(sleeperIds: string[], week: number | null): Promise
         const wk = weeklyById.get(id);
         // Prefer weekly team/opponent; else fall back to players.team + the
         // team's weekly opponent (covers DEF/K not in the weekly upload).
-        const nflTeam = (wk?.team || meta?.team || null);
-        const nflOpponent = wk?.opponent
-            || (nflTeam ? teamOpponent.get(nflTeam.toUpperCase()) ?? null : null);
+        // Normalize abbrs so players (JAX) and weekly_rankings (JAC) reconcile
+        // and the gameKey matches the schedule's convention.
+        const nflTeam = normTeam(wk?.team || meta?.team || null);
+        const nflOpponent = normTeam(wk?.opponent || null)
+            || (nflTeam ? teamOpponent.get(nflTeam) ?? null : null);
         out.set(id, {
             full_name: meta?.full_name ?? id,
             position: meta?.position ?? null,
