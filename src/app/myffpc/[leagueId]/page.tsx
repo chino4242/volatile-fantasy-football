@@ -4,6 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LeagueTable, LeagueTeamStat } from "@/components/LeagueTable";
+import TradeFinderCard from "@/components/TradeFinderCard";
 import { RefreshButton } from "@/components/RefreshButton";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +55,9 @@ export default async function MyFFPCLeaguePage({
                 position: players.position,
                 team: players.team,
                 fc_value_1qb: playerValues.fc_value_1qb,
+                fc_rank_1qb: playerValues.fc_rank_1qb,
+                fc_rank_sf: playerValues.fc_rank_sf,
+                redraft_rank_overall: playerValues.redraft_rank_overall,
             })
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -98,6 +102,32 @@ export default async function MyFFPCLeaguePage({
         };
     });
 
+    // Teams shaped for the cross-league Trade Finder (same feature Sleeper/
+    // Fleaflicker league pages show). rosterId = creation-order index (matches
+    // the team-page numbering); players carry value + the ranks the archetype
+    // detector uses (dynasty vs redraft).
+    const tradeFinderTeams = leagueRosters.map((roster, i) => ({
+        rosterId: i + 1,
+        ownerName: roster.owner_name || `Team ${i + 1}`,
+        players: allRosterPlayers
+            .filter(rp => rp.roster_id === roster.id)
+            .map(rp => {
+                const p = playerMap.get(rp.sleeper_id!);
+                return p
+                    ? {
+                        sleeper_id: p.sleeper_id,
+                        full_name: p.full_name,
+                        position: p.position,
+                        fc_value: p.fc_value_1qb,
+                        fc_rank_1qb: p.fc_rank_1qb,
+                        fc_rank_sf: p.fc_rank_sf,
+                        redraft_rank_overall: p.redraft_rank_overall,
+                    }
+                    : null;
+            })
+            .filter(Boolean) as any[],
+    }));
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -136,6 +166,11 @@ export default async function MyFFPCLeaguePage({
                     leagueId={leagueId}
                     format="1qb"
                 />
+
+                {/* Cross-league Trade Finder (matches Sleeper/Fleaflicker) */}
+                <div className="mt-6">
+                    <TradeFinderCard teams={tradeFinderTeams} format="1qb" />
+                </div>
             </div>
         </div>
     );

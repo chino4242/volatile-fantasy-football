@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getDbLeagueData, type DbPlatform } from "@/lib/db-league-data";
 import { LeagueTable, type LeagueTeamStat } from "@/components/LeagueTable";
+import TradeFinderCard from "@/components/TradeFinderCard";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,22 @@ export default async function DbLeaguePage({
     const label = PLATFORM_LABEL[platform];
     const typeLabel = platform === 'yahoo' ? 'Redraft' : 'Dynasty';
 
+    // Teams shaped for the cross-league Trade Finder (same feature Sleeper/
+    // Fleaflicker show on their league pages).
+    const tradeFinderTeams = data.teams.map(t => ({
+        rosterId: t.numericId,
+        ownerName: t.ownerName,
+        players: t.players.map(p => ({
+            sleeper_id: p.sleeper_id,
+            full_name: p.full_name,
+            position: p.position,
+            fc_value: p.fc_value,
+            fc_rank_1qb: p.fc_rank_1qb,
+            fc_rank_sf: p.fc_rank_sf,
+            redraft_rank_overall: p.redraft_rank_overall,
+        })),
+    }));
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -66,6 +83,11 @@ export default async function DbLeaguePage({
                 </div>
 
                 <LeagueTable teams={teams} platform="db" leagueId={`${platform}/${leagueId}`} format={data.format} />
+
+                {/* Cross-league Trade Finder (matches Sleeper/Fleaflicker) */}
+                <div className="mt-6">
+                    <TradeFinderCard teams={tradeFinderTeams} format={data.format} />
+                </div>
             </div>
         </div>
     );
