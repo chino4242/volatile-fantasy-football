@@ -157,6 +157,53 @@ describe('findWaiverUpgrades', () => {
         expect(ups2).toHaveLength(1);
     });
 
+    it('does not offer an already-played roster player as a drop (Brock Purdy case)', () => {
+        // Purdy (SF) already played Thursday; a QB FA out-ranks him this week,
+        // but dropping a played QB gains nothing → he must not be a drop target.
+        const roster = team([
+            P({ sleeper_id: 'purdy', position: 'QB', weeklyRank: 12, is_starter: true, marketValue: 3000, team: 'SF' }),
+        ]);
+        const fas = [
+            P({ sleeper_id: 'fa_qb', position: 'QB', weeklyRank: 8, marketValue: 100, team: 'BUF' }),
+        ];
+        // SF has played; the FA (BUF) has not. Roster is full (capacity 1).
+        const ups = findWaiverUpgrades(roster, fas, ['QB', 'BN'], 'dynasty', {
+            coreCapacity: 1, startedTeams: new Set(['SF']),
+        });
+        // No eligible (not-yet-played) drop → no suggestion at all.
+        expect(ups).toHaveLength(0);
+    });
+
+    it('never compares across pools: a QB free agent does not rival a flex player (superflex)', () => {
+        // Superflex league. A QB FA out-ranks a low flex player numerically, but
+        // QB and flex are different weekly pools → no cross-pool upgrade.
+        const roster = team([
+            P({ sleeper_id: 'my_qb', position: 'QB', weeklyRank: 5, is_starter: true, marketValue: 500, team: 'KC' }),
+            P({ sleeper_id: 'my_wr', position: 'WR', weeklyRank: 60, is_starter: true, marketValue: 300, team: 'BUF' }),
+        ]);
+        // QB FA ranked 8 (QB pool). Should NOT be offered as an upgrade over the
+        // WR (flex pool), and it doesn't beat my QB (5) → no suggestion.
+        const fas = [P({ sleeper_id: 'fa_qb', position: 'QB', weeklyRank: 8, marketValue: 100, team: 'DAL' })];
+        const ups = findWaiverUpgrades(roster, fas, ['QB', 'WR', 'SUPER_FLEX', 'BN'], 'dynasty', { coreCapacity: 4 });
+        expect(ups).toHaveLength(0);
+    });
+
+    it('reports the pool, both ranks, and value surrendered for a swap', () => {
+        const roster = team([
+            P({ sleeper_id: 'wr_start', position: 'WR', weeklyRank: 24, is_starter: true, marketValue: 1504, team: 'MIN' }),
+            P({ sleeper_id: 'wr_bench', position: 'WR', weeklyRank: 70, marketValue: 90, team: 'NYJ' }),
+        ]);
+        const fas = [P({ sleeper_id: 'fa_wr', position: 'WR', weeklyRank: 8, marketValue: 100, team: 'BUF' })];
+        const ups = findWaiverUpgrades(roster, fas, ['WR', 'WR', 'BN'], 'dynasty', { coreCapacity: 2 });
+        const u = ups[0];
+        expect(u.pool).toBe('flex');
+        expect(u.addWeeklyRank).toBe(8);
+        // Compared against the worst rival it beats (the bench WR, rank 70).
+        expect(u.dropWeeklyRank).toBe(70);
+        // Drops the lowest-value non-starter → surrenders that player's value.
+        expect(u.valueSurrendered).toBe(90);
+    });
+
     it('returns nothing when the league has no slot config', () => {
         const roster = team([P({ sleeper_id: 'wr1', position: 'WR', weeklyRank: 30, is_starter: true })]);
         const fas = [P({ sleeper_id: 'fa_wr', position: 'WR', weeklyRank: 10 })];

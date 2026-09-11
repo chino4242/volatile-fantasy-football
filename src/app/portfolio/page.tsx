@@ -42,6 +42,9 @@ export default function PortfolioPage() {
     const [leagues, setLeagues] = useState<Record<string, LoadedLeague>>({});
     const [enumerating, setEnumerating] = useState(true);
     const [reloadKey, setReloadKey] = useState(0);
+    // MyFFPC ltuid per leagueId (from /api/myffpc?list=true, env-sourced) → real
+    // SetLineup.aspx deep links. Absent → falls back to the in-app view.
+    const [myffpcLtuids, setMyffpcLtuids] = useState<Record<string, string>>({});
 
     // 1. Enumerate leagues across all 4 platforms.
     useEffect(() => {
@@ -82,12 +85,14 @@ export default function PortfolioPage() {
             }
 
             // Yahoo + MyFFPC — DB list endpoints.
+            const collectedLtuids: Record<string, string> = {};
             for (const [platform, url] of [['yahoo', '/api/yahoo?list=true'], ['myffpc', '/api/myffpc?list=true']] as const) {
                 try {
                     const res = await fetch(url);
                     if (res.ok) {
                         const data = await res.json();
                         for (const l of data?.leagues || []) {
+                            if (platform === 'myffpc' && l.ltuid) collectedLtuids[l.league_id] = l.ltuid;
                             collected.push({
                                 platform,
                                 leagueId: l.league_id,
@@ -100,7 +105,7 @@ export default function PortfolioPage() {
                 } catch { /* ignore */ }
             }
 
-            if (!cancelled) { setRefs(collected); setEnumerating(false); }
+            if (!cancelled) { setRefs(collected); setMyffpcLtuids(collectedLtuids); setEnumerating(false); }
         })();
 
         return () => { cancelled = true; };
@@ -184,10 +189,11 @@ export default function PortfolioPage() {
                 pendingTrades: pendingTrades[`${l.ref.platform}:${l.ref.leagueId}`],
                 dstRankings,
                 startedTeams,
+                myffpcLtuid: myffpcLtuids[l.ref.leagueId] ?? null,
             }));
         if (inputs.length === 0) return null;
         return buildActionCenter(inputs, { seasonMode });
-    }, [loaded, getMyTeam, seasonMode, pendingTrades, dstRankings, startedTeams]);
+    }, [loaded, getMyTeam, seasonMode, pendingTrades, dstRankings, startedTeams, myffpcLtuids]);
 
     // Current NFL week — from any loaded league that carries weekly rankings.
     const currentWeek = useMemo(() => {
@@ -226,10 +232,11 @@ export default function PortfolioPage() {
                 myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
                 dstRankings,
                 startedTeams,
+                myffpcLtuid: myffpcLtuids[l.ref.leagueId] ?? null,
             });
         }
         return map;
-    }, [loaded, getMyTeam, seasonMode, dstRankings, startedTeams]);
+    }, [loaded, getMyTeam, seasonMode, dstRankings, startedTeams, myffpcLtuids]);
 
     // Partition loaded leagues into tier bands (top/middle/lower) for the
     // dashboard. Leagues whose my-team is unknown go to `unassigned` (they show
@@ -513,13 +520,18 @@ function LeagueInsights({
                     <div className="text-xs font-medium text-zinc-500 mb-1">Recommended pickups</div>
                     <ul className="space-y-1.5">
                         {leagueActions.filter(a => a.kind !== 'waiver-upgrade').map(a => (
-                            <li key={a.id} className="flex items-center justify-between gap-2 text-sm">
-                                <span className="text-zinc-800 dark:text-zinc-200 truncate">
-                                    {a.kind === 'stream' && <span className="text-sky-500 mr-1">🛡️</span>}
-                                    {a.headline}
-                                    {a.detail && <span className="ml-1 text-xs font-semibold text-green-600 dark:text-green-400">{a.detail}</span>}
-                                </span>
-                                <Link href={a.deepLink} className="flex-shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">Open →</Link>
+                            <li key={a.id} className="text-sm">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-zinc-800 dark:text-zinc-200 truncate">
+                                        {a.kind === 'stream' && <span className="text-sky-500 mr-1">🛡️</span>}
+                                        {a.headline}
+                                        {a.detail && <span className="ml-1 text-xs font-semibold text-green-600 dark:text-green-400">{a.detail}</span>}
+                                    </span>
+                                    <OpenLink href={a.deepLink} />
+                                </div>
+                                {a.meta?.subDetail ? (
+                                    <div className="text-[11px] text-zinc-400 mt-0.5 truncate">{a.meta.subDetail as string}</div>
+                                ) : null}
                             </li>
                         ))}
                     </ul>
@@ -529,6 +541,22 @@ function LeagueInsights({
             <UndervaluedList fas={fas} />
         </div>
     );
+}
+
+/**
+ * "Open →" link that opens EXTERNAL platform URLs (http...) in a new tab so the
+ * portfolio isn't lost, and in-app routes via client navigation.
+ */
+function OpenLink({ href, label = 'Open →' }: { href: string; label?: string }) {
+    const external = /^https?:\/\//i.test(href);
+    if (external) {
+        return (
+            <a href={href} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+                {label}
+            </a>
+        );
+    }
+    return <Link href={href} className="flex-shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">{label}</Link>;
 }
 
 /**
@@ -552,16 +580,21 @@ function WeeklyUpgradesList({ items }: { items: ActionItem[] }) {
                     const informational = a.meta?.informational === true;
                     const cracks = a.meta?.cracksLineup === true;
                     return (
-                        <li key={a.id} className={`flex items-center justify-between gap-2 text-sm ${informational ? 'opacity-60' : ''}`}>
-                            <span className="text-zinc-800 dark:text-zinc-200 truncate">
-                                {tier === 'caution' && !informational && <span className="text-amber-500 mr-1" title="Valuable drop — consider before dropping">⚠️</span>}
-                                {cracks && !informational && <span className="text-emerald-500 mr-1" title="Would crack your starting lineup">▲</span>}
-                                {a.headline}
-                                {a.detail && <span className="ml-1 text-xs text-zinc-400">· {a.detail}</span>}
-                            </span>
-                            {!informational && (
-                                <Link href={a.deepLink} className="flex-shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">Open →</Link>
-                            )}
+                        <li key={a.id} className={`text-sm ${informational ? 'opacity-60' : ''}`}>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-zinc-800 dark:text-zinc-200 truncate">
+                                    {tier === 'caution' && !informational && <span className="text-amber-500 mr-1" title="Valuable drop — consider before dropping">⚠️</span>}
+                                    {cracks && !informational && <span className="text-emerald-500 mr-1" title="Would crack your starting lineup">▲</span>}
+                                    {a.headline}
+                                    {a.detail && <span className="ml-1 text-xs text-zinc-400">· {a.detail}</span>}
+                                </span>
+                                {!informational && (
+                                    <OpenLink href={a.deepLink} />
+                                )}
+                            </div>
+                            {a.meta?.subDetail ? (
+                                <div className="text-[11px] text-zinc-400 mt-0.5 truncate">{a.meta.subDetail as string}</div>
+                            ) : null}
                         </li>
                     );
                 })}

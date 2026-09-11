@@ -238,13 +238,25 @@ function ActionRow({ item, onAck }: { item: ActionItem; onAck: (ackKey: string) 
                         <CheckCircle2 className="h-3.5 w-3.5" /> On purpose
                     </button>
                 )}
-                <Link
-                    href={item.deepLink}
-                    aria-label={`${linkLabel} — ${item.leagueName}`}
-                    className="inline-flex items-center gap-1 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 transition-colors"
-                >
-                    {linkLabel} <ArrowUpRight className="h-3.5 w-3.5" />
-                </Link>
+                {/^https?:\/\//i.test(item.deepLink) ? (
+                    <a
+                        href={item.deepLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`${linkLabel} — ${item.leagueName}`}
+                        className="inline-flex items-center gap-1 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 transition-colors"
+                    >
+                        {linkLabel} <ArrowUpRight className="h-3.5 w-3.5" />
+                    </a>
+                ) : (
+                    <Link
+                        href={item.deepLink}
+                        aria-label={`${linkLabel} — ${item.leagueName}`}
+                        className="inline-flex items-center gap-1 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 transition-colors"
+                    >
+                        {linkLabel} <ArrowUpRight className="h-3.5 w-3.5" />
+                    </Link>
+                )}
             </div>
         </div>
     );

@@ -115,7 +115,17 @@ export async function GET(request: NextRequest) {
                 .select({ league_id: leagues.league_id, name: leagues.name, total_rosters: leagues.total_rosters })
                 .from(leagues)
                 .where(eq(leagues.platform, 'myffpc'));
-            return NextResponse.json({ leagues: myffpcLeagues });
+            // Attach the ltuid (from MYFFPC_LEAGUES env) so the client can build a
+            // real SetLineup.aspx deep link. ltuid isn't stored on the row — it's
+            // env-sourced — so it's only present where MYFFPC_LEAGUES is set.
+            const ltuidByLeague = new Map<string, string>();
+            for (const pair of (process.env.MYFFPC_LEAGUES || '').split(',').map(s => s.trim()).filter(Boolean)) {
+                const [ltuid, lid] = pair.split(':').map(s => s.trim());
+                if (ltuid && lid) ltuidByLeague.set(lid, ltuid);
+            }
+            return NextResponse.json({
+                leagues: myffpcLeagues.map(l => ({ ...l, ltuid: ltuidByLeague.get(l.league_id) ?? null })),
+            });
         }
 
         if (!leagueId) {

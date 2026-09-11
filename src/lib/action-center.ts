@@ -70,6 +70,9 @@ export interface ActionCenterInput {
      * who can no longer help this week. Absent → no game-time gating.
      */
     startedTeams?: Set<string>;
+    /** MyFFPC ltuid for this league (env-sourced) → real SetLineup.aspx deep
+     *  link. Absent → the in-app view is used. */
+    myffpcLtuid?: string | null;
 }
 
 export interface ActionCenterOptions {
@@ -140,9 +143,44 @@ const URGENT_KINDS: ActionKind[] = ['lineup', 'trade'];
  * same routing the portfolio cards use); the "leave to the real platform" URL
  * is a follow-up. Mirrors `dbHref` in src/app/portfolio/page.tsx.
  */
-export function deepLinkFor(platform: PortfolioPlatform, leagueId: string): string {
-    if (platform === 'yahoo' || platform === 'myffpc') return `/db-league/${platform}/${leagueId}`;
-    if (platform === 'sleeper') return `/league/${leagueId}`;
+/**
+ * Deep-link target for a league/team. Prefers the REAL platform URL (so the
+ * "Open →" jumps straight to your team on Sleeper/Fleaflicker/Yahoo/MyFFPC to
+ * make the move); falls back to the in-app league view when we don't have the
+ * URL pattern or the needed id yet.
+ *
+ * `myRosterId` is the platform's team identifier from useMyTeams:
+ *   - fleaflicker: the team id → /nfl/leagues/{leagueId}/teams/{teamId}
+ *   - sleeper:     the numeric roster_id (not needed — Sleeper resolves your team from the session)
+ *   - yahoo:       the team number
+ *   - myffpc:      the viewingTeam-based roster_id (ltuid passed separately)
+ */
+export function deepLinkFor(platform: PortfolioPlatform, leagueId: string, myRosterId?: string | null, myffpcLtuid?: string | null): string {
+    if (platform === 'fleaflicker') {
+        // Confirmed pattern: /nfl/leagues/{leagueId}/teams/{teamId}
+        return myRosterId
+            ? `https://www.fleaflicker.com/nfl/leagues/${leagueId}/teams/${myRosterId}`
+            : `https://www.fleaflicker.com/nfl/leagues/${leagueId}`;
+    }
+    if (platform === 'sleeper') {
+        // Confirmed pattern: /leagues/{leagueId}/team → lands on your team
+        // (Sleeper resolves "your team" from the logged-in session; no id needed).
+        return `https://sleeper.com/leagues/${leagueId}/team`;
+    }
+    if (platform === 'yahoo') {
+        // Pattern: /f1/{leagueId}/{teamNumber}. We only have the portfolio
+        // numericId here (not the Yahoo team number), and Yahoo scopes views to
+        // the logged-in user anyway, so link to the league home — it resolves to
+        // your team. (leagueId IS the numeric Yahoo league id.)
+        return `https://football.fantasysports.yahoo.com/f1/${leagueId}`;
+    }
+    // MyFFPC: real SetLineup.aspx URL when we have the ltuid (env-sourced,
+    // provided by the caller); otherwise the in-app view.
+    if (platform === 'myffpc') {
+        return myffpcLtuid
+            ? `https://myffpc.com/SetLineup.aspx?ltuid=${myffpcLtuid}`
+            : `/db-league/${platform}/${leagueId}`;
+    }
     return `/fleaflicker/${leagueId}`;
 }
 
@@ -173,7 +211,7 @@ function lineupItems(input: ActionCenterInput): ActionItem[] {
     if (!team) return [];
     const opt = optimizePortfolioTeam(league, team, input.startedTeams);
     if (!opt || opt.isOptimal || !opt.hasWeeklyData) return [];
-    const link = deepLinkFor(league.platform, league.leagueId);
+    const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);
     return opt.swaps.map(s => {
         const startId = s.startPlayer.sleeper_id;
         const benchId = s.benchPlayer?.sleeper_id ?? 'none';
@@ -219,13 +257,22 @@ function waiverItems(input: ActionCenterInput, limit: number): ActionItem[] {
         maxSuggestions: limit,
     });
 
-    const link = deepLinkFor(league.platform, league.leagueId);
+    const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);
     return suggestions.map((s: TransactionSuggestion) => {
         const add = s.addPlayer;
         const drop = s.dropPlayer;
         const headline = drop
             ? `Add ${add.full_name} (${add.position ?? '—'}) · drop ${drop.full_name} (${drop.position ?? '—'})`
             : `Add ${add.full_name} (${add.position ?? '—'}) — open spot`;
+        // Second muted sub-line: the value math behind the gain. (Dynasty value
+        // today; rest-of-season value once that lens ships.)
+        const addVal = add.fc_value != null ? Math.round(add.fc_value).toLocaleString() : null;
+        const dropVal = drop?.fc_value != null ? Math.round(drop.fc_value).toLocaleString() : null;
+        const subDetail = drop && addVal && dropVal
+            ? `${add.full_name} ${addVal} → ${drop.full_name} ${dropVal}`
+            : addVal
+                ? `${add.full_name} ${addVal} value`
+                : null;
         return {
             id: `waiver:${league.platform}:${league.leagueId}:${add.sleeper_id}->${drop?.sleeper_id ?? 'open'}`,
             kind: 'waiver' as const,
@@ -235,7 +282,7 @@ function waiverItems(input: ActionCenterInput, limit: number): ActionItem[] {
             platform: league.platform,
             leagueId: league.leagueId,
             deepLink: link,
-            meta: { addId: add.sleeper_id, dropId: drop?.sleeper_id ?? null, valueGain: s.valueGain },
+            meta: { addId: add.sleeper_id, dropId: drop?.sleeper_id ?? null, valueGain: s.valueGain, subDetail },
         };
     });
 }
@@ -266,26 +313,40 @@ function waiverUpgradeItems(input: ActionCenterInput, limit: number): ActionItem
         startedTeams: input.startedTeams,
     });
 
-    const link = deepLinkFor(league.platform, league.leagueId);
+    const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);
+    const poolLabel = (pool: 'qb' | 'flex' | null) => (pool === 'qb' ? 'QB' : pool === 'flex' ? 'Flex' : '');
     return upgrades.map((u: WaiverUpgrade) => {
         const add = u.add;
         const drop = u.drop;
-        const gain = u.weeklyRankGain != null ? `+${u.weeklyRankGain} wk rank` : null;
         const headline = u.informational
             ? `Waiver help at ${add.position ?? '—'}: ${add.full_name} — but no worthwhile drop`
             : u.type === 'add'
                 ? `Add ${add.full_name} (${add.position ?? '—'}) — open spot, plays this week`
                 : `Add ${add.full_name} (${add.position ?? '—'}) · drop ${drop?.full_name ?? '—'}`;
-        const detailBits = [
+
+        // Primary (concise) line.
+        const primaryBits = [
             u.cracksLineup ? 'cracks your lineup' : null,
-            gain,
-            u.tier === 'caution' && drop ? `⚠ ${drop.full_name} has value` : null,
+            u.weeklyRankGain != null ? `+${u.weeklyRankGain} spots this week` : null,
         ].filter(Boolean);
+
+        // Second muted sub-line: quantify the this-week edge + what you give up.
+        const pl = poolLabel(u.pool);
+        const rankBit = u.addWeeklyRank != null && u.dropWeeklyRank != null && drop
+            ? `${pl} #${u.addWeeklyRank} vs ${drop.full_name} ${pl} #${u.dropWeeklyRank}`
+            : u.addWeeklyRank != null
+                ? `${pl} #${u.addWeeklyRank} this week`
+                : null;
+        const giveUpBit = u.type === 'swap' && u.valueSurrendered != null
+            ? `gives up ${Math.round(u.valueSurrendered).toLocaleString()} value`
+            : null;
+        const subBits = [rankBit, giveUpBit].filter(Boolean);
+
         return {
             id: `waiver-upgrade:${league.platform}:${league.leagueId}:${add.sleeper_id}->${drop?.sleeper_id ?? 'open'}`,
             kind: 'waiver-upgrade' as const,
             headline,
-            detail: detailBits.join(' · ') || undefined,
+            detail: primaryBits.join(' · ') || undefined,
             leagueName: league.name,
             platform: league.platform,
             leagueId: league.leagueId,
@@ -298,15 +359,16 @@ function waiverUpgradeItems(input: ActionCenterInput, limit: number): ActionItem
                 cracksLineup: u.cracksLineup,
                 weeklyRankGain: u.weeklyRankGain,
                 badgeWorthy: isBadgeWorthy(u),
+                subDetail: subBits.join(' · ') || null,
             },
         };
     });
 }
 
 function tradeItems(input: ActionCenterInput): ActionItem[] {
-    const { league, pendingTrades } = input;
+    const { league, pendingTrades, myRosterId } = input;
     if (!pendingTrades || pendingTrades.length === 0) return [];
-    const link = deepLinkFor(league.platform, league.leagueId);
+    const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);
     return pendingTrades.map(t => ({
         id: `trade:${league.platform}:${league.leagueId}:${t.id}`,
         kind: 'trade' as const,
@@ -362,7 +424,7 @@ function streamItems(input: ActionCenterInput): ActionItem[] {
     const isUpgrade = myRank == null || (bestAvailable.rank != null && bestAvailable.rank <= myRank - 3);
     if (!isUpgrade) return [];
 
-    const link = deepLinkFor(league.platform, league.leagueId);
+    const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);
     const oppNote = bestAvailable.opponent ? `vs ${bestAvailable.opponent}` : '';
     const tierNote = bestAvailable.tier != null ? `tier ${bestAvailable.tier}` : '';
     const spreadNote = bestAvailable.spread != null ? `${bestAvailable.spread > 0 ? '+' : ''}${bestAvailable.spread}` : '';

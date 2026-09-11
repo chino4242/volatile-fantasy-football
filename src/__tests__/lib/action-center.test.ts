@@ -100,7 +100,7 @@ describe('buildActionCenter — in-season (urgent-only: lineup + trade)', () => 
         const lineupGrp = ac.byType!.find(g => g.kind === 'lineup')!;
         expect(lineupGrp.items.length).toBeGreaterThan(0);
         expect(lineupGrp.items[0].headline).toMatch(/^Start /);
-        expect(lineupGrp.items[0].deepLink).toContain('/league/L1');
+        expect(lineupGrp.items[0].deepLink).toBe('https://sleeper.com/leagues/L1/team');
         expect(ac.counts.lineup).toBe(lineupGrp.items.length);
     });
 

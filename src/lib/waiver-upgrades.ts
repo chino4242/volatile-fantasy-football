@@ -28,9 +28,7 @@ import {
     buildSlots,
     optimizeLineup,
     type OptimizerPlayer,
-    type LineupSlot,
 } from './lineup-optimizer';
-import { canonicalPos } from './transaction-suggestions';
 import type { PortfolioTeam, PortfolioPlayer, PortfolioLeagueType } from './portfolio';
 
 export type DropTier = 'safe' | 'caution' | 'block';
@@ -65,6 +63,17 @@ export interface WaiverUpgrade {
     weeklyRankGain: number | null;
     /** The roster player the add is compared against on the weekly-rank axis. */
     comparedTo: PortfolioPlayer | null;
+    /** Which weekly-rank pool this comparison is in: QBs compare to QBs, and
+     *  RB/WR/TE compare within the shared flex pool. */
+    pool: 'qb' | 'flex' | null;
+    /** The add's weekly (pool) rank, lower = better. */
+    addWeeklyRank: number | null;
+    /** The compared-to roster player's weekly (pool) rank. */
+    dropWeeklyRank: number | null;
+    /** Long-term value surrendered by the drop (the drop's value under the
+     *  active lens: dynasty market value now, rest-of-season later). null for a
+     *  pure add / when unknown. */
+    valueSurrendered: number | null;
 }
 
 export interface WaiverUpgradeOptions {
@@ -108,8 +117,22 @@ function wr(p: { weeklyRank?: number | null }): number {
     return p.weeklyRank ?? Number.POSITIVE_INFINITY;
 }
 
+/**
+ * The weekly-rank POOL a position belongs to. Weekly rankings are uploaded as a
+ * QB pool and a combined flex pool (RB/WR/TE ranked together), so weekly ranks
+ * are only comparable WITHIN a pool. QB→QB, RB/WR/TE→flex. Others (K/DEF) have
+ * no weekly-upgrade pool.
+ */
+function poolOf(position: string | null | undefined): 'qb' | 'flex' | null {
+    if (!position) return null;
+    const p = position.toUpperCase();
+    if (p === 'QB') return 'qb';
+    if (p === 'RB' || p === 'WR' || p === 'TE') return 'flex';
+    return null;
+}
+
 /** PortfolioPlayer → OptimizerPlayer (the lineup engine's shape). */
-function toOptimizer(p: PortfolioPlayer, isStarter: boolean): OptimizerPlayer {
+function toOptimizer(p: PortfolioPlayer, isStarter: boolean, locked = false): OptimizerPlayer {
     return {
         sleeper_id: p.sleeper_id,
         full_name: p.full_name,
@@ -118,13 +141,8 @@ function toOptimizer(p: PortfolioPlayer, isStarter: boolean): OptimizerPlayer {
         total: p.weeklyTotal ?? null,
         posMatchup: p.weeklyPosMatchup ?? null,
         isStarter,
+        locked,
     };
-}
-
-/** Which slots is this position eligible to fill, given the league's slots? */
-function eligibleSlotsFor(position: string | null, slots: LineupSlot[]): LineupSlot[] {
-    if (!position) return [];
-    return slots.filter(s => s.eligible.has(position));
 }
 
 /**
@@ -152,16 +170,19 @@ export function findWaiverUpgrades(
     // Also drop any FA whose NFL game has already kicked off — they can't help
     // this week (add-side game-time gate).
     const startedTeams = options.startedTeams;
+    const hasStarted = (p: PortfolioPlayer): boolean =>
+        !!(startedTeams && p.team && startedTeams.has(p.team.toUpperCase()));
     const rankedFAs = freeAgents.filter(fa => {
         if (fa.weeklyRank == null || !fa.position) return false;
-        if (startedTeams && fa.team && startedTeams.has(fa.team.toUpperCase())) return false;
+        if (hasStarted(fa)) return false;
         return true;
     });
     if (rankedFAs.length === 0) return [];
 
-    // Current optimal lineup (weekly rank) → who would start this week.
+    // Current optimal lineup (weekly rank) → who would start this week. Played
+    // players are locked so the lineup reflects reality (a played starter stays).
     const currentOptimal = optimizeLineup(
-        roster.map(p => toOptimizer(p, p.is_starter)),
+        roster.map(p => toOptimizer(p, p.is_starter, hasStarted(p))),
         slots,
     );
     const currentStarterIds = new Set(
@@ -185,16 +206,17 @@ export function findWaiverUpgrades(
     const out: WaiverUpgrade[] = [];
 
     for (const fa of rankedFAs) {
-        const faSlots = eligibleSlotsFor(fa.position, slots);
-        if (faSlots.length === 0) continue; // no slot this FA can fill
+        const faPool = poolOf(fa.position);
+        if (faPool == null) continue; // K/DEF have no weekly-upgrade pool
 
-        // Roster players this FA competes with (eligible for a shared slot).
-        const rivals = roster.filter(r => {
-            const pos = r.position;
-            return pos != null && faSlots.some(s => s.eligible.has(pos));
-        });
+        // Roster players this FA competes with = SAME weekly-rank pool only
+        // (QB→QB, flex→flex). Weekly ranks are pool-scoped, so a QB is never
+        // compared to a flex player even in superflex. Exclude already-played
+        // players — their weekly points are locked in, so dropping them gains
+        // nothing this week and is never an actionable weekly upgrade.
+        const rivals = roster.filter(r => poolOf(r.position) === faPool && !hasStarted(r));
         // The best (highest weekly rank) rival the FA still OUT-RANKS this week.
-        // We compare against the WORST rival in the FA's pool that the FA beats —
+        // We compare against the WORST rival in the pool that the FA beats —
         // i.e. the FA is only an upgrade if it out-ranks at least one rival.
         const beaten = rivals
             .filter(r => wr(fa) < wr(r)) // FA strictly better this week
@@ -204,7 +226,7 @@ export function findWaiverUpgrades(
         // Does the FA crack the OPTIMAL lineup? Re-optimize with the FA added.
         const withFa = optimizeLineup(
             [
-                ...roster.map(p => toOptimizer(p, p.is_starter)),
+                ...roster.map(p => toOptimizer(p, p.is_starter, hasStarted(p))),
                 toOptimizer(fa, false),
             ],
             slots,
@@ -214,8 +236,10 @@ export function findWaiverUpgrades(
         // The natural "compared-to" is the weakest rival the FA beats (the one it
         // would replace at the margin). Weekly-rank gain vs that player.
         const comparedTo = beaten[0];
-        const weeklyRankGain = fa.weeklyRank != null && comparedTo.weeklyRank != null
-            ? comparedTo.weeklyRank - fa.weeklyRank
+        const addWeeklyRank = fa.weeklyRank ?? null;
+        const dropWeeklyRank = comparedTo.weeklyRank ?? null;
+        const weeklyRankGain = addWeeklyRank != null && dropWeeklyRank != null
+            ? dropWeeklyRank - addWeeklyRank
             : null;
 
         // Open spot → pure add, no drop, always safe.
@@ -223,13 +247,13 @@ export function findWaiverUpgrades(
             out.push({
                 add: fa, drop: null, type: 'add', tier: 'safe',
                 informational: false, cracksLineup, weeklyRankGain, comparedTo,
+                pool: faPool, addWeeklyRank, dropWeeklyRank, valueSurrendered: null,
             });
             continue;
         }
 
         // Full roster → need a drop. Pick the lowest LONG-TERM-value legal drop
-        // among eligible rivals (never a non-rival: dropping a QB to add a WR
-        // isn't a weekly-lineup upgrade). Prefer non-starters.
+        // among same-pool rivals. Prefer non-starters.
         const dropPool = [...rivals].sort((a, b) => {
             // Non-starters first (safer to drop), then lowest long-term value.
             const aStart = currentStarterIds.has(a.sleeper_id) ? 1 : 0;
@@ -251,18 +275,27 @@ export function findWaiverUpgrades(
                 cracksLineup,
                 weeklyRankGain,
                 comparedTo,
+                pool: faPool,
+                addWeeklyRank,
+                dropWeeklyRank,
+                valueSurrendered: valueOf(safeOrCaution),
             });
         } else {
             // Every legal drop is a blocked asset → informational only.
+            const blocked = dropPool[0] ?? null;
             out.push({
                 add: fa,
-                drop: dropPool[0] ?? null,
+                drop: blocked,
                 type: 'swap',
                 tier: 'block',
                 informational: true,
                 cracksLineup,
                 weeklyRankGain,
                 comparedTo,
+                pool: faPool,
+                addWeeklyRank,
+                dropWeeklyRank,
+                valueSurrendered: blocked ? valueOf(blocked) : null,
             });
         }
     }
