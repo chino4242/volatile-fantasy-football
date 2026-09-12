@@ -13,6 +13,8 @@ import TradeEvaluator from "@/components/TradeEvaluator";
 import TeamHealthDashboard from "@/components/TeamHealthDashboard";
 import { LineupOptimizerCard } from "@/components/LineupOptimizerCard";
 import { optimizeTeam } from "@/lib/weekly-rankings";
+import { getTeamWaiverUpgrades } from "@/lib/team-waiver-upgrades";
+import { WaiverUpgradesCard } from "@/components/WaiverUpgradesCard";
 import { SavedTrades } from "@/components/SavedTrades";
 import { KeeperDecisionTool } from "@/components/KeeperDecisionTool";
 import { SleeperTradeHistory } from "@/components/SleeperTradeHistory";
@@ -411,6 +413,17 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
         sleeperRosterPositions,
     );
 
+    // Waiver-wire upgrades this week (available players who beat one of mine).
+    const leagueTypeRow = await db.select({ league_type: leagues.league_type }).from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
+    const leagueTypeVal = (leagueTypeRow[0]?.league_type as 'dynasty' | 'keeper' | 'redraft') || 'dynasty';
+    const waiverUpgrades = await getTeamWaiverUpgrades(
+        myPlayersForTxn,
+        freeAgentsForTxn,
+        sleeperRosterPositions,
+        leagueTypeVal,
+        { coreCapacity: rosterConfig?.coreCapacity, rosteredInLeague: rosteredIdSet },
+    );
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
             <div className="max-w-4xl mx-auto">
@@ -481,6 +494,10 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
 
                 <div className="mt-4">
                     <LineupOptimizerCard opt={lineupOpt} />
+                </div>
+
+                <div className="mt-4">
+                    <WaiverUpgradesCard upgrades={waiverUpgrades} />
                 </div>
 
                 {keeperCount && keeperCount > 0 && (
