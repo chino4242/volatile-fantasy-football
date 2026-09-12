@@ -33,9 +33,10 @@ import {
     type TransactionSuggestion,
 } from './transaction-suggestions';
 import { findWaiverUpgrades, isBadgeWorthy, type WaiverUpgrade } from './waiver-upgrades';
+import { buildSlots } from './lineup-optimizer';
 
 export type SeasonMode = 'in-season' | 'off-season';
-export type ActionKind = 'lineup' | 'trade' | 'waiver' | 'waiver-upgrade' | 'sell' | 'stream';
+export type ActionKind = 'lineup' | 'trade' | 'waiver' | 'waiver-upgrade' | 'sell' | 'stream' | 'stream-k';
 export type TierBand = 'top' | 'middle' | 'lower';
 
 /** One pending/incoming trade offer for a league (Fleaflicker-only today). */
@@ -56,6 +57,16 @@ export interface DstRankInput {
     name: string | null;    // e.g. "Los Angeles Chargers"
 }
 
+/** A weekly kicker ranking row (scraped) for a league's K recommendation. */
+export interface KickerRankInput {
+    sleeper_id: string;
+    rank: number | null;
+    score: number | null;   // projected score, higher = better
+    opponent: string | null;
+    name: string | null;
+    team: string | null;
+}
+
 /** Per-league input the engine consumes (UI supplies these after loading). */
 export interface ActionCenterInput {
     league: PortfolioLeague;
@@ -64,6 +75,8 @@ export interface ActionCenterInput {
     pendingTrades?: PendingTradeInput[];
     /** Optional weekly DST streaming rankings (the full uploaded list). Absent → no stream items. */
     dstRankings?: DstRankInput[];
+    /** Optional weekly kicker rankings (scraped). Absent → no kicker stream items. */
+    kickerRankings?: KickerRankInput[];
     /**
      * NFL team abbrs (our convention) whose game this week has already kicked off
      * (state != 'pre'). Used to suppress weekly waiver upgrades for free agents
@@ -130,6 +143,7 @@ const KIND_LABEL: Record<ActionKind, string> = {
     waiver: 'Waiver adds',
     'waiver-upgrade': 'Weekly waiver upgrades',
     stream: 'Stream a defense',
+    'stream-k': 'Stream a kicker',
     sell: 'Sell-window',
 };
 
@@ -314,7 +328,7 @@ function waiverUpgradeItems(input: ActionCenterInput, limit: number): ActionItem
     });
 
     const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);
-    const poolLabel = (pool: 'qb' | 'flex' | null) => (pool === 'qb' ? 'QB' : pool === 'flex' ? 'Flex' : '');
+    const poolLabel = (pool: 'qb' | 'flex' | 'k' | null) => (pool === 'qb' ? 'QB' : pool === 'flex' ? 'Flex' : pool === 'k' ? 'K' : '');
     return upgrades.map((u: WaiverUpgrade) => {
         const add = u.add;
         const drop = u.drop;
@@ -446,6 +460,70 @@ function streamItems(input: ActionCenterInput): ActionItem[] {
     }];
 }
 
+/**
+ * Kicker streaming: for ANY league that STARTS a kicker (K/PK slot), recommend
+ * the best-ranked AVAILABLE kicker (per the scraped weekly rankings) when it
+ * beats my current starter's ranking. Mirrors streamItems (DEF) but: runs for
+ * all league types (you stream kickers in dynasty too), gates on the league
+ * having a kicker slot, and matches on position 'K'. Requires a known my-team.
+ */
+function streamKickerItems(input: ActionCenterInput): ActionItem[] {
+    const { league, myRosterId, kickerRankings } = input;
+    if (!kickerRankings || kickerRankings.length === 0) return [];
+    if (!myRosterId) return [];
+    const myTeam = league.teams.find(t => t.rosterId === myRosterId);
+    if (!myTeam) return [];
+
+    // Gate: only leagues that actually start a kicker (a slot eligible for 'K').
+    const slots = buildSlots(league.rosterPositions);
+    const startsKicker = slots.some(s => s.eligible.size === 1 && s.eligible.has('K'));
+    if (!startsKicker) return [];
+
+    const rankById = new Map<string, KickerRankInput>();
+    for (const k of kickerRankings) rankById.set(k.sleeper_id, k);
+
+    // Kickers rostered anywhere in the league = unavailable.
+    const rosteredK = new Set<string>();
+    for (const t of league.teams) {
+        for (const p of t.players) {
+            if ((p.position === 'K' || p.position === 'PK') && p.sleeper_id) rosteredK.add(p.sleeper_id);
+        }
+    }
+
+    const myK = myTeam.players.find(p => (p.position === 'K' || p.position === 'PK'));
+    const myRank = myK ? (rankById.get(myK.sleeper_id)?.rank ?? null) : null;
+
+    const bestAvailable = kickerRankings
+        .filter(k => k.rank != null && !rosteredK.has(k.sleeper_id))
+        .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))[0];
+    if (!bestAvailable) return [];
+
+    // Upgrade only: no kicker, unranked kicker, or ≥3 rank spots better.
+    const isUpgrade = myRank == null || (bestAvailable.rank != null && bestAvailable.rank <= myRank - 3);
+    if (!isUpgrade) return [];
+
+    const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);
+    const oppNote = bestAvailable.opponent ? `vs ${bestAvailable.opponent}` : '';
+    const scoreNote = bestAvailable.score != null ? `proj ${bestAvailable.score}` : '';
+    const rankNote = bestAvailable.rank != null ? `K rank #${bestAvailable.rank}` : '';
+    const detailBits = [oppNote, scoreNote, rankNote].filter(Boolean).join(' · ');
+    const headline = myK
+        ? `Stream ${bestAvailable.name ?? bestAvailable.sleeper_id} (K) · drop ${myK.full_name}`
+        : `Stream ${bestAvailable.name ?? bestAvailable.sleeper_id} (K)`;
+
+    return [{
+        id: `stream-k:${league.platform}:${league.leagueId}:${bestAvailable.sleeper_id}`,
+        kind: 'stream-k' as const,
+        headline,
+        detail: detailBits || undefined,
+        leagueName: league.name,
+        platform: league.platform,
+        leagueId: league.leagueId,
+        deepLink: link,
+        meta: { kickerId: bestAvailable.sleeper_id, rank: bestAvailable.rank, myRank },
+    }];
+}
+
 // ── Public entry ─────────────────────────────────────────────────────────────
 
 export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCenterOptions): ActionCenter {
@@ -458,11 +536,13 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
     const waiver: ActionItem[] = [];
     const waiverUpgrade: ActionItem[] = [];
     const stream: ActionItem[] = [];
+    const streamK: ActionItem[] = [];
 
     for (const input of inputs) {
         lineup.push(...lineupItems(input));
         trade.push(...tradeItems(input));
         stream.push(...streamItems(input));
+        streamK.push(...streamKickerItems(input));
         waiver.push(...waiverItems(input, waiverPerLeague));
         // Weekly waiver upgrades are an in-season concern.
         if (seasonMode === 'in-season') waiverUpgrade.push(...waiverUpgradeItems(input, waiverPerLeague));
@@ -478,7 +558,7 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
     const urgentEmpty = lineup.length + trade.length === 0;
 
     if (seasonMode === 'in-season') {
-        const byKind: Record<ActionKind, ActionItem[]> = { lineup, trade, waiver, 'waiver-upgrade': waiverUpgrade, stream, sell: [] };
+        const byKind: Record<ActionKind, ActionItem[]> = { lineup, trade, waiver, 'waiver-upgrade': waiverUpgrade, stream, 'stream-k': streamK, sell: [] };
         const byType: ActionTypeGroup[] = URGENT_KINDS
             .filter(k => byKind[k].length > 0)
             .map(k => ({ kind: k, label: KIND_LABEL[k], items: byKind[k] }));
@@ -500,6 +580,7 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
         const items: ActionItem[] = [
             ...waiverItems(input, waiverPerLeague),
             ...streamItems(input),
+            ...streamKickerItems(input),
             ...tradeItems(input),
         ].slice(0, perTeamLimit);
 
@@ -533,5 +614,6 @@ export function buildLeagueActions(input: ActionCenterInput, waiverPerLeague = 3
         ...waiverUpgradeItems(input, 15),
         ...waiverItems(input, waiverPerLeague),
         ...streamItems(input),
+        ...streamKickerItems(input),
     ];
 }

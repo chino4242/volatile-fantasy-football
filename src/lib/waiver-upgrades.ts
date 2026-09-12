@@ -63,9 +63,9 @@ export interface WaiverUpgrade {
     weeklyRankGain: number | null;
     /** The roster player the add is compared against on the weekly-rank axis. */
     comparedTo: PortfolioPlayer | null;
-    /** Which weekly-rank pool this comparison is in: QBs compare to QBs, and
-     *  RB/WR/TE compare within the shared flex pool. */
-    pool: 'qb' | 'flex' | null;
+    /** Which weekly-rank pool this comparison is in: QBs compare to QBs, RB/WR/TE
+     *  within the shared flex pool, and kickers to kickers. */
+    pool: 'qb' | 'flex' | 'k' | null;
     /** The add's weekly (pool) rank, lower = better. */
     addWeeklyRank: number | null;
     /** The compared-to roster player's weekly (pool) rank. */
@@ -119,15 +119,16 @@ function wr(p: { weeklyRank?: number | null }): number {
 
 /**
  * The weekly-rank POOL a position belongs to. Weekly rankings are uploaded as a
- * QB pool and a combined flex pool (RB/WR/TE ranked together), so weekly ranks
- * are only comparable WITHIN a pool. QB→QB, RB/WR/TE→flex. Others (K/DEF) have
- * no weekly-upgrade pool.
+ * QB pool, a combined flex pool (RB/WR/TE ranked together), and a kicker pool,
+ * so weekly ranks are only comparable WITHIN a pool. QB→QB, RB/WR/TE→flex,
+ * K/PK→k. Others (DEF) have no weekly-upgrade pool here (handled by streaming).
  */
-function poolOf(position: string | null | undefined): 'qb' | 'flex' | null {
+function poolOf(position: string | null | undefined): 'qb' | 'flex' | 'k' | null {
     if (!position) return null;
     const p = position.toUpperCase();
     if (p === 'QB') return 'qb';
     if (p === 'RB' || p === 'WR' || p === 'TE') return 'flex';
+    if (p === 'K' || p === 'PK') return 'k';
     return null;
 }
 

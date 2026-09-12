@@ -6,6 +6,7 @@ const ALIASES: Record<string, string> = {
     'robby anderson': 'robbie anderson',
     'kenny walker': 'kenneth walker',
     'kenny gainwell': 'kenneth gainwell',
+    'andres borregales': 'andy borregales',
 };
 
 export function cleanseName(name: string): string {

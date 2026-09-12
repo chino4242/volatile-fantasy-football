@@ -15,7 +15,7 @@ export interface WeeklyRankInfo {
     rank: number | null;
     total: number | null;
     posMatchup: number | null;
-    kind: 'flex' | 'qb' | 'dst' | null;
+    kind: 'flex' | 'qb' | 'dst' | 'k' | null;
 }
 
 /** A weekly DST streaming ranking row (one per defense in the uploaded list). */
@@ -56,9 +56,9 @@ function toNum(v: unknown): number | null {
 export async function getWeeklyRanks(
     sleeperIds: string[],
     week?: number,
-): Promise<{ week: number | null; byId: Map<string, { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo; dst?: WeeklyRankInfo }> }> {
+): Promise<{ week: number | null; byId: Map<string, { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo; dst?: WeeklyRankInfo; k?: WeeklyRankInfo }> }> {
     const wk = week ?? (await getLatestWeek());
-    const byId = new Map<string, { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo; dst?: WeeklyRankInfo }>();
+    const byId = new Map<string, { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo; dst?: WeeklyRankInfo; k?: WeeklyRankInfo }>();
     if (wk == null || sleeperIds.length === 0) return { week: wk, byId };
 
     const rows = await db
@@ -79,10 +79,11 @@ export async function getWeeklyRanks(
             rank: r.rank ?? null,
             total: toNum(r.total),
             posMatchup: r.pos_matchup ?? null,
-            kind: (r.kind as 'flex' | 'qb' | 'dst') ?? null,
+            kind: (r.kind as 'flex' | 'qb' | 'dst' | 'k') ?? null,
         };
         if (r.kind === 'qb') entry.qb = info;
         else if (r.kind === 'dst') entry.dst = info;
+        else if (r.kind === 'k') entry.k = info;
         else entry.flex = info;
         byId.set(r.sleeper_id, entry);
     }
@@ -133,12 +134,13 @@ export async function getWeeklyDstRankings(week?: number): Promise<{ week: numbe
  */
 export function rankForPosition(
     position: string | null,
-    entry: { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo; dst?: WeeklyRankInfo } | undefined,
+    entry: { flex?: WeeklyRankInfo; qb?: WeeklyRankInfo; dst?: WeeklyRankInfo; k?: WeeklyRankInfo } | undefined,
 ): WeeklyRankInfo {
     const empty: WeeklyRankInfo = { rank: null, total: null, posMatchup: null, kind: null };
     if (!entry) return empty;
     if (position === 'QB') return entry.qb ?? entry.flex ?? empty;
     if (position === 'DEF' || position === 'DST') return entry.dst ?? empty;
+    if (position === 'K' || position === 'PK') return entry.k ?? empty;
     return entry.flex ?? entry.qb ?? empty;
 }
 

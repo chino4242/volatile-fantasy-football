@@ -42,6 +42,11 @@ const GROUP_STYLE: Record<ActionKind, { icon: React.ReactNode; head: string; rin
         head: 'bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
         ring: 'ring-sky-900/5',
     },
+    'stream-k': {
+        icon: <Shield className="h-4 w-4" />,
+        head: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+        ring: 'ring-amber-900/5',
+    },
     sell: {
         icon: <ArrowRightLeft className="h-4 w-4" />,
         head: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',

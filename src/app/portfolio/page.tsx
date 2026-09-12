@@ -145,6 +145,17 @@ export default function PortfolioPage() {
             .catch(() => { /* ignore — best-effort */ });
         return () => { cancelled = true; };
     }, []);
+    // Weekly kicker rankings (scraped) → "Stream a kicker" for leagues with a K slot.
+    const [kickerRankings, setKickerRankings] = useState<{ sleeper_id: string; rank: number | null; score: number | null; opponent: string | null; name: string | null; team: string | null }[]>([]);
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/portfolio/kicker-rankings')
+            .then(r => r.ok ? r.json() : { list: [] })
+            // Only matched rows (real sleeper_id) are usable by the engine.
+            .then(json => { if (!cancelled) setKickerRankings((json.list || []).filter((k: any) => k.sleeper_id)); })
+            .catch(() => { /* ignore — best-effort */ });
+        return () => { cancelled = true; };
+    }, []);
     // NFL teams whose game this week has already kicked off — used to suppress
     // weekly waiver upgrades for free agents who can't help anymore this week.
     const [startedTeams, setStartedTeams] = useState<Set<string>>(new Set());
@@ -188,12 +199,13 @@ export default function PortfolioPage() {
                 myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
                 pendingTrades: pendingTrades[`${l.ref.platform}:${l.ref.leagueId}`],
                 dstRankings,
+                kickerRankings,
                 startedTeams,
                 myffpcLtuid: myffpcLtuids[l.ref.leagueId] ?? null,
             }));
         if (inputs.length === 0) return null;
         return buildActionCenter(inputs, { seasonMode });
-    }, [loaded, getMyTeam, seasonMode, pendingTrades, dstRankings, startedTeams, myffpcLtuids]);
+    }, [loaded, getMyTeam, seasonMode, pendingTrades, dstRankings, kickerRankings, startedTeams, myffpcLtuids]);
 
     // Current NFL week — from any loaded league that carries weekly rankings.
     const currentWeek = useMemo(() => {
@@ -231,12 +243,13 @@ export default function PortfolioPage() {
                 league: l.data,
                 myRosterId: getMyTeam(l.ref.platform, l.ref.leagueId),
                 dstRankings,
+                kickerRankings,
                 startedTeams,
                 myffpcLtuid: myffpcLtuids[l.ref.leagueId] ?? null,
             });
         }
         return map;
-    }, [loaded, getMyTeam, seasonMode, dstRankings, startedTeams, myffpcLtuids]);
+    }, [loaded, getMyTeam, seasonMode, dstRankings, kickerRankings, startedTeams, myffpcLtuids]);
 
     // Partition loaded leagues into tier bands (top/middle/lower) for the
     // dashboard. Leagues whose my-team is unknown go to `unassigned` (they show
@@ -524,6 +537,7 @@ function LeagueInsights({
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="text-zinc-800 dark:text-zinc-200 truncate">
                                         {a.kind === 'stream' && <span className="text-sky-500 mr-1">🛡️</span>}
+                                        {a.kind === 'stream-k' && <span className="text-amber-500 mr-1">🥅</span>}
                                         {a.headline}
                                         {a.detail && <span className="ml-1 text-xs font-semibold text-green-600 dark:text-green-400">{a.detail}</span>}
                                     </span>

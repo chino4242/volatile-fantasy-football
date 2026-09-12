@@ -6,6 +6,8 @@ import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { buildRosterConfig } from "@/lib/transaction-suggestions";
 import { optimizeTeam } from "@/lib/weekly-rankings";
 import { LineupOptimizerCard } from "@/components/LineupOptimizerCard";
+import { getTeamWaiverUpgrades } from "@/lib/team-waiver-upgrades";
+import { WaiverUpgradesCard } from "@/components/WaiverUpgradesCard";
 import TeamRosterView from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterView";
 import { TeamRosterComposition } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
@@ -68,6 +70,18 @@ export default async function DbTeamPage({ params }: PageProps) {
         data.rosterPositions,
     );
 
+    // Waiver-wire upgrades this week (available players who beat one of mine).
+    const rosteredInLeague = new Set<string>(
+        data.teams.flatMap(t => t.players.map(p => p.sleeper_id)),
+    );
+    const waiverUpgrades = await getTeamWaiverUpgrades(
+        myPlayers.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, fc_value: p.fc_value, is_starter: p.is_starter })),
+        data.freeAgents.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, fc_value: p.fc_value })),
+        data.rosterPositions,
+        platform === "yahoo" ? "redraft" : "dynasty",
+        { coreCapacity: rosterConfig?.coreCapacity, rosteredInLeague },
+    );
+
     const label = platform === "yahoo" ? "Yahoo" : "MyFFPC";
 
     return (
@@ -117,6 +131,10 @@ export default async function DbTeamPage({ params }: PageProps) {
 
                 <div className="mt-4">
                     <LineupOptimizerCard opt={lineupOpt} />
+                </div>
+
+                <div className="mt-4">
+                    <WaiverUpgradesCard upgrades={waiverUpgrades} />
                 </div>
 
                 <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
