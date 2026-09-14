@@ -26,23 +26,24 @@ interface ApiResult {
 const POSITIONS: PositionGroup[] = ['FLEX', 'RB', 'WR', 'TE', 'QB'];
 
 // Metric picker options, grouped by what makes sense. `opportunities` first.
-const METRICS: { key: Metric; label: string; kind: 'int' | 'rate' | 'pts' }[] = [
-    { key: 'opportunities', label: 'Opportunities (tgt+car)', kind: 'int' },
-    { key: 'targets', label: 'Targets', kind: 'int' },
-    { key: 'carries', label: 'Carries', kind: 'int' },
-    { key: 'receptions', label: 'Receptions', kind: 'int' },
-    { key: 'receiving_yards', label: 'Receiving yards', kind: 'int' },
-    { key: 'rushing_yards', label: 'Rushing yards', kind: 'int' },
-    { key: 'passing_yards', label: 'Passing yards', kind: 'int' },
-    { key: 'passing_attempts', label: 'Pass attempts', kind: 'int' },
-    { key: 'target_share', label: 'Target share', kind: 'rate' },
-    { key: 'air_yards_share', label: 'Air yards share', kind: 'rate' },
-    { key: 'wopr', label: 'WOPR', kind: 'rate' },
-    { key: 'fantasy_points_ppr', label: 'Fantasy pts (PPR)', kind: 'pts' },
+// `short` is the compact table-header label; `help` is a hover tooltip.
+const METRICS: { key: Metric; label: string; kind: 'int' | 'rate' | 'pts'; short?: string; help?: string }[] = [
+    { key: 'opportunities', label: 'Opportunities (tgt+car)', kind: 'int', short: 'Opp', help: 'Opportunities = targets + carries (+ pass attempts for QBs). Raw volume.' },
+    { key: 'targets', label: 'Targets', kind: 'int', short: 'Tgt' },
+    { key: 'carries', label: 'Carries', kind: 'int', short: 'Car' },
+    { key: 'receptions', label: 'Receptions', kind: 'int', short: 'Rec' },
+    { key: 'receiving_yards', label: 'Receiving yards', kind: 'int', short: 'Rec yd' },
+    { key: 'rushing_yards', label: 'Rushing yards', kind: 'int', short: 'Rush yd' },
+    { key: 'passing_yards', label: 'Passing yards', kind: 'int', short: 'Pass yd' },
+    { key: 'passing_attempts', label: 'Pass attempts', kind: 'int', short: 'Att' },
+    { key: 'target_share', label: 'Target share', kind: 'rate', short: 'Tgt%', help: 'Share of the team\u2019s targets that went to this player.' },
+    { key: 'air_yards_share', label: 'Air yards share', kind: 'rate', short: 'AY%', help: 'Share of the team\u2019s air yards (downfield target distance) owned by this player.' },
+    { key: 'wopr', label: 'WOPR', kind: 'rate', short: 'WOPR', help: 'Weighted Opportunity Rating = 1.5\u00d7target share + 0.7\u00d7air-yards share. Higher = bigger role in the passing game (\u22730.6 elite, \u22730.4 solid starter).' },
+    { key: 'fantasy_points_ppr', label: 'Fantasy pts (PPR)', kind: 'pts', short: 'PPR' },
 ];
 
 // Columns shown per position group (the active sort metric is highlighted).
-const COLUMNS_FLEX: Metric[] = ['opportunities', 'targets', 'carries', 'receptions', 'receiving_yards', 'rushing_yards', 'target_share', 'wopr', 'fantasy_points_ppr'];
+const COLUMNS_FLEX: Metric[] = ['opportunities', 'targets', 'carries', 'receptions', 'receiving_yards', 'rushing_yards', 'target_share', 'air_yards_share', 'wopr', 'fantasy_points_ppr'];
 const COLUMNS_QB: Metric[] = ['opportunities', 'passing_attempts', 'passing_yards', 'carries', 'rushing_yards', 'fantasy_points_ppr'];
 
 function fmt(v: number | null, kind: 'int' | 'rate' | 'pts'): string {
@@ -174,11 +175,15 @@ export default function StatsPage() {
                                     <th className="py-2.5 px-2 font-semibold">Player</th>
                                     <th className="py-2.5 px-2 font-semibold">Pos</th>
                                     {week === 'cumulative' && <th className="py-2.5 px-2 font-semibold text-right">G</th>}
-                                    {columns.map(c => (
-                                        <th key={c} className={`py-2.5 px-2 font-semibold text-right whitespace-nowrap ${c === metric ? 'text-indigo-600 dark:text-indigo-400' : ''}`}>
-                                            {metricMeta(c).label.replace(' (tgt+car)', '')}
-                                        </th>
-                                    ))}
+                                    {columns.map(c => {
+                                        const m = metricMeta(c);
+                                        return (
+                                            <th key={c} title={m.help ?? m.label}
+                                                className={`py-2.5 px-2 font-semibold text-right whitespace-nowrap ${m.help ? 'cursor-help' : ''} ${c === metric ? 'text-indigo-600 dark:text-indigo-400' : ''}`}>
+                                                {m.short ?? m.label}
+                                            </th>
+                                        );
+                                    })}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -209,7 +214,12 @@ export default function StatsPage() {
                 <p className="mt-4 text-[11px] text-zinc-400">
                     Scoped to fantasy-relevant players (those matched to the players DB). Rate stats
                     (shares, WOPR) are averaged across weeks in season-to-date mode; volume stats are summed.
-                    Snaps / routes / air-yards aren&apos;t available from the current data source.
+                    Snaps, routes run, and raw air-yard totals aren&apos;t available from the current data source
+                    (air-yards <em>share</em> is).
+                    <br />
+                    <span className="text-zinc-500">Tgt% </span>= target share ·
+                    <span className="text-zinc-500"> AY% </span>= air-yards share ·
+                    <span className="text-zinc-500"> WOPR </span>= Weighted Opportunity Rating (1.5×target share + 0.7×air-yards share) — a player&apos;s overall share of the passing game.
                 </p>
             </div>
         </div>
