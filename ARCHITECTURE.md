@@ -97,9 +97,11 @@
 | Script | Purpose | When to Run |
 |--------|---------|-------------|
 | `ingest-players.ts` | Seed players + playerValues from FantasyCalc | Weekly or on-demand |
-| `ingest-nfl-stats-py.py` | NFL stats via nfl_data_py | Weekly during season |
-| `ingest-nfl-stats.ts` | NFL stats (JS alternative) | Weekly during season |
-| `ingest-nfl-data.ts` | Additional NFL data | As needed |
+| `ingest-weekly-stats-year.py` | Per-week NFL stats via nflreadpy (safe upsert) | Weekly during season |
+| `ingest-advanced-stats.py` | Season-level advanced/NGS stats via nflreadpy | Weekly during season |
+| `refresh-data.sh` | One-shot: current-season stats + Yahoo/MyFFPC leagues | Weekly (manual/launchd) |
+| `repair-gsis-mapping.py` | Re-map players.gsis_id via sleeper_id (collision-proof) | On demand / after adding players |
+| `audit-gsis-mapping.py` | Report gsis→name mismatches vs authoritative roster | On demand |
 | `ingest-prospects.py` | Parse Late Round PDF → prospectData | Per new PDF release |
 | `ingest-writeups.ts` | Ingest prospect writeups | Per new source |
 | `ingest-sleeper-stats.py` | Sleeper-specific stats | Weekly during season |

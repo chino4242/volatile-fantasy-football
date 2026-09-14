@@ -20,17 +20,27 @@
     <key>Label</key>
     <string>com.volatile.refresh-data</string>
 
-    <!-- Run the wrapper via zsh so PATH/venv detection works. -->
+    <!-- Run the wrapper via zsh. We cd into the repo explicitly (an absolute
+         path) rather than relying on WorkingDirectory + a login shell, which
+         can hit getcwd/permission issues under launchd. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>-lc</string>
-        <string>./scripts/refresh-data.sh &gt;&gt; scripts/launchd/refresh.log 2&gt;&amp;1</string>
+        <string>-c</string>
+        <string>cd /Users/ryancontino/Documents/projects/volatile-fantasy-football &amp;&amp; ./scripts/refresh-data.sh &gt;&gt; scripts/launchd/refresh.log 2&gt;&amp;1</string>
     </array>
 
     <!-- CHANGE THIS to your absolute repo path. -->
     <key>WorkingDirectory</key>
     <string>/Users/ryancontino/Documents/projects/volatile-fantasy-football</string>
+
+    <!-- launchd starts with a minimal PATH; add Homebrew + local bins so node,
+         npm, and python3 resolve. Adjust if your tools live elsewhere. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
 
     <!-- Tuesday (Weekday 2) at 06:00. If the Mac is asleep at 06:00, launchd
          runs the job as soon as it next wakes. -->
