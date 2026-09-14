@@ -53,3 +53,7 @@ scripts/.yahoo-profile/
 
 # MyFFPC debug screenshot (may contain league data)
 scripts/.myffpc-debug.png
+
+
+# launchd scheduled-refresh logs (local only)
+scripts/launchd/refresh*.log

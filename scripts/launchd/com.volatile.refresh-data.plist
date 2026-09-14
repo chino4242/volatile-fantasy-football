@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd agent: run the unattended data refresh weekly.
+
+  Schedule: every Tuesday at 06:00 local time (Sunday + Monday games are final
+  and nflreadpy has published the week). launchd will run the job at the next
+  wake if the Mac was asleep at the scheduled time.
+
+  INSTALL (see scripts/launchd/README.md for details):
+    1. Edit WorkingDirectory + the script path below to your absolute repo path.
+    2. cp scripts/launchd/com.volatile.refresh-data.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.volatile.refresh-data.plist
+    4. (test now)  launchctl start com.volatile.refresh-data
+
+  UNINSTALL:
+    launchctl unload ~/Library/LaunchAgents/com.volatile.refresh-data.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.volatile.refresh-data</string>
+
+    <!-- Run the wrapper via zsh so PATH/venv detection works. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>./scripts/refresh-data.sh &gt;&gt; scripts/launchd/refresh.log 2&gt;&amp;1</string>
+    </array>
+
+    <!-- CHANGE THIS to your absolute repo path. -->
+    <key>WorkingDirectory</key>
+    <string>/Users/ryancontino/Documents/projects/volatile-fantasy-football</string>
+
+    <!-- Tuesday (Weekday 2) at 06:00. If the Mac is asleep at 06:00, launchd
+         runs the job as soon as it next wakes. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>2</integer>
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ryancontino/Documents/projects/volatile-fantasy-football/scripts/launchd/refresh.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ryancontino/Documents/projects/volatile-fantasy-football/scripts/launchd/refresh.err.log</string>
+</dict>
+</plist>

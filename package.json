@@ -11,6 +11,8 @@
     "test:e2e": "playwright test",
     "test:all": "npm run test -- --run && npm run test:e2e",
     "ingest:nfl": "python scripts/ingest-nfl-stats-py.py",
+    "ingest:2026": "python3 scripts/ingest-weekly-stats-year.py 2026 && python3 scripts/ingest-advanced-stats.py 2026",
+    "refresh:data": "./scripts/refresh-data.sh",
     "yahoo:login": "tsx scripts/yahoo-login.ts",
     "yahoo:refresh": "tsx scripts/yahoo-refresh.ts",
     "yahoo:sync": "tsx scripts/sync-yahoo.ts",
