@@ -287,6 +287,10 @@ export default function Home() {
                   className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-zinc-900 shadow-sm ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 dark:bg-white/10 dark:text-white dark:ring-0 dark:hover:bg-white/20">
                   Player Ranks
                 </Link>
+                <Link href="/dfs"
+                  className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-zinc-900 shadow-sm ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 dark:bg-white/10 dark:text-white dark:ring-0 dark:hover:bg-white/20">
+                  🏈 DK Optimizer
+                </Link>
                 {showFor('off-season') && (
                   <Link href="/mock-draft"
                     className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
