@@ -139,20 +139,39 @@ export default function GameDayPage() {
                     </div>
                 )}
 
-                {!loading && guide && (
-                    <div className="space-y-6">
-                        {groupBySlot(guide.games).map(section => (
-                            <div key={section.slot}>
-                                <h2 className="sticky top-0 z-10 bg-zinc-50/90 dark:bg-zinc-950/90 backdrop-blur text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-2 py-1">{section.slot}</h2>
-                                <div className="space-y-3 sm:space-y-4">
-                                    {section.games.map(game => (
-                                        <GameCard key={game.gameKey} game={game} bumpedIds={bumpedIds} />
+                {!loading && guide && (() => {
+                    // Split finished (Final) games out so they don't clog the top of
+                    // the board — collapsed away at the bottom by default.
+                    const isFinished = (g: RootingGame) => g.live?.state === 'post';
+                    const activeGames = guide.games.filter(g => !isFinished(g));
+                    const finishedGames = guide.games.filter(isFinished);
+                    return (
+                        <>
+                            {activeGames.length > 0 && (
+                                <div className="space-y-6">
+                                    {groupBySlot(activeGames).map(section => (
+                                        <div key={section.slot}>
+                                            <h2 className="sticky top-0 z-10 bg-zinc-50/90 dark:bg-zinc-950/90 backdrop-blur text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-2 py-1">{section.slot}</h2>
+                                            <div className="space-y-3 sm:space-y-4">
+                                                {section.games.map(game => (
+                                                    <GameCard key={game.gameKey} game={game} bumpedIds={bumpedIds} />
+                                                ))}
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                            )}
+
+                            {activeGames.length === 0 && finishedGames.length > 0 && (
+                                <div className="text-sm text-zinc-500 mb-4">All of this week&apos;s games are final — see below.</div>
+                            )}
+
+                            {finishedGames.length > 0 && (
+                                <FinishedGames games={finishedGames} bumpedIds={bumpedIds} />
+                            )}
+                        </>
+                    );
+                })()}
 
                 {!loading && guide && guide.unresolvedLeagues.length > 0 && (
                     <div className="mt-4 text-xs text-zinc-400">
@@ -175,6 +194,42 @@ function groupBySlot(games: RootingGame[]): { slot: string; games: RootingGame[]
         sections[i].games.push(g);
     }
     return sections;
+}
+
+/**
+ * Finished (Final) games, tucked into a collapsed section at the bottom so the
+ * board stays focused on games still to come / in progress. Collapsed by
+ * default; tap the header to reveal, with slot grouping preserved inside.
+ */
+function FinishedGames({ games, bumpedIds }: { games: RootingGame[]; bumpedIds: Set<string> }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <div className="mt-8 border-t border-zinc-200 dark:border-zinc-800 pt-4">
+            <button
+                type="button"
+                onClick={() => setOpen(v => !v)}
+                className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                aria-expanded={open}
+            >
+                {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                Final ({games.length})
+            </button>
+            {open && (
+                <div className="space-y-6 mt-3 opacity-90">
+                    {groupBySlot(games).map(section => (
+                        <div key={section.slot}>
+                            <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-2 py-1">{section.slot}</h2>
+                            <div className="space-y-3 sm:space-y-4">
+                                {section.games.map(game => (
+                                    <GameCard key={game.gameKey} game={game} bumpedIds={bumpedIds} />
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 }
 
 // '13:00' → '1:00 PM ET' (ET times from the schedule).
