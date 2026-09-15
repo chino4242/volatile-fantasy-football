@@ -65,6 +65,8 @@ export interface OpportunityQuery {
     week: number | 'cumulative';
     position: StatsPositionGroup;
     metric: StatsMetric;
+    /** NFL team abbreviation to filter to (player's current team), or null for all. */
+    team?: string | null;
     limit?: number;
 }
 
@@ -75,6 +77,7 @@ export interface OpportunityResult {
     availableWeeks: number[];
     position: StatsPositionGroup;
     metric: StatsMetric;
+    team: string | null;
     rows: OpportunityRow[];
 }
 
@@ -102,6 +105,21 @@ export async function getLatestStatSeason(): Promise<number | null> {
     const rows = (res as unknown as { rows?: { season: number | null }[] }).rows ?? (res as unknown as { season: number | null }[]);
     const s = rows[0]?.season;
     return s == null ? null : Number(s);
+}
+
+/**
+ * NFL team abbreviations that have at least one fantasy-relevant player with
+ * stats this season (for the team dropdown). Sorted alphabetically.
+ */
+export async function getAvailableTeams(season: number): Promise<string[]> {
+    const res = await db.execute(sql`
+        SELECT DISTINCT p.team AS team
+        FROM weekly_player_stats w
+        JOIN players p ON p.gsis_id = w.gsis_id
+        WHERE w.season = ${season} AND p.team IS NOT NULL AND p.team <> ''
+        ORDER BY p.team ASC`);
+    const rows = (res as unknown as { rows?: { team: string | null }[] }).rows ?? (res as unknown as { team: string | null }[]);
+    return rows.map(r => r.team).filter((t): t is string => !!t);
 }
 
 /** SQL expression that maps a metric name to its aggregate expression. */
@@ -137,6 +155,10 @@ export async function getOpportunityLeaderboard(q: OpportunityQuery): Promise<Op
         ? sql`w.season = ${q.season}`
         : sql`w.season = ${q.season} AND w.week = ${q.week}`;
 
+    // Optional team filter (player's current team).
+    const team = q.team && q.team.trim() ? q.team.trim().toUpperCase() : null;
+    const teamFilter = team ? sql` AND UPPER(p.team) = ${team}` : sql``;
+
     const orderExpr = metricOrderExpr(q.metric);
 
     // Volume stats (targets/carries/receptions/yards/attempts/ppr) are SUMMED
@@ -167,7 +189,7 @@ export async function getOpportunityLeaderboard(q: OpportunityQuery): Promise<Op
         FROM weekly_player_stats w
         JOIN players p ON p.gsis_id = w.gsis_id
         WHERE ${weekFilter}
-          AND p.position IN (${sql.join(positions.map(pos => sql`${pos}`), sql`, `)})
+          AND p.position IN (${sql.join(positions.map(pos => sql`${pos}`), sql`, `)})${teamFilter}
         GROUP BY w.gsis_id, p.full_name, p.position, p.team
         ORDER BY ${orderExpr} DESC NULLS LAST
         LIMIT ${limit}`);
@@ -203,6 +225,7 @@ export async function getOpportunityLeaderboard(q: OpportunityQuery): Promise<Op
         availableWeeks,
         position: q.position,
         metric: q.metric,
+        team,
         rows,
     };
 }

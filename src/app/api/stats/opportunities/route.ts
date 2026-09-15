@@ -3,6 +3,7 @@ import {
     getOpportunityLeaderboard,
     getLatestStatSeason,
     getAvailableStatWeeks,
+    getAvailableTeams,
     type StatsPositionGroup,
     type StatsMetric,
 } from "@/lib/stats-queries";
@@ -23,6 +24,7 @@ const METRICS: StatsMetric[] = [
  *   week?    number | 'cumulative'   (default: latest available week)
  *   position? FLEX|RB|WR|TE|QB       (default: FLEX)
  *   metric?  <one of METRICS>        (default: opportunities)
+ *   team?    <NFL abbr>              (default: all teams)
  *   limit?   number                  (default: 100)
  *
  * League-agnostic, NFL-wide opportunity/production leaderboard.
@@ -53,10 +55,16 @@ export async function GET(request: NextRequest) {
         const metricParam = (sp.get("metric") || "opportunities") as StatsMetric;
         const metric = METRICS.includes(metricParam) ? metricParam : "opportunities";
 
+        const teamParam = sp.get("team");
+        const team = teamParam && teamParam.toUpperCase() !== "ALL" ? teamParam : null;
+
         const limit = sp.get("limit") ? Number(sp.get("limit")) : 100;
 
-        const result = await getOpportunityLeaderboard({ season, week, position, metric, limit });
-        return NextResponse.json(result);
+        const [result, availableTeams] = await Promise.all([
+            getOpportunityLeaderboard({ season, week, position, metric, team, limit }),
+            getAvailableTeams(season),
+        ]);
+        return NextResponse.json({ ...result, availableTeams });
     } catch (err) {
         console.error("[stats/opportunities] error", err);
         return NextResponse.json({ error: "Failed to load opportunity leaderboard" }, { status: 500 });

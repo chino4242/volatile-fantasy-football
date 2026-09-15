@@ -20,7 +20,8 @@ interface Row {
 }
 interface ApiResult {
     season: number; week: number | 'cumulative'; availableWeeks: number[];
-    position: PositionGroup; metric: Metric; rows: Row[]; error?: string;
+    position: PositionGroup; metric: Metric; team: string | null;
+    availableTeams: string[]; rows: Row[]; error?: string;
 }
 
 const POSITIONS: PositionGroup[] = ['FLEX', 'RB', 'WR', 'TE', 'QB'];
@@ -58,20 +59,24 @@ export default function StatsPage() {
     const [week, setWeek] = useState<number | 'cumulative'>('cumulative');
     const [position, setPosition] = useState<PositionGroup>('FLEX');
     const [metric, setMetric] = useState<Metric>('opportunities');
+    const [team, setTeam] = useState<string>('ALL');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<ApiResult | null>(null);
+    // Team list is captured on first load and kept stable regardless of filters.
+    const [teams, setTeams] = useState<string[]>([]);
     // Track whether we've defaulted the week to the latest single week yet.
     const [initialized, setInitialized] = useState(false);
 
-    const load = useCallback(async (w: number | 'cumulative', pos: PositionGroup, m: Metric) => {
+    const load = useCallback(async (w: number | 'cumulative', pos: PositionGroup, m: Metric, tm: string) => {
         setLoading(true); setError(null);
         try {
-            const params = new URLSearchParams({ week: String(w), position: pos, metric: m, limit: '100' });
+            const params = new URLSearchParams({ week: String(w), position: pos, metric: m, team: tm, limit: '100' });
             const res = await fetch(`/api/stats/opportunities?${params}`);
             const json: ApiResult = await res.json();
             if (!res.ok) throw new Error(json.error || `Failed (HTTP ${res.status})`);
             setData(json);
+            if (json.availableTeams?.length) setTeams(json.availableTeams);
             return json;
         } catch (e: unknown) {
             setError(e instanceof Error ? e.message : 'Failed to load stats');
@@ -86,11 +91,11 @@ export default function StatsPage() {
     // the view to the latest single week (most useful "what happened this week").
     useEffect(() => {
         (async () => {
-            const json = await load('cumulative', 'FLEX', 'opportunities');
+            const json = await load('cumulative', 'FLEX', 'opportunities', 'ALL');
             if (json && json.availableWeeks.length > 0) {
                 const latest = json.availableWeeks[json.availableWeeks.length - 1];
                 setWeek(latest);
-                await load(latest, 'FLEX', 'opportunities');
+                await load(latest, 'FLEX', 'opportunities', 'ALL');
             }
             setInitialized(true);
         })();
@@ -100,9 +105,9 @@ export default function StatsPage() {
     // Refetch on control changes (after the initial default is set).
     useEffect(() => {
         if (!initialized) return;
-        load(week, position, metric);
+        load(week, position, metric, team);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [week, position, metric]);
+    }, [week, position, metric, team]);
 
     const columns = position === 'QB' ? COLUMNS_QB : COLUMNS_FLEX;
     const availableWeeks = data?.availableWeeks ?? [];
@@ -139,6 +144,14 @@ export default function StatsPage() {
                             <select value={position} onChange={e => setPosition(e.target.value as PositionGroup)}
                                 className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-sm text-zinc-800 dark:text-zinc-200">
                                 {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                        </label>
+                        <label className="flex flex-col gap-1 text-xs text-zinc-500">
+                            Team
+                            <select value={team} onChange={e => setTeam(e.target.value)}
+                                className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1.5 text-sm text-zinc-800 dark:text-zinc-200">
+                                <option value="ALL">All teams</option>
+                                {teams.map(t => <option key={t} value={t}>{t}</option>)}
                             </select>
                         </label>
                         <label className="flex flex-col gap-1 text-xs text-zinc-500">
