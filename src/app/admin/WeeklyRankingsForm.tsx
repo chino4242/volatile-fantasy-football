@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+
+interface WeekSummary { week: number; kinds: Record<string, number>; total: number }
 
 /**
  * Admin form: upload a weekly QB or Flex ranking CSV for a specific week.
@@ -13,6 +15,20 @@ export function WeeklyRankingsForm() {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+
+    // Existing uploads (for the manage/delete section).
+    const [weeks, setWeeks] = useState<WeekSummary[]>([]);
+    const [deleting, setDeleting] = useState<string | null>(null);
+
+    const loadWeeks = useCallback(async () => {
+        try {
+            const res = await fetch('/api/admin/upload-weekly');
+            const data = await res.json();
+            if (res.ok) setWeeks(data.weeks || []);
+        } catch { /* non-fatal */ }
+    }, []);
+
+    useEffect(() => { loadWeeks(); }, [loadWeeks]);
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -30,10 +46,31 @@ export function WeeklyRankingsForm() {
             setFile(null);
             const el = document.getElementById('weekly-file') as HTMLInputElement;
             if (el) el.value = '';
+            loadWeeks();
         } catch (err: any) {
             setError(err.message || 'Upload error');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const del = async (w: number, k?: string) => {
+        const label = k ? `Week ${w} ${k.toUpperCase()}` : `ALL of Week ${w}`;
+        if (!window.confirm(`Delete ${label} rankings? This can't be undone.`)) return;
+        const tag = `${w}:${k ?? 'all'}`;
+        setDeleting(tag); setMessage(''); setError('');
+        try {
+            const qs = new URLSearchParams({ week: String(w) });
+            if (k) qs.set('kind', k);
+            const res = await fetch(`/api/admin/upload-weekly?${qs}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Delete failed');
+            setMessage(`Deleted ${label}: ${data.deleted} row${data.deleted === 1 ? '' : 's'} removed.`);
+            loadWeeks();
+        } catch (err: any) {
+            setError(err.message || 'Delete error');
+        } finally {
+            setDeleting(null);
         }
     };
 
@@ -73,6 +110,50 @@ export function WeeklyRankingsForm() {
             </form>
             {message && <pre className="mt-4 text-sm text-green-400 whitespace-pre-wrap">{message}</pre>}
             {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
+
+            {/* Manage / delete existing uploads */}
+            <div className="mt-6 pt-5 border-t border-white/10">
+                <h3 className="text-sm font-semibold text-white mb-1">Uploaded weeks</h3>
+                <p className="text-xs text-zinc-500 mb-3">
+                    Delete a mistaken upload (e.g. rankings tagged with the wrong week). Removes the rows for that week.
+                </p>
+                {weeks.length === 0 ? (
+                    <p className="text-sm text-zinc-500">No weekly rankings uploaded yet.</p>
+                ) : (
+                    <ul className="space-y-2">
+                        {weeks.map(w => (
+                            <li key={w.week} className="flex items-center justify-between gap-3 bg-zinc-800/40 rounded-lg px-3 py-2 flex-wrap">
+                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                    <span className="text-white font-medium text-sm">Week {w.week}</span>
+                                    <span className="text-xs text-zinc-400">{w.total} rows</span>
+                                    <span className="flex items-center gap-1.5 flex-wrap">
+                                        {Object.entries(w.kinds).sort().map(([k, n]) => (
+                                            <button
+                                                key={k}
+                                                type="button"
+                                                onClick={() => del(w.week, k)}
+                                                disabled={deleting != null}
+                                                title={`Delete Week ${w.week} ${k.toUpperCase()} (${n} rows)`}
+                                                className="text-[11px] px-1.5 py-0.5 rounded bg-zinc-700/60 text-zinc-300 hover:bg-red-600 hover:text-white disabled:opacity-50 transition-colors"
+                                            >
+                                                {k} {n} ✕
+                                            </button>
+                                        ))}
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => del(w.week)}
+                                    disabled={deleting != null}
+                                    className="text-xs px-3 py-1.5 rounded-lg bg-red-600/90 text-white font-medium hover:bg-red-500 disabled:opacity-50"
+                                >
+                                    {deleting === `${w.week}:all` ? 'Deleting…' : `Delete week ${w.week}`}
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
         </div>
     );
 }

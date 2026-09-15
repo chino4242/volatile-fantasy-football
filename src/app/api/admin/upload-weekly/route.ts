@@ -64,6 +64,79 @@ function resolveDefenseId(name: string, defByAbbr: Map<string, string>): string 
     return null;
 }
 
+/**
+ * GET /api/admin/upload-weekly
+ * Returns the weeks/kinds currently in weekly_rankings with row counts, so the
+ * admin UI can show what's uploaded and offer targeted deletes.
+ */
+export async function GET() {
+    try {
+        const rows = await db
+            .select({ week: weeklyRankings.week, kind: weeklyRankings.kind })
+            .from(weeklyRankings);
+        // Aggregate week → kind → count in JS (simple + avoids raw SQL here).
+        const byWeek = new Map<number, Record<string, number>>();
+        for (const r of rows) {
+            const w = byWeek.get(r.week) ?? {};
+            w[r.kind] = (w[r.kind] ?? 0) + 1;
+            byWeek.set(r.week, w);
+        }
+        const weeks = [...byWeek.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([week, kinds]) => ({
+                week,
+                kinds,
+                total: Object.values(kinds).reduce((s, n) => s + n, 0),
+            }));
+        return NextResponse.json({ weeks });
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Internal server error';
+        console.error('[upload-weekly GET] error', error);
+        return NextResponse.json({ error: msg }, { status: 500 });
+    }
+}
+
+/**
+ * DELETE /api/admin/upload-weekly?week=<n>[&kind=flex|qb|dst|k]
+ * Deletes weekly_rankings rows for a week — all kinds, or a single kind.
+ * Used to clean up a mistaken upload (e.g. rankings tagged with the wrong week).
+ */
+export async function DELETE(request: Request) {
+    try {
+        const url = new URL(request.url);
+        const week = toInt(url.searchParams.get('week'));
+        const kind = url.searchParams.get('kind');
+
+        if (week == null || week < 1 || week > 25) {
+            return NextResponse.json({ error: 'week must be 1-25' }, { status: 400 });
+        }
+        if (kind != null && !['flex', 'qb', 'dst', 'k'].includes(kind)) {
+            return NextResponse.json({ error: "kind must be 'flex', 'qb', 'dst', or 'k'" }, { status: 400 });
+        }
+
+        // Count first so we can report exactly what was removed.
+        const existing = await db
+            .select({ kind: weeklyRankings.kind })
+            .from(weeklyRankings)
+            .where(kind ? and(eq(weeklyRankings.week, week), eq(weeklyRankings.kind, kind)) : eq(weeklyRankings.week, week));
+        const deleted = existing.length;
+
+        if (deleted === 0) {
+            return NextResponse.json({ success: true, week, kind: kind ?? 'all', deleted: 0, note: 'Nothing to delete.' });
+        }
+
+        await db
+            .delete(weeklyRankings)
+            .where(kind ? and(eq(weeklyRankings.week, week), eq(weeklyRankings.kind, kind)) : eq(weeklyRankings.week, week));
+
+        return NextResponse.json({ success: true, week, kind: kind ?? 'all', deleted });
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Internal server error';
+        console.error('[upload-weekly DELETE] error', error);
+        return NextResponse.json({ error: msg }, { status: 500 });
+    }
+}
+
 export async function POST(request: Request) {
     try {
         const formData = await request.formData();
