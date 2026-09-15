@@ -18,14 +18,26 @@ function parseCSVLine(line: string): string[] {
     return fields;
 }
 
+/**
+ * Split a line into fields, tolerant of the delimiter the source actually uses:
+ * comma (real CSV), tab, or runs of 2+ spaces (tabular text pasted/exported with
+ * spaces). Player names contain single spaces, so we only treat 2+ spaces as a
+ * column break — never a single space. Comma wins when present (respects quotes).
+ */
+function splitDelimited(line: string): string[] {
+    if (line.includes(',')) return parseCSVLine(line);
+    if (line.includes('\t')) return line.split('\t').map(s => s.trim());
+    return line.split(/\s{2,}/).map(s => s.trim());
+}
+
 function parseCSV(text: string): Record<string, any>[] {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (lines.length < 2) return [];
     // Strip BOM if present
     const headerLine = lines[0].replace(/^\uFEFF/, '');
-    const headers = parseCSVLine(headerLine);
+    const headers = splitDelimited(headerLine);
     return lines.slice(1).map(line => {
-        const values = parseCSVLine(line);
+        const values = splitDelimited(line);
         const row: Record<string, any> = {};
         headers.forEach((h, i) => { row[h] = values[i] ?? null; });
         return row;

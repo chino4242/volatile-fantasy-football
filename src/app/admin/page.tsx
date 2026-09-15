@@ -119,9 +119,10 @@ export default function AdminPage() {
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
                 <h2 className="text-xl font-semibold mb-4 text-white hover:text-blue-400 transition-colors">Upload Custom Rankings</h2>
                 <p className="text-sm text-zinc-400 mb-6">
-                    Upload a CSV or Excel (.xlsx) file containing your rankings.
-                    CSV files should have columns: "Player", "Overall", "Pos Rank" (or "Positional Rank"), and "Tier".
-                    Redraft files can also include an "Auction" column for auction values.
+                    Upload a CSV or Excel (.xlsx) file containing your rankings, or paste tab/space-separated
+                    columns saved as a .csv — the parser accepts comma, tab, or multi-space delimiters.
+                    Columns: &quot;Player&quot;, &quot;Overall&quot;, &quot;Pos Rank&quot; (or &quot;Positional Rank&quot;), and &quot;Tier&quot;.
+                    Redraft files can also include an &quot;Auction&quot; column. Extra columns (Team, PPG, Bye, etc.) are ignored.
                 </p>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
