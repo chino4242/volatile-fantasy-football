@@ -317,14 +317,27 @@ function waiverUpgradeItems(input: ActionCenterInput, limit: number): ActionItem
     const config = buildRosterConfig(league.rosterPositions);
     if (!config) return [];
 
-    // TODO(ros): when rest-of-season rankings ship, inject longTermValueOf for
-    // redraft leagues here (dynasty/keeper keep marketValue). For now marketValue
-    // is the stand-in long-term lens across all league types.
+    // For redraft (in-season) leagues, judge drop candidates by rest-of-season
+    // value instead of dynasty market value. We standardize on a 0..1000 scale
+    // derived from the ROS OVERALL rank (lower rank → higher value), so the
+    // block/caution thresholds below are meaningful. PPG breaks ties among the
+    // unranked (scaled into the low end). Dynasty/keeper keep the default lens.
+    const ROS_MAX = 1000;
+    const rosLongTermValue = (p: PortfolioPlayer): number | null => {
+        if (p.rosRank != null) return ROS_MAX - p.rosRank;      // rank 1 → 999, rank 150 → 850
+        if (p.rosPpg != null) return Math.min(p.rosPpg * 10, 300); // unranked: PPG proxy, capped low
+        return null;                                             // truly unknown → treated as safe to drop
+    };
+    // Thresholds on the inverted-rank scale: a top-~40 ROS player is a block,
+    // a top-~150 ROS player warrants caution before dropping.
     const upgrades = findWaiverUpgrades(team, league.freeAgents, league.rosterPositions, league.leagueType, {
         coreCapacity: config.coreCapacity,
         actualCoreCount: team.players.filter(p => p.position !== 'PICK').length,
         maxSuggestions: limit,
         startedTeams: input.startedTeams,
+        ...(league.leagueType === 'redraft'
+            ? { longTermValueOf: rosLongTermValue, blockAtValue: ROS_MAX - 40, cautionAtValue: ROS_MAX - 150 }
+            : {}),
     });
 
     const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);

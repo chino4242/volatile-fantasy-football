@@ -158,6 +158,11 @@ export async function POST(request: Request) {
             const positionalRankStr = getCol(row, 'Positional Rank', 'Pos Rank', 'Position Rank');
             const tierStr = getCol(row, 'Tier');
             const auctionStr = getCol(row, 'Auction (Out of $200)', 'Auction Value', 'Auction');
+            // ROS-only detail columns.
+            const ppgStr = getCol(row, 'PPG', 'Points Per Game');
+            const rosSosStr = getCol(row, 'ROS');           // rest-of-season SOS rank
+            const next4Str = getCol(row, 'Next 4', 'Next4'); // next-4-weeks SOS rank
+            const byeStr = getCol(row, 'Bye', 'Bye Week');
 
             if (!playerName || overallStr === undefined || overallStr === null) continue;
 
@@ -210,6 +215,16 @@ export async function POST(request: Request) {
                 updateData.rank_ros_tier = tier;
                 updateData.rank_ros_updated_at = now;
                 if (posRank !== null) updateData.rank_ros_pos = posRank;
+                // ROS detail: PPG (numeric string), SOS ranks + bye (ints). Only set
+                // when present/valid so a sparse row doesn't clobber prior values.
+                const ppg = ppgStr != null && String(ppgStr).trim() !== '' ? parseFloat(String(ppgStr).replace(/[^0-9.\-]/g, '')) : NaN;
+                if (Number.isFinite(ppg)) updateData.rank_ros_ppg = String(ppg);
+                const rosSos = rosSosStr != null ? parseInt(String(rosSosStr).match(/\d+/)?.[0] ?? '', 10) : NaN;
+                if (Number.isFinite(rosSos)) updateData.ros_sos = rosSos;
+                const next4 = next4Str != null ? parseInt(String(next4Str).match(/\d+/)?.[0] ?? '', 10) : NaN;
+                if (Number.isFinite(next4)) updateData.ros_next4_sos = next4;
+                const bye = byeStr != null ? parseInt(String(byeStr).match(/\d+/)?.[0] ?? '', 10) : NaN;
+                if (Number.isFinite(bye)) updateData.bye_week = bye;
             }
 
             updatePromises.push(

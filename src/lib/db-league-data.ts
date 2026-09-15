@@ -47,6 +47,12 @@ export interface DbLeaguePlayer {
     redraft_rank_pos: number | null;
     redraft_rank_tier: number | null;
     redraft_auction_value: number | null;
+    rank_ros_overall: number | null;
+    rank_ros_pos: number | null;
+    rank_ros_ppg: number | null;
+    ros_sos: number | null;
+    ros_next4_sos: number | null;
+    bye_week: number | null;
     zap_score: number | null;
     zap_category: string | null;
     zap_analysis: string | null;
@@ -129,6 +135,12 @@ export async function getDbLeagueData(platform: DbPlatform, leagueId: string): P
             redraft_rank_pos: playerValues.redraft_rank_pos,
             redraft_rank_tier: playerValues.redraft_rank_tier,
             redraft_auction_value: playerValues.redraft_auction_value,
+            rank_ros_overall: playerValues.rank_ros_overall,
+            rank_ros_pos: playerValues.rank_ros_pos,
+            rank_ros_ppg: playerValues.rank_ros_ppg,
+            ros_sos: playerValues.ros_sos,
+            ros_next4_sos: playerValues.ros_next4_sos,
+            bye_week: playerValues.bye_week,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -178,6 +190,12 @@ export async function getDbLeagueData(platform: DbPlatform, leagueId: string): P
             redraft_rank_pos: num(p.redraft_rank_pos),
             redraft_rank_tier: num(p.redraft_rank_tier),
             redraft_auction_value: num(p.redraft_auction_value),
+            rank_ros_overall: num(p.rank_ros_overall),
+            rank_ros_pos: num(p.rank_ros_pos),
+            rank_ros_ppg: num(p.rank_ros_ppg),
+            ros_sos: num(p.ros_sos),
+            ros_next4_sos: num(p.ros_next4_sos),
+            bye_week: num(p.bye_week),
             zap_score: zap?.zap_score ? parseFloat(String(zap.zap_score)) : null,
             zap_category: zap?.zap_category || null,
             zap_analysis: zap?.analysis_text || null,

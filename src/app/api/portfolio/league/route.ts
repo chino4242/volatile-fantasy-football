@@ -165,18 +165,31 @@ async function buildDb(
     // The adapter resolves format from leagues.scoring_format; trust it but keep
     // the caller's format for the contract (they should match).
     const sf = data.format === "sf";
-    const map = (p: (typeof data.teams)[number]["players"][number]): PortfolioPlayer => ({
-        sleeper_id: p.sleeper_id,
-        full_name: p.full_name,
-        position: p.position,
-        team: p.team,
-        age: p.age,
-        myRank: leagueType === "redraft" ? p.redraft_rank_overall : (sf ? p.rank_sf_overall : p.rank_1qb_overall),
-        myPosRank: leagueType === "redraft" ? p.redraft_rank_pos : (sf ? p.rank_sf_pos : p.rank_1qb_pos),
-        marketRank: sf ? p.fc_rank_sf : p.fc_rank_1qb,
-        marketValue: p.fc_value,
-        is_starter: p.is_starter,
-    });
+    const redraft = leagueType === "redraft";
+    const map = (p: (typeof data.teams)[number]["players"][number]): PortfolioPlayer => {
+        // Redraft is in-season: prefer rest-of-season ranks when present, else the
+        // preseason redraft ranks. Mirrors formatColumns(preferRos) for the DB path.
+        const baseOverall = redraft ? p.redraft_rank_overall : (sf ? p.rank_sf_overall : p.rank_1qb_overall);
+        const basePos = redraft ? p.redraft_rank_pos : (sf ? p.rank_sf_pos : p.rank_1qb_pos);
+        return {
+            sleeper_id: p.sleeper_id,
+            full_name: p.full_name,
+            position: p.position,
+            team: p.team,
+            age: p.age,
+            myRank: redraft && p.rank_ros_overall != null ? p.rank_ros_overall : baseOverall,
+            myPosRank: redraft && p.rank_ros_pos != null ? p.rank_ros_pos : basePos,
+            marketRank: sf ? p.fc_rank_sf : p.fc_rank_1qb,
+            marketValue: p.fc_value,
+            is_starter: p.is_starter,
+            rosRank: p.rank_ros_overall,
+            rosPosRank: p.rank_ros_pos,
+            rosPpg: p.rank_ros_ppg,
+            rosSos: p.ros_sos,
+            rosNext4Sos: p.ros_next4_sos,
+            byeWeek: p.bye_week,
+        };
+    };
 
     const teams = data.teams.map(t => ({
         rosterId: String(t.numericId),
@@ -257,6 +270,12 @@ async function selectValueRows(ids: string[]) {
             rank_1qb_pos: playerValues.rank_1qb_pos,
             redraft_rank_overall: playerValues.redraft_rank_overall,
             redraft_rank_pos: playerValues.redraft_rank_pos,
+            rank_ros_overall: playerValues.rank_ros_overall,
+            rank_ros_pos: playerValues.rank_ros_pos,
+            rank_ros_ppg: playerValues.rank_ros_ppg,
+            ros_sos: playerValues.ros_sos,
+            ros_next4_sos: playerValues.ros_next4_sos,
+            bye_week: playerValues.bye_week,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -285,6 +304,12 @@ async function freeAgentSweep(rosteredIds: Set<string>, cols: ReturnType<typeof 
             rank_1qb_pos: playerValues.rank_1qb_pos,
             redraft_rank_overall: playerValues.redraft_rank_overall,
             redraft_rank_pos: playerValues.redraft_rank_pos,
+            rank_ros_overall: playerValues.rank_ros_overall,
+            rank_ros_pos: playerValues.rank_ros_pos,
+            rank_ros_ppg: playerValues.rank_ros_ppg,
+            ros_sos: playerValues.ros_sos,
+            ros_next4_sos: playerValues.ros_next4_sos,
+            bye_week: playerValues.bye_week,
         })
         .from(players)
         .innerJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))

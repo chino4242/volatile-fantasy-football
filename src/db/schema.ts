@@ -117,6 +117,13 @@ export const playerValues = pgTable("player_values", {
     rank_ros_overall: integer("rank_ros_overall"),
     rank_ros_pos: integer("rank_ros_pos"),
     rank_ros_tier: integer("rank_ros_tier"),
+    // ROS detail (from the weekly ROS upload): points-per-game, strength-of-
+    // schedule ranks (1 = easiest remaining slate for the position … 32 = hardest),
+    // and the player's bye week. SOS ranks feed in-season recommendations.
+    rank_ros_ppg: decimal("rank_ros_ppg", { precision: 6, scale: 2 }),
+    ros_sos: integer("ros_sos"),            // rest-of-season strength of schedule rank
+    ros_next4_sos: integer("ros_next4_sos"), // next-4-weeks strength of schedule rank
+    bye_week: integer("bye_week"),
 
     // When VFF rankings were last uploaded (per format)
     rank_1qb_updated_at: timestamp("rank_1qb_updated_at"),

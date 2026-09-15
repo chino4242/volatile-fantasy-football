@@ -45,6 +45,15 @@ export interface PortfolioPlayer {
     weeklyRank?: number | null;
     weeklyTotal?: number | null;
     weeklyPosMatchup?: number | null;
+    /** Rest-of-season signal (from the ROS ranking upload). rank/posRank lower=
+     *  better; ppg higher=better; sos/next4Sos are opponent-difficulty ranks
+     *  (1 = easiest remaining slate for the position, 32 = hardest). */
+    rosRank?: number | null;
+    rosPosRank?: number | null;
+    rosPpg?: number | null;
+    rosSos?: number | null;
+    rosNext4Sos?: number | null;
+    byeWeek?: number | null;
 }
 
 export interface PortfolioTeam {
@@ -87,8 +96,12 @@ export interface FormatColumns {
     fcValue: 'fc_value_sf' | 'fc_value_1qb';
     fcRank: 'fc_rank_sf' | 'fc_rank_1qb';
     fcPosRank: 'fc_position_rank_sf' | 'fc_position_rank_1qb';
-    myOverall: 'rank_sf_overall' | 'rank_1qb_overall';
-    myPos: 'rank_sf_pos' | 'rank_1qb_pos';
+    myOverall: 'rank_sf_overall' | 'rank_1qb_overall' | 'redraft_rank_overall';
+    myPos: 'rank_sf_pos' | 'rank_1qb_pos' | 'redraft_rank_pos';
+    /** Redraft leagues are in-season: prefer rest-of-season ranks for the
+     *  proprietary board when a player has them, falling back to myOverall/myPos
+     *  (the preseason redraft ranks). Dynasty/keeper leave this false. */
+    preferRos: boolean;
 }
 
 /**
@@ -96,17 +109,21 @@ export interface FormatColumns {
  * Dynasty/keeper use the SF-or-1QB dynasty ranks; redraft leagues use the
  * redraft rank set for the proprietary board (market value still comes from the
  * format-matched FantasyCalc column, which is the closest market proxy we have).
+ * Redraft additionally flips `preferRos` so in-season rest-of-season ranks drive
+ * the board once they've been uploaded.
  */
 export function formatColumns(format: PortfolioFormat, leagueType: PortfolioLeagueType): FormatColumns {
     const sf = format === 'sf';
+    const redraft = leagueType === 'redraft';
     return {
         fcValue: sf ? 'fc_value_sf' : 'fc_value_1qb',
         fcRank: sf ? 'fc_rank_sf' : 'fc_rank_1qb',
         fcPosRank: sf ? 'fc_position_rank_sf' : 'fc_position_rank_1qb',
         // Proprietary board: redraft leagues read the redraft ranks; otherwise
         // the dynasty SF/1QB ranks. (redraft_rank_* is single-format.)
-        myOverall: leagueType === 'redraft' ? ('redraft_rank_overall' as any) : (sf ? 'rank_sf_overall' : 'rank_1qb_overall'),
-        myPos: leagueType === 'redraft' ? ('redraft_rank_pos' as any) : (sf ? 'rank_sf_pos' : 'rank_1qb_pos'),
+        myOverall: redraft ? 'redraft_rank_overall' : (sf ? 'rank_sf_overall' : 'rank_1qb_overall'),
+        myPos: redraft ? 'redraft_rank_pos' : (sf ? 'rank_sf_pos' : 'rank_1qb_pos'),
+        preferRos: redraft,
     };
 }
 
@@ -126,17 +143,33 @@ export function toPortfolioPlayer(
     cols: FormatColumns,
     isStarter: boolean,
 ): PortfolioPlayer {
+    // Rest-of-season signal (present once the ROS ranking has been uploaded).
+    const rosRank = toNum(row.rank_ros_overall);
+    const rosPosRank = toNum(row.rank_ros_pos);
+    // For redraft (in-season) leagues, the proprietary board prefers ROS ranks
+    // when the player has them, else falls back to the preseason redraft rank.
+    const baseRank = toNum(row[cols.myOverall]);
+    const basePos = toNum(row[cols.myPos]);
+    const myRank = cols.preferRos && rosRank != null ? rosRank : baseRank;
+    const myPosRank = cols.preferRos && rosPosRank != null ? rosPosRank : basePos;
+
     return {
         sleeper_id: String(row.sleeper_id),
         full_name: String(row.full_name ?? ''),
         position: (row.position as string) ?? null,
         team: (row.team as string) ?? null,
         age: toNum(row.age),
-        myRank: toNum(row[cols.myOverall]),
-        myPosRank: toNum(row[cols.myPos]),
+        myRank,
+        myPosRank,
         marketRank: toNum(row[cols.fcRank]),
         marketValue: toNum(row[cols.fcValue]),
         is_starter: isStarter,
+        rosRank,
+        rosPosRank,
+        rosPpg: toNum(row.rank_ros_ppg),
+        rosSos: toNum(row.ros_sos),
+        rosNext4Sos: toNum(row.ros_next4_sos),
+        byeWeek: toNum(row.bye_week),
     };
 }
 
