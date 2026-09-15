@@ -305,8 +305,9 @@ function waiverItems(input: ActionCenterInput, limit: number): ActionItem[] {
  * Weekly waiver UPGRADE items (distinct from value-based `waiver` items): free
  * agents who improve THIS WEEK's lineup by weekly rank, with the 3-tier
  * drop guardrail (safe / caution / block→informational). In-season only — a
- * weekly-lineup concern. For redraft the long-term lens is a rest-of-season
- * placeholder (defaults to marketValue until real ROS data lands).
+ * weekly-lineup concern. The drop guardrail blends dynasty market value with
+ * rest-of-season value (protect a player strong by EITHER lens) for ALL league
+ * types — see blendedKeepValue below.
  */
 function waiverUpgradeItems(input: ActionCenterInput, limit: number): ActionItem[] {
     const { league, myRosterId } = input;
@@ -317,27 +318,52 @@ function waiverUpgradeItems(input: ActionCenterInput, limit: number): ActionItem
     const config = buildRosterConfig(league.rosterPositions);
     if (!config) return [];
 
-    // For redraft (in-season) leagues, judge drop candidates by rest-of-season
-    // value instead of dynasty market value. We standardize on a 0..1000 scale
-    // derived from the ROS OVERALL rank (lower rank → higher value), so the
-    // block/caution thresholds below are meaningful. PPG breaks ties among the
-    // unranked (scaled into the low end). Dynasty/keeper keep the default lens.
+    // Drop guardrail value = "how much would it hurt to drop this player?" We
+    // BLEND two lenses and take the stronger signal, so a player valuable by
+    // EITHER dynasty market value OR rest-of-season production is protected —
+    // for every league type (dynasty, keeper, redraft alike). Both lenses are
+    // mapped onto a common 0..1000 "keep score":
+    //   • ROS   : rank 1 → ~1000, deeper ranks lower; PPG proxies the unranked.
+    //   • Market: FantasyCalc value mapped through its own block/caution anchors
+    //             (4000 → 1000, 1500 → 850) so a top dynasty asset still blocks.
+    // Thresholds are then on this shared scale: block ≥ 960 (≈ROS top-40 / a
+    // top-market asset), caution ≥ 850 (≈ROS top-150 / a meaningful market piece).
     const ROS_MAX = 1000;
-    const rosLongTermValue = (p: PortfolioPlayer): number | null => {
-        if (p.rosRank != null) return ROS_MAX - p.rosRank;      // rank 1 → 999, rank 150 → 850
-        if (p.rosPpg != null) return Math.min(p.rosPpg * 10, 300); // unranked: PPG proxy, capped low
-        return null;                                             // truly unknown → treated as safe to drop
+    const BLOCK = ROS_MAX - 40;    // 960
+    const CAUTION = ROS_MAX - 150; // 850
+    const FC_BLOCK = 4000;         // FantasyCalc value that means "never drop"
+    const FC_CAUTION = 1500;       // FantasyCalc value that means "think twice"
+
+    const rosScore = (p: PortfolioPlayer): number | null => {
+        if (p.rosRank != null) return ROS_MAX - p.rosRank;
+        if (p.rosPpg != null) return Math.min(p.rosPpg * 10, CAUTION - 1); // unranked: PPG proxy, never auto-blocks
+        return null;
     };
-    // Thresholds on the inverted-rank scale: a top-~40 ROS player is a block,
-    // a top-~150 ROS player warrants caution before dropping.
+    // Map a FantasyCalc market value onto the shared 0..1000 keep-scale using the
+    // FC block/caution values as anchors (piecewise-linear), so "top market asset"
+    // lands at/above BLOCK and a "meaningful piece" lands at/above CAUTION.
+    const marketScore = (p: PortfolioPlayer): number | null => {
+        const v = p.marketValue;
+        if (v == null) return null;
+        if (v >= FC_BLOCK) return BLOCK + Math.min((v - FC_BLOCK) / FC_BLOCK, 1) * (ROS_MAX - BLOCK);
+        if (v >= FC_CAUTION) return CAUTION + ((v - FC_CAUTION) / (FC_BLOCK - FC_CAUTION)) * (BLOCK - CAUTION);
+        return (v / FC_CAUTION) * CAUTION; // below caution scales into 0..850
+    };
+    const blendedKeepValue = (p: PortfolioPlayer): number | null => {
+        const r = rosScore(p);
+        const m = marketScore(p);
+        if (r == null && m == null) return null; // unknown by both → safe to drop
+        return Math.max(r ?? 0, m ?? 0);          // protect if strong by EITHER lens
+    };
+
     const upgrades = findWaiverUpgrades(team, league.freeAgents, league.rosterPositions, league.leagueType, {
         coreCapacity: config.coreCapacity,
         actualCoreCount: team.players.filter(p => p.position !== 'PICK').length,
         maxSuggestions: limit,
         startedTeams: input.startedTeams,
-        ...(league.leagueType === 'redraft'
-            ? { longTermValueOf: rosLongTermValue, blockAtValue: ROS_MAX - 40, cautionAtValue: ROS_MAX - 150 }
-            : {}),
+        longTermValueOf: blendedKeepValue,
+        blockAtValue: BLOCK,
+        cautionAtValue: CAUTION,
     });
 
     const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);
