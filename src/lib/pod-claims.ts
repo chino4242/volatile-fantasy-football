@@ -82,12 +82,21 @@ export async function extractClaimsFromTranscript(transcript: string): Promise<E
     if (!apiKey || !transcript.trim()) return [];
 
     const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
+    // Stream the response. Two reasons:
+    //  1. Adaptive thinking is always on for Sonnet 5 and its reasoning tokens count
+    //     against max_tokens. A long, dense transcript spends a few thousand tokens
+    //     thinking BEFORE emitting a 40+ claim JSON array; at max_tokens=8000 the
+    //     response was cut off (or thinking ate the whole budget), yielding [].
+    //  2. With a high max_tokens, the SDK REFUSES a non-streaming request (worst-case
+    //     duration could exceed 10 min). Streaming avoids that pre-flight rejection.
+    // 32000 gives generous headroom for thinking + output, well under the 128k cap.
+    const stream = client.messages.stream({
         model: 'claude-sonnet-5',
-        max_tokens: 8000, // claim-dense transcripts produce long JSON — avoid truncation
+        max_tokens: 32000,
         system: EXTRACTION_SYSTEM,
         messages: [{ role: 'user', content: transcript.slice(0, 100_000) }], // cap very long transcripts
     });
+    const message = await stream.finalMessage();
 
     const text = message.content
         .filter((c): c is Anthropic.TextBlock => c.type === 'text')
