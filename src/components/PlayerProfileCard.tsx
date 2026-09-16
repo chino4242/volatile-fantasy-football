@@ -82,7 +82,7 @@ interface WeeklyStats {
     fantasy_points_ppr: number;
 }
 
-type Tab = 'profile' | 'trends' | 'scouting';
+type Tab = 'profile' | 'trends' | 'scouting' | 'pods';
 type Grade = 'A+' | 'A' | 'B+' | 'B' | 'C' | 'D' | 'F';
 
 // --- Constants ---
@@ -349,6 +349,7 @@ export default function PlayerProfileCard({
         { id: 'profile', label: 'Profile' },
         { id: 'trends', label: 'Trends' },
         { id: 'scouting', label: 'Scouting' },
+        { id: 'pods', label: 'Pods' },
     ];
 
     return (
@@ -427,6 +428,9 @@ export default function PlayerProfileCard({
                             zapAnalysis={zapAnalysis}
                             writeups={writeups}
                         />
+                    )}
+                    {activeTab === 'pods' && (
+                        <PodsTab sleeperId={sleeperId} />
                     )}
                 </div>
             </div>
@@ -991,5 +995,176 @@ function ScoutingTab({
                 </div>
             )}
         </div>
+    );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pods tab — "what are the podcasts saying about this player"
+// ─────────────────────────────────────────────────────────────────────────
+
+interface PodSummary {
+    mentions: number;
+    bull: number;
+    bear: number;
+    neutral: number;
+    avgConviction: number;
+    agreementRatio: number;
+    heat: number;
+    recommendation: { lean: 'buy' | 'sell' | 'hold'; confident: boolean } | null;
+    blurb: string;
+    signals: string[];
+}
+
+interface PodClaimRow {
+    show: string;
+    week: number;
+    signal_type: string;
+    direction: string;
+    conviction: number;
+    quote: string;
+}
+
+const DIRECTION_STYLE: Record<string, { label: string; cls: string; dot: string }> = {
+    bull: { label: 'Bullish', cls: 'text-green-600 dark:text-green-400', dot: 'bg-green-500' },
+    bear: { label: 'Bearish', cls: 'text-red-600 dark:text-red-400', dot: 'bg-red-500' },
+    neutral: { label: 'Neutral', cls: 'text-zinc-500 dark:text-zinc-400', dot: 'bg-zinc-400' },
+};
+
+function PodsTab({ sleeperId }: { sleeperId: string }) {
+    const [summary, setSummary] = useState<PodSummary | null>(null);
+    const [claims, setClaims] = useState<PodClaimRow[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+        async function fetchPods() {
+            setLoading(true);
+            try {
+                const res = await fetch(`/api/player-pods?sleeper_id=${encodeURIComponent(sleeperId)}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (!cancelled) {
+                        setSummary(data.summary || null);
+                        setClaims(data.claims || []);
+                    }
+                }
+            } catch {
+                // silently fail — UI shows empty state
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        }
+        fetchPods();
+        return () => { cancelled = true; };
+    }, [sleeperId]);
+
+    if (loading) {
+        return (
+            <div className="flex justify-center py-8">
+                <div className="w-5 h-5 border-2 border-zinc-300 dark:border-zinc-600 border-t-blue-500 rounded-full animate-spin" />
+            </div>
+        );
+    }
+
+    if (!summary || claims.length === 0) {
+        return (
+            <div className="text-center text-xs text-zinc-500 py-8">
+                No podcast chatter on this player yet.
+            </div>
+        );
+    }
+
+    const rec = summary.recommendation;
+    // Heat bar color: cool → warm as heat climbs.
+    const heatColor = summary.heat >= 60 ? 'bg-red-500' : summary.heat >= 40 ? 'bg-amber-500' : 'bg-zinc-400';
+
+    return (
+        <div className="space-y-4">
+            {/* Tier 1: always-on summary */}
+            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3">
+                <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold">
+                        Word on the Street
+                    </span>
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                        heat {summary.heat}/100
+                    </span>
+                </div>
+
+                {/* Heat meter */}
+                <div className="mt-1.5 h-1.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
+                    <div className={`h-full ${heatColor} rounded-full transition-all`} style={{ width: `${Math.min(summary.heat, 100)}%` }} />
+                </div>
+
+                <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">{summary.blurb}</p>
+
+                {/* Direction chips */}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                    {summary.bull > 0 && <DirChip dir="bull" count={summary.bull} />}
+                    {summary.bear > 0 && <DirChip dir="bear" count={summary.bear} />}
+                    {summary.neutral > 0 && <DirChip dir="neutral" count={summary.neutral} />}
+                </div>
+            </div>
+
+            {/* Tier 2: graduated recommendation (only when hot + one-sided) */}
+            {rec && (rec.lean === 'buy' || rec.lean === 'sell') && (
+                <div className={`rounded-lg p-3 ring-1 ${
+                    rec.lean === 'buy'
+                        ? 'bg-green-50 dark:bg-green-950/30 ring-green-500/30'
+                        : 'bg-red-50 dark:bg-red-950/30 ring-red-500/30'
+                }`}>
+                    <div className="flex items-center gap-2">
+                        <span className={`text-xs font-bold uppercase tracking-wide ${
+                            rec.lean === 'buy' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                        }`}>
+                            Pods lean: {rec.lean === 'buy' ? 'Buy / Start' : 'Sell / Sit'}
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/60 dark:bg-black/30 text-zinc-600 dark:text-zinc-300">
+                            {rec.confident ? 'confident' : 'leaning'}
+                        </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">
+                        Loud, one-sided chatter — worth a look for a start/sit or add/drop call.
+                    </p>
+                </div>
+            )}
+
+            {/* Verbatim quotes — the trust receipt */}
+            <div className="space-y-2">
+                <div className="text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold">
+                    What they said ({claims.length})
+                </div>
+                {claims.map((c, i) => {
+                    const d = DIRECTION_STYLE[c.direction] || DIRECTION_STYLE.neutral;
+                    return (
+                        <div key={i} className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3">
+                            <div className="flex items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+                                <span className={`inline-block w-1.5 h-1.5 rounded-full ${d.dot}`} />
+                                <span className={`font-semibold ${d.cls}`}>{d.label}</span>
+                                <span>·</span>
+                                <span>{c.signal_type}</span>
+                                <span>·</span>
+                                <span>conviction {c.conviction}/5</span>
+                                <span className="ml-auto">{c.show} · wk {c.week}</span>
+                            </div>
+                            <blockquote className="mt-1.5 text-xs text-zinc-700 dark:text-zinc-300 italic leading-relaxed border-l-2 border-zinc-300 dark:border-zinc-600 pl-2.5">
+                                “{c.quote}”
+                            </blockquote>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+function DirChip({ dir, count }: { dir: 'bull' | 'bear' | 'neutral'; count: number }) {
+    const d = DIRECTION_STYLE[dir];
+    return (
+        <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white dark:bg-zinc-900 ring-1 ring-zinc-200 dark:ring-zinc-700 ${d.cls}`}>
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${d.dot}`} />
+            {count} {d.label.toLowerCase()}
+        </span>
     );
 }
