@@ -66,6 +66,9 @@ export async function GET(request: Request) {
  *   body: { id: string, action: 'confirm' } — keep the current fuzzy link, mark it human-verified.
  *   body: { id: string, action: 'fix', sleeper_id: string } — relink to a chosen player.
  *   body: { id: string, action: 'unmatch' } — drop the link (sleeper_id = null, method = 'none').
+ *   body: { id: string, action: 'ignore' } — dismiss from review permanently (real claim, but
+ *          not tied to a fantasy-relevant player, e.g. an offensive lineman). Kept in the DB,
+ *          never surfaces in review or the player feed again.
  *
  * Lets you verify/correct fuzzy guesses after upload without re-running extraction.
  */
@@ -101,6 +104,15 @@ export async function PATCH(request: Request) {
                 .set({ sleeper_id: null, matched_name: null, match_method: 'none' })
                 .where(eq(podClaims.id, id));
             return NextResponse.json({ success: true, id, sleeper_id: null, match_method: 'none' });
+        }
+
+        if (action === 'ignore') {
+            // Real claim, but not tied to a fantasy-relevant player. Keep the row, drop it
+            // from review forever. sleeper_id stays null so it never leaks into the feed.
+            await db.update(podClaims)
+                .set({ sleeper_id: null, matched_name: null, match_method: 'ignored' })
+                .where(eq(podClaims.id, id));
+            return NextResponse.json({ success: true, id, match_method: 'ignored' });
         }
 
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });

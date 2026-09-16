@@ -87,7 +87,8 @@ export function PodClaimReview({ refreshKey }: { refreshKey?: number }) {
             </div>
             <p className="text-sm text-zinc-400 mb-4">
                 Fuzzy-matched names (a guessed link) and unmatched names (no link). Verify against the quote,
-                then Confirm, Fix (relink to the right player), or leave unmatched.
+                then Confirm, Fix / Associate (link the right player), Unmatch, or Ignore (a real claim that
+                isn&apos;t a fantasy-relevant player, e.g. an offensive lineman).
             </p>
 
             {loading && <p className="text-sm text-zinc-500">Loading…</p>}
@@ -110,17 +111,20 @@ function ReviewRow({ claim, busy, onAct }: {
     busy: boolean;
     onAct: (id: string, action: string, sleeper_id?: string) => void;
 }) {
-    const [fixing, setFixing] = useState(false);
-    const [query, setQuery] = useState('');
+    const isFuzzy = claim.match_method === 'fuzzy';
+    // For unmatched rows the whole point is to associate a player, so open the
+    // search straight away and pre-fill it with the (mis-transcribed) name.
+    const [fixing, setFixing] = useState(!isFuzzy);
+    const [query, setQuery] = useState(!isFuzzy ? claim.player_name : '');
     const [hits, setHits] = useState<PlayerHit[]>([]);
     const [searching, setSearching] = useState(false);
-    const isFuzzy = claim.match_method === 'fuzzy';
 
-    const search = async () => {
-        if (!query.trim()) return;
+    const search = async (q?: string) => {
+        const term = (q ?? query).trim();
+        if (!term) return;
         setSearching(true);
         try {
-            const res = await fetch(`/api/admin/pod-claims?player=${encodeURIComponent(query)}`);
+            const res = await fetch(`/api/admin/pod-claims?player=${encodeURIComponent(term)}`);
             const data = await res.json();
             setHits(data.players || []);
         } finally {
@@ -161,30 +165,40 @@ function ReviewRow({ claim, busy, onAct }: {
                             Confirm
                         </button>
                     )}
-                    <button disabled={busy} onClick={() => setFixing(f => !f)}
-                        className="px-3 py-1 rounded bg-blue-600 text-white text-xs font-medium hover:bg-blue-500 disabled:opacity-50">
-                        {fixing ? 'Cancel' : 'Fix'}
-                    </button>
+                    {isFuzzy && (
+                        <button disabled={busy} onClick={() => setFixing(f => !f)}
+                            className="px-3 py-1 rounded bg-blue-600 text-white text-xs font-medium hover:bg-blue-500 disabled:opacity-50">
+                            {fixing ? 'Cancel' : 'Fix'}
+                        </button>
+                    )}
                     {isFuzzy && (
                         <button disabled={busy} onClick={() => onAct(claim.id, 'unmatch')}
                             className="px-3 py-1 rounded bg-zinc-700 text-white text-xs font-medium hover:bg-zinc-600 disabled:opacity-50">
                             Unmatch
                         </button>
                     )}
+                    <button disabled={busy} onClick={() => onAct(claim.id, 'ignore')}
+                        title="Real claim, but not a fantasy-relevant player (e.g. an offensive lineman). Dismiss from review permanently."
+                        className="px-3 py-1 rounded bg-zinc-800 text-zinc-300 text-xs font-medium hover:bg-zinc-700 ring-1 ring-zinc-700 disabled:opacity-50">
+                        Ignore
+                    </button>
                 </div>
             </div>
 
             {fixing && (
                 <div className="mt-3 border-t border-zinc-800 pt-3">
+                    <div className="text-[11px] uppercase tracking-wide text-zinc-500 font-semibold mb-1.5">
+                        {isFuzzy ? 'Relink to the right player' : 'Associate with a player'}
+                    </div>
                     <div className="flex gap-2">
                         <input
                             value={query}
                             onChange={e => setQuery(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); search(); } }}
-                            placeholder="Search player name…"
+                            placeholder="Type the correct player name…"
                             className="flex-1 bg-zinc-900 text-white text-sm rounded px-2 py-1 border border-zinc-700"
                         />
-                        <button onClick={search} disabled={searching}
+                        <button onClick={() => search()} disabled={searching}
                             className="px-3 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-500 disabled:opacity-50">
                             {searching ? '…' : 'Search'}
                         </button>
@@ -202,7 +216,7 @@ function ReviewRow({ claim, busy, onAct }: {
                         </div>
                     )}
                     {!searching && query && hits.length === 0 && (
-                        <p className="text-xs text-zinc-500 mt-2">No matches — try a different spelling.</p>
+                        <p className="text-xs text-zinc-500 mt-2">No matches — try a different spelling, or Ignore if it&apos;s not a fantasy-relevant player.</p>
                     )}
                 </div>
             )}
