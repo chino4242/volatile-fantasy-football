@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { WeeklyRankingsForm } from './WeeklyRankingsForm';
 import { TransactionsForm } from './TransactionsForm';
 import { TranscriptForm } from './TranscriptForm';
+import { PodClaimReview } from './PodClaimReview';
 
 export default function AdminPage() {
     const [file, setFile] = useState<File | null>(null);
@@ -11,6 +12,7 @@ export default function AdminPage() {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+    const [podRefresh, setPodRefresh] = useState(0);
 
     // Custom rankings state
     const [customFile, setCustomFile] = useState<File | null>(null);
@@ -307,7 +309,10 @@ export default function AdminPage() {
             <TransactionsForm />
 
             {/* Podcast transcript → claims */}
-            <TranscriptForm />
+            <TranscriptForm onUploaded={() => setPodRefresh(k => k + 1)} />
+
+            {/* Review fuzzy / unmatched pod claims */}
+            <PodClaimReview refreshKey={podRefresh} />
         </div>
     );
 }

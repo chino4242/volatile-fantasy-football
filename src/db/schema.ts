@@ -634,6 +634,8 @@ export const podClaims = pgTable("pod_claims", {
     direction: text("direction").notNull(),       // 'bull' | 'bear' | 'neutral'
     conviction: integer("conviction").notNull(),  // 1 (hedge) … 5 (pounding the table)
     quote: text("quote").notNull(),               // verbatim — the trust receipt
+    match_method: text("match_method").notNull().default("exact"), // 'exact' | 'fuzzy' | 'none' | 'confirmed' (human-verified fuzzy)
+    matched_name: text("matched_name"),           // for fuzzy: the DB player name we linked to (for review)
     created_at: timestamp("created_at").defaultNow(),
 }, (table) => {
     return {

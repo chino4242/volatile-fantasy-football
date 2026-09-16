@@ -46,8 +46,12 @@ export async function POST(request: Request) {
         const unmatched = rows.filter(r => r.matchMethod === 'none').map(r => r.player_name);
         const fuzzy = rows.filter(r => r.matchMethod === 'fuzzy').map(r => `${r.player_name} → ${r.matchedName}`);
 
-        // Strip the match metadata before insert (DB shape only).
-        const insertRows = rows.map(({ matchMethod, matchedName, ...row }) => { void matchMethod; void matchedName; return row; });
+        // Map to DB shape, persisting how each row matched so fuzzy rows stay reviewable.
+        const insertRows = rows.map(({ matchMethod, matchedName, ...row }) => ({
+            ...row,
+            match_method: matchMethod,
+            matched_name: matchedName ?? null,
+        }));
 
         // Replace this (show, week) set, then insert.
         await db.delete(podClaims).where(and(eq(podClaims.show, show), eq(podClaims.week, week)));

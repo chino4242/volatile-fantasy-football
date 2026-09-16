@@ -8,7 +8,7 @@ import { useState } from 'react';
  * layer surfaced in the player modal Pods tab, portfolio, and the GM briefing).
  * Re-uploading the same show + week replaces that set.
  */
-export function TranscriptForm() {
+export function TranscriptForm({ onUploaded }: { onUploaded?: () => void }) {
     const [text, setText] = useState('');
     const [show, setShow] = useState('');
     const [week, setWeek] = useState<number>(1);
@@ -37,6 +37,7 @@ export function TranscriptForm() {
             if (data.unmatchedNames?.length) lines.push(`Still unmatched: ${data.unmatchedNames.join(', ')}`);
             setMessage(lines.join('\n'));
             setText('');
+            onUploaded?.();
         } catch (err: any) {
             setError(err.message || 'Upload error');
         } finally {
