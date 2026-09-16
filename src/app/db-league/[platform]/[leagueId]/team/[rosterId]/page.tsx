@@ -5,9 +5,10 @@ import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/l
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { buildRosterConfig } from "@/lib/transaction-suggestions";
 import { optimizeTeam } from "@/lib/weekly-rankings";
+import { getWeeklyRanks, rankForPosition } from "@/lib/weekly-rankings";
 import { LineupOptimizerCard } from "@/components/LineupOptimizerCard";
-import { getTeamWaiverUpgrades } from "@/lib/team-waiver-upgrades";
-import { WaiverUpgradesCard } from "@/components/WaiverUpgradesCard";
+import { recommendWaiverValue, type WaiverValuePlayer } from "@/lib/waiver-value";
+import { WaiverValueCard } from "@/components/WaiverValueCard";
 import TeamRosterView from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterView";
 import { TeamRosterComposition } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
@@ -70,17 +71,20 @@ export default async function DbTeamPage({ params }: PageProps) {
         data.rosterPositions,
     );
 
-    // Waiver-wire upgrades this week (available players who beat one of mine).
-    const rosteredInLeague = new Set<string>(
-        data.teams.flatMap(t => t.players.map(p => p.sleeper_id)),
-    );
-    const waiverUpgrades = await getTeamWaiverUpgrades(
-        myPlayers.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, fc_value: p.fc_value, is_starter: p.is_starter, rank_ros_overall: p.rank_ros_overall, rank_ros_pos: p.rank_ros_pos, rank_ros_ppg: p.rank_ros_ppg, ros_sos: p.ros_sos, ros_next4_sos: p.ros_next4_sos, bye_week: p.bye_week })),
-        data.freeAgents.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, fc_value: p.fc_value, rank_ros_overall: p.rank_ros_overall, rank_ros_pos: p.rank_ros_pos, rank_ros_ppg: p.rank_ros_ppg, ros_sos: p.ros_sos, ros_next4_sos: p.ros_next4_sos, bye_week: p.bye_week })),
-        data.rosterPositions,
-        platform === "yahoo" ? "redraft" : "dynasty",
-        { coreCapacity: rosterConfig?.coreCapacity, rosteredInLeague },
-    );
+    // Value-based waiver recommendations (adds WITH a guarded drop), ROS-driven —
+    // same engine as the free-agents page, so team + FA views agree.
+    const toWvp = (p: (typeof data.teams)[number]["players"][number]): WaiverValuePlayer => ({
+        sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team,
+        fc_value: p.fc_value,
+        rosRank: p.rank_ros_overall, rosPosRank: p.rank_ros_pos, rosPpg: p.rank_ros_ppg,
+        rosSos: p.ros_sos, byeWeek: p.bye_week, weeklyRank: null,
+    });
+    const { byId: faWeeklyById } = await getWeeklyRanks(data.freeAgents.map(p => p.sleeper_id));
+    const myWvp = myPlayers.filter(p => ["QB", "RB", "WR", "TE"].includes(p.position || "")).map(toWvp);
+    const faWvp: WaiverValuePlayer[] = data.freeAgents
+        .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position || ""))
+        .map(p => ({ ...toWvp(p), weeklyRank: rankForPosition(p.position, faWeeklyById.get(p.sleeper_id)).rank }));
+    const waiverRecs = recommendWaiverValue(myWvp, faWvp, rosterConfig, { actualCoreCount: myPlayers.length, limit: 15 });
 
     const label = platform === "yahoo" ? "Yahoo" : "MyFFPC";
 
@@ -133,9 +137,11 @@ export default async function DbTeamPage({ params }: PageProps) {
                     <LineupOptimizerCard opt={lineupOpt} />
                 </div>
 
-                <div className="mt-4">
-                    <WaiverUpgradesCard upgrades={waiverUpgrades} />
-                </div>
+                {waiverRecs.length > 0 && (
+                    <div className="mt-4">
+                        <WaiverValueCard recs={waiverRecs} />
+                    </div>
+                )}
 
                 <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                     <TeamRosterComposition players={myPlayers as any[]} format={format} customRankingsMap={rankingsMap} />
