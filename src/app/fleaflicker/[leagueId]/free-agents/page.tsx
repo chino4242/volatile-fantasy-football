@@ -176,7 +176,7 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
 
         return (
             <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8">
-                <div className="max-w-4xl mx-auto">
+                <div className="max-w-4xl xl:max-w-6xl 2xl:max-w-7xl mx-auto">
                     <div className="mb-6 sm:mb-8">
                         <div className="flex items-center justify-between gap-4 flex-wrap bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                             <div className="min-w-0">

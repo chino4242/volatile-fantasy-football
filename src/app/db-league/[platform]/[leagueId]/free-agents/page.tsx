@@ -106,7 +106,7 @@ export default async function DbFreeAgentsPage({ params, searchParams }: PagePro
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8">
-            <div className="max-w-4xl mx-auto">
+            <div className="max-w-4xl xl:max-w-6xl 2xl:max-w-7xl mx-auto">
                 <div className="mb-6 sm:mb-8">
                     <Link href={`/db-league/${platform}/${leagueId}`} className="text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 mb-4 inline-block">
                         ← Back to League
