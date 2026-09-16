@@ -7,6 +7,7 @@ import { FaabTargets } from "@/components/FaabTargets";
 import Link from "next/link";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { cleanseName } from "@/lib/nameUtils";
+import { getWeeklyRanks, rankForPosition } from "@/lib/weekly-rankings";
 
 export const dynamic = 'force-dynamic';
 
@@ -59,6 +60,13 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                 redraft_rank_pos: playerValues.redraft_rank_pos,
                 redraft_rank_tier: playerValues.redraft_rank_tier,
                 redraft_auction_value: playerValues.redraft_auction_value,
+                rank_ros_overall: playerValues.rank_ros_overall,
+                rank_ros_pos: playerValues.rank_ros_pos,
+                rank_ros_tier: playerValues.rank_ros_tier,
+                rank_ros_ppg: playerValues.rank_ros_ppg,
+                ros_sos: playerValues.ros_sos,
+                ros_next4_sos: playerValues.ros_next4_sos,
+                bye_week: playerValues.bye_week,
             })
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
@@ -89,8 +97,22 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
             return { ...p, zap_score: zap?.zap_score ? parseFloat(String(zap.zap_score)) : null, zap_analysis: zap?.analysis_text || null, zap_category: zap?.zap_category || null, zap_comps: zap?.statistical_comparables || null, writeups: wu };
         });
 
+        // Stamp this week's rank (flex/qb/dst pools) onto each free agent so the
+        // table can show "current weekly rank" — the most up-to-date start/sit signal.
+        const { week: weeklyWeek, byId: weeklyById } = await getWeeklyRanks(freeAgentsWithWriteups.map(p => p.sleeper_id));
+        const freeAgentsFinal = freeAgentsWithWriteups.map(p => {
+            const info = rankForPosition(p.position, weeklyById.get(p.sleeper_id));
+            return {
+                ...p,
+                rank_ros_ppg: p.rank_ros_ppg != null ? Number(p.rank_ros_ppg) : null,
+                weekly_rank: info.rank,
+                weekly_total: info.total,
+                weekly_pos_matchup: info.posMatchup,
+            };
+        });
+
         // Calculate position totals for free agents
-        const positionTotals = freeAgentsWithWriteups.reduce((acc, player) => {
+        const positionTotals = freeAgentsFinal.reduce((acc, player) => {
             const pos = player.position || 'UNK';
             if (!acc[pos]) acc[pos] = 0;
             acc[pos] += player.fc_value || 0;
@@ -136,7 +158,7 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                     {/* FAAB Targets (personalized recommendations) */}
                     {myRoster.length > 0 && (
                         <FaabTargets
-                            freeAgents={freeAgentsWithWriteups as any[]}
+                            freeAgents={freeAgentsFinal as any[]}
                             myRoster={myRoster}
                             rosterSlots={rosterSlots}
                         />
@@ -155,7 +177,7 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                         ))}
                     </div>
 
-                    <FreeAgentTable players={freeAgentsWithWriteups} rankingsVintage={rankingsVintage} />
+                    <FreeAgentTable players={freeAgentsFinal} rankingsVintage={rankingsVintage} weeklyWeek={weeklyWeek} />
                 </div>
             </div>
         );

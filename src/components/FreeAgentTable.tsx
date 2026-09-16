@@ -6,6 +6,11 @@ import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
 
 const COLUMNS: ColumnDef[] = [
+    { key: 'weekly_rank', label: 'Week Rank', defaultOn: true, group: 'weekly' },
+    { key: 'ros_rank', label: 'ROS Rank', defaultOn: true, group: 'ros' },
+    { key: 'ros_pos', label: 'ROS Pos', defaultOn: false, group: 'ros' },
+    { key: 'ros_ppg', label: 'ROS PPG', defaultOn: false, group: 'ros' },
+    { key: 'ros_sos', label: 'ROS SOS', defaultOn: false, group: 'ros' },
     { key: 'fc_rank', label: 'FC Overall', defaultOn: false, group: 'fc' },
     { key: 'fc_pos_rank', label: 'FC Pos Rank', defaultOn: false, group: 'fc' },
     { key: 'combined_value', label: 'Combined', defaultOn: false, group: 'fc' },
@@ -54,23 +59,39 @@ export interface FreeAgentData {
     redraft_rank_overall?: number | null;
     redraft_rank_pos?: number | null;
     redraft_rank_tier?: number | null;
+    // Rest-of-season (from the ROS upload).
+    rank_ros_overall?: number | null;
+    rank_ros_pos?: number | null;
+    rank_ros_tier?: number | null;
+    rank_ros_ppg?: number | null;
+    ros_sos?: number | null;
+    ros_next4_sos?: number | null;
+    bye_week?: number | null;
+    // This week's start/sit rank (stamped by the page from weekly_rankings).
+    weekly_rank?: number | null;
+    weekly_total?: number | null;
+    weekly_pos_matchup?: number | null;
 }
 
 interface FreeAgentTableProps {
     players: FreeAgentData[];
     rankingsVintage?: string | null;
+    /** The week the weekly_rank values are for (for the column header). */
+    weeklyWeek?: number | null;
 }
 
-type SortColumn = 'fc_value' | 'fc_rank' | 'full_name' | 'position' | 'rank_overall' | 'rank_pos' | 'rank_tier' | 'redraft_rank_overall' | 'redraft_rank_pos' | 'redraft_rank_tier';
+type SortColumn = 'fc_value' | 'fc_rank' | 'full_name' | 'position' | 'rank_overall' | 'rank_pos' | 'rank_tier' | 'redraft_rank_overall' | 'redraft_rank_pos' | 'redraft_rank_tier' | 'rank_ros_overall' | 'rank_ros_pos' | 'rank_ros_ppg' | 'ros_sos' | 'weekly_rank';
 type SortDirection = 'asc' | 'desc';
 
-export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps) {
+export function FreeAgentTable({ players, rankingsVintage, weeklyWeek }: FreeAgentTableProps) {
     const [sortColumn, setSortColumn] = useState<SortColumn>('fc_value');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
     const [filterPosition, setFilterPosition] = useState<string>('ALL');
 
     const vffLabel = rankingsVintage ? `VFF Rankings (${rankingsVintage})` : 'VFF Rankings';
     const COLUMN_GROUPS = [
+        { id: 'weekly', label: 'This Week' },
+        { id: 'ros', label: 'Rest of Season' },
         { id: 'fc', label: 'FantasyCalc' },
         { id: 'internal', label: vffLabel },
     ];
@@ -83,7 +104,9 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
             setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
         } else {
             setSortColumn(column);
-            setSortDirection(column === 'fc_rank' || column === 'full_name' ? 'asc' : 'desc');
+            // Rank-style columns are "lower is better" → default ascending.
+            const ascByDefault = ['fc_rank', 'full_name', 'rank_ros_overall', 'rank_ros_pos', 'ros_sos', 'weekly_rank'];
+            setSortDirection(ascByDefault.includes(column) ? 'asc' : 'desc');
         }
     };
 
@@ -156,9 +179,16 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
 
     const vintageTitle = rankingsVintage ? `VFF Rankings from ${rankingsVintage}` : undefined;
     const vffBg = 'bg-purple-50/20 dark:bg-purple-950/10';
+    const rosBg = 'bg-emerald-50/30 dark:bg-emerald-950/15';
+    const weekBg = 'bg-sky-50/30 dark:bg-sky-950/15';
 
     const renderHeader = (key: string): React.ReactNode => {
         const h: Record<string, React.ReactNode> = {
+            weekly_rank: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${weekBg} cursor-pointer group hover:bg-sky-100/50 dark:hover:bg-sky-900/30 transition-colors`} title={weeklyWeek != null ? `This week's start/sit rank (week ${weeklyWeek})` : 'This week\u2019s start/sit rank'} onClick={() => handleSort('weekly_rank')}>Week Rank <SortIcon column={'weekly_rank' as SortColumn} /></th>,
+            ros_rank: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${rosBg} cursor-pointer group hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30 transition-colors`} title="Your rest-of-season overall rank" onClick={() => handleSort('rank_ros_overall')}>ROS Rank <SortIcon column={'rank_ros_overall' as SortColumn} /></th>,
+            ros_pos: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${rosBg} cursor-pointer group hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30 transition-colors`} title="Your rest-of-season position rank" onClick={() => handleSort('rank_ros_pos')}>ROS Pos <SortIcon column={'rank_ros_pos' as SortColumn} /></th>,
+            ros_ppg: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${rosBg} cursor-pointer group hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30 transition-colors`} title="Projected rest-of-season points per game" onClick={() => handleSort('rank_ros_ppg')}>ROS PPG <SortIcon column={'rank_ros_ppg' as SortColumn} /></th>,
+            ros_sos: <th key={key} className={`px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider ${rosBg} cursor-pointer group hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30 transition-colors`} title="Rest-of-season strength of schedule (1 = easiest remaining, 32 = hardest)" onClick={() => handleSort('ros_sos')}>ROS SOS <SortIcon column={'ros_sos' as SortColumn} /></th>,
             fc_rank: <th key={key} className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">FC Rank</th>,
             fc_pos_rank: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">FC Pos</th>,
             combined_value: <th key={key} className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Combined</th>,
@@ -175,6 +205,11 @@ export function FreeAgentTable({ players, rankingsVintage }: FreeAgentTableProps
     const renderCell = (key: string, player: FreeAgentData): React.ReactNode => {
         const valueGap = getValueGapLabel(player);
         const c: Record<string, React.ReactNode> = {
+            weekly_rank: <td key={key} className={`px-3 py-3 sm:py-4 whitespace-nowrap text-right ${weekBg}`}><span className="font-mono text-sm text-sky-700 dark:text-sky-300">{player.weekly_rank != null ? `#${player.weekly_rank}` : '-'}</span></td>,
+            ros_rank: <td key={key} className={`px-3 py-3 sm:py-4 whitespace-nowrap text-right ${rosBg}`}><span className="font-mono text-sm font-medium text-emerald-700 dark:text-emerald-300">{player.rank_ros_overall ?? '-'}</span></td>,
+            ros_pos: <td key={key} className={`px-3 py-3 sm:py-4 whitespace-nowrap text-right ${rosBg}`}><span className="font-mono text-sm text-emerald-700 dark:text-emerald-300">{player.rank_ros_pos ? `${player.position}${player.rank_ros_pos}` : '-'}</span></td>,
+            ros_ppg: <td key={key} className={`px-3 py-3 sm:py-4 whitespace-nowrap text-right ${rosBg}`}><span className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{player.rank_ros_ppg != null ? Number(player.rank_ros_ppg).toFixed(1) : '-'}</span></td>,
+            ros_sos: <td key={key} className={`px-3 py-3 sm:py-4 whitespace-nowrap text-right ${rosBg}`}><span className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{player.ros_sos ?? '-'}</span></td>,
             fc_rank: <td key={key} className="px-3 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-mono">{player.fc_rank ? `#${player.fc_rank}` : '-'}</td>,
             fc_pos_rank: <td key={key} className="px-3 py-3 sm:py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.fc_position_rank ? `${player.position}${player.fc_position_rank}` : '-'}</td>,
             combined_value: <td key={key} className="px-3 py-3 sm:py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.fc_combined_value?.toLocaleString() || '-'}</td>,
