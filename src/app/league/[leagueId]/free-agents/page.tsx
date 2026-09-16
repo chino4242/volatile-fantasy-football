@@ -1,11 +1,16 @@
 import { db } from "@/db";
 import { players, playerValues, leagues, prospectData, prospectWriteups } from "@/db/schema";
-import { getLeagueData, getPickFantasyCalcId } from "@/lib/sleeper";
+import { getLeagueData, getSleeperRosterPositions } from "@/lib/sleeper";
 import { desc, eq, notInArray, and, not, like, inArray, sql } from "drizzle-orm";
 import { FreeAgentTable } from "@/components/FreeAgentTable";
 import Link from "next/link";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { cleanseName } from "@/lib/nameUtils";
+import { getWeeklyRanks, rankForPosition } from "@/lib/weekly-rankings";
+import { recommendWaiverValue, type WaiverValuePlayer } from "@/lib/waiver-value";
+import { buildRosterConfig } from "@/lib/transaction-suggestions";
+import { WaiverValueCard } from "@/components/WaiverValueCard";
+import { FreeAgentTeamSelector } from "@/components/FreeAgentTeamSelector";
 
 export const dynamic = 'force-dynamic';
 
@@ -13,9 +18,39 @@ interface PageProps {
     params: Promise<{ leagueId: string }>;
 }
 
-export default async function SleeperFreeAgentsPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string }> }) {
+/** The player-values columns the FA table + value engine need (format-resolved). */
+function valueColumns(format: '1qb' | 'sf') {
+    return {
+        sleeper_id: players.sleeper_id,
+        full_name: players.full_name,
+        position: players.position,
+        team: players.team,
+        years_exp: players.years_exp,
+        fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
+        fc_rank: format === 'sf' ? playerValues.fc_rank_sf : playerValues.fc_rank_1qb,
+        fc_position_rank: format === 'sf' ? playerValues.fc_position_rank_sf : playerValues.fc_position_rank_1qb,
+        fc_combined_value: playerValues.fc_combined_value,
+        fc_trend_30_day: playerValues.fc_trend_30_day,
+        fc_trade_frequency: playerValues.fc_trade_frequency,
+        rank_overall: format === 'sf' ? playerValues.rank_sf_overall : playerValues.rank_1qb_overall,
+        rank_pos: format === 'sf' ? playerValues.rank_sf_pos : playerValues.rank_1qb_pos,
+        rank_tier: format === 'sf' ? playerValues.rank_sf_tier : playerValues.rank_1qb_tier,
+        redraft_rank_overall: playerValues.redraft_rank_overall,
+        redraft_rank_pos: playerValues.redraft_rank_pos,
+        redraft_rank_tier: playerValues.redraft_rank_tier,
+        rank_ros_overall: playerValues.rank_ros_overall,
+        rank_ros_pos: playerValues.rank_ros_pos,
+        rank_ros_tier: playerValues.rank_ros_tier,
+        rank_ros_ppg: playerValues.rank_ros_ppg,
+        ros_sos: playerValues.ros_sos,
+        ros_next4_sos: playerValues.ros_next4_sos,
+        bye_week: playerValues.bye_week,
+    };
+}
+
+export default async function SleeperFreeAgentsPage({ params, searchParams }: PageProps & { searchParams: Promise<{ format?: string; team?: string }> }) {
     const { leagueId } = await params;
-    const { format: formatParam } = await searchParams;
+    const { format: formatParam, team: teamParam } = await searchParams;
     let format: '1qb' | 'sf' | undefined = (formatParam === 'sf' || formatParam === '1qb') ? formatParam : undefined;
     if (!format) {
         const leagueData = await db.select({ scoring_format: leagues.scoring_format }).from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
@@ -24,36 +59,16 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
     if (!format) format = 'sf';
 
     try {
-        // 1. Fetch live Sleeper data to get currently rostered players
-        const { rosters } = await getLeagueData(leagueId);
+        // 1. Live Sleeper data: rosters (players are sleeper_ids) + users for team names.
+        const { rosters, users } = await getLeagueData(leagueId);
 
-        // 2. Collect all rostered player IDs
+        // 2. Rostered player IDs (for FA exclusion).
         const allSleeperIds = rosters.flatMap((r) => r.players || []);
-
-        // Add a dummy ID to prevent empty array error in notInArray if league is completely empty
         if (allSleeperIds.length === 0) allSleeperIds.push('dummy');
 
-        // 3. Query DB for top 200 free agents (not on any roster, excluding picks)
+        // 3. Top-200 free agents (not rostered, skill positions).
         const freeAgents = await db
-            .select({
-                sleeper_id: players.sleeper_id,
-                full_name: players.full_name,
-                position: players.position,
-                team: players.team,
-                years_exp: players.years_exp,
-                fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
-                fc_rank: format === 'sf' ? playerValues.fc_rank_sf : playerValues.fc_rank_1qb,
-                fc_position_rank: format === 'sf' ? playerValues.fc_position_rank_sf : playerValues.fc_position_rank_1qb,
-                fc_combined_value: playerValues.fc_combined_value,
-                fc_trend_30_day: playerValues.fc_trend_30_day,
-                fc_trade_frequency: playerValues.fc_trade_frequency,
-                rank_overall: format === 'sf' ? playerValues.rank_sf_overall : playerValues.rank_1qb_overall,
-                rank_pos: format === 'sf' ? playerValues.rank_sf_pos : playerValues.rank_1qb_pos,
-                rank_tier: format === 'sf' ? playerValues.rank_sf_tier : playerValues.rank_1qb_tier,
-                redraft_rank_overall: playerValues.redraft_rank_overall,
-                redraft_rank_pos: playerValues.redraft_rank_pos,
-                redraft_rank_tier: playerValues.redraft_rank_tier,
-            })
+            .select(valueColumns(format))
             .from(players)
             .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
             .where(
@@ -66,7 +81,7 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
             .orderBy(desc(format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb))
             .limit(200);
 
-        // Merge prospect writeups and ZAP data
+        // Merge prospect writeups + ZAP data.
         const currentYear = new Date().getFullYear();
         const prospects = await db.select({ full_name: prospectData.full_name, nfl_team: prospectData.nfl_team, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);
         const zapByName = new Map(prospects.map(p => [cleanseName(p.full_name), p]));
@@ -79,8 +94,20 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
             return { ...p, zap_score: zap?.zap_score ? parseFloat(String(zap.zap_score)) : null, zap_analysis: zap?.analysis_text || null, zap_category: zap?.zap_category || null, zap_comps: zap?.statistical_comparables || null, writeups: wu };
         });
 
-        // Calculate position totals for free agents
-        const positionTotals = freeAgentsWithWriteups.reduce((acc, player) => {
+        // Stamp this week's rank onto each free agent (most up-to-date start/sit signal).
+        const { week: weeklyWeek, byId: weeklyById } = await getWeeklyRanks(freeAgentsWithWriteups.map(p => p.sleeper_id));
+        const freeAgentsFinal = freeAgentsWithWriteups.map(p => {
+            const info = rankForPosition(p.position, weeklyById.get(p.sleeper_id));
+            return {
+                ...p,
+                rank_ros_ppg: p.rank_ros_ppg != null ? Number(p.rank_ros_ppg) : null,
+                weekly_rank: info.rank,
+                weekly_total: info.total,
+                weekly_pos_matchup: info.posMatchup,
+            };
+        });
+
+        const positionTotals = freeAgentsFinal.reduce((acc, player) => {
             const pos = player.position || 'UNK';
             if (!acc[pos]) acc[pos] = 0;
             acc[pos] += player.fc_value || 0;
@@ -88,6 +115,39 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
         }, {} as Record<string, number>);
 
         const rankingsVintage = formatVintage(await getRankingsVintage(format));
+
+        // Team-aware value recommendations (?team= = roster_id).
+        let waiverRecs: ReturnType<typeof recommendWaiverValue> = [];
+        if (teamParam) {
+            const myRoster = rosters.find(r => String(r.roster_id) === teamParam);
+            if (myRoster && (myRoster.players?.length ?? 0) > 0) {
+                // Pull my roster players' value rows (they're excluded from the FA query).
+                const myRows = await db
+                    .select(valueColumns(format))
+                    .from(players)
+                    .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
+                    .where(inArray(players.sleeper_id, myRoster.players));
+
+                const toWvp = (p: typeof myRows[number] | typeof freeAgentsFinal[number]): WaiverValuePlayer => ({
+                    sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team,
+                    fc_value: p.fc_value,
+                    rosRank: p.rank_ros_overall ?? null, rosPosRank: p.rank_ros_pos ?? null,
+                    rosPpg: p.rank_ros_ppg != null ? Number(p.rank_ros_ppg) : null,
+                    rosSos: p.ros_sos ?? null, byeWeek: p.bye_week ?? null,
+                    weeklyRank: (p as typeof freeAgentsFinal[number]).weekly_rank ?? null,
+                });
+                const myWvp = myRows.filter(p => ["QB", "RB", "WR", "TE"].includes(p.position || "")).map(toWvp);
+                const faWvp = freeAgentsFinal.map(toWvp);
+                const rosterPositions = await getSleeperRosterPositions(leagueId);
+                const config = buildRosterConfig(rosterPositions);
+                waiverRecs = recommendWaiverValue(myWvp, faWvp, config, { actualCoreCount: myRoster.players.length, limit: 15 });
+            }
+        }
+
+        const teamOptions = rosters.map(r => ({
+            id: String(r.roster_id),
+            name: users.find(u => u.user_id === r.owner_id)?.display_name || `Team ${r.roster_id}`,
+        }));
 
         return (
             <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8">
@@ -97,13 +157,26 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
                             ← Back to League
                         </Link>
 
-                        <div className="flex items-center gap-4 sm:gap-6 bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
+                        <div className="flex items-center justify-between gap-4 flex-wrap bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                             <div className="min-w-0">
                                 <h1 className="text-xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-50 truncate">Top Free Agents</h1>
                                 <div className="text-xs sm:text-base text-zinc-500 mt-0.5 sm:mt-1">Available in league (Top 200 by {format === 'sf' ? 'SF' : '1QB'} Value)</div>
                             </div>
+                            <FreeAgentTeamSelector
+                                platform="sleeper"
+                                leagueId={leagueId}
+                                currentTeam={teamParam ?? null}
+                                teams={teamOptions}
+                            />
                         </div>
                     </div>
+
+                    {/* Team-aware value recommendations: adds WITH the guarded drop. */}
+                    {waiverRecs.length > 0 && (
+                        <div className="mb-6">
+                            <WaiverValueCard recs={waiverRecs} />
+                        </div>
+                    )}
 
                     {/* Position Value Summary */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -118,7 +191,7 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
                         ))}
                     </div>
 
-                    <FreeAgentTable players={freeAgentsWithWriteups} rankingsVintage={rankingsVintage} />
+                    <FreeAgentTable players={freeAgentsFinal} rankingsVintage={rankingsVintage} weeklyWeek={weeklyWeek} />
                 </div>
             </div>
         );
