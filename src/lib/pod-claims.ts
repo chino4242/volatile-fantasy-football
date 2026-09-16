@@ -137,22 +137,116 @@ export function parseExtraction(text: string): ExtractedClaim[] {
  * `nameToId` maps cleanseName(full_name) -> sleeper_id (built by the caller from
  * the players table).
  */
+/** A minimal player record for matching (built by the caller from the players table). */
+export interface MatchablePlayer {
+    sleeper_id: string;
+    full_name: string;
+}
+
+/** How a claim's player_name resolved to a sleeper_id. */
+export type MatchMethod = 'exact' | 'fuzzy' | 'none';
+
+export interface ResolvedClaim extends PodClaim {
+    matchMethod: MatchMethod;
+    /** For fuzzy matches: the DB name we matched to (so the admin can eyeball it). */
+    matchedName?: string;
+}
+
+/** Levenshtein edit distance (small strings; iterative, no deps). */
+function editDistance(a: string, b: string): number {
+    const m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    let prev = Array.from({ length: n + 1 }, (_, i) => i);
+    let curr = new Array(n + 1);
+    for (let i = 1; i <= m; i++) {
+        curr[0] = i;
+        for (let j = 1; j <= n; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+        }
+        [prev, curr] = [curr, prev];
+    }
+    return prev[n];
+}
+
+/** Similarity ratio 0..1 from edit distance (1 = identical). */
+function similarity(a: string, b: string): number {
+    const max = Math.max(a.length, b.length);
+    return max === 0 ? 1 : 1 - editDistance(a, b) / max;
+}
+
+const lastName = (cleansed: string): string => {
+    const parts = cleansed.split(' ');
+    return parts[parts.length - 1] || cleansed;
+};
+
+/**
+ * Fuzzy-match a (possibly mis-transcribed) player name against the players table.
+ * Podcast transcripts come from audio, so names get garbled ("Tedaro McMillan" →
+ * Tetairoa McMillan, "Ladd McConkie" → Ladd McConkey). Strategy, most confident first:
+ *   1. exact cleansed match (handled by the caller before this)
+ *   2. same last name + first-name similarity >= 0.6  (last names transcribe best)
+ *   3. whole-name similarity >= 0.82
+ * Returns the best candidate above threshold, or null. Conservative on purpose —
+ * a wrong auto-match is worse than an honest "unmatched".
+ */
+export function fuzzyMatchPlayer(rawName: string, playersList: MatchablePlayer[]): MatchablePlayer | null {
+    const target = cleanseName(rawName);
+    if (!target) return null;
+    const targetLast = lastName(target);
+    const targetFirst = target.split(' ')[0] || '';
+
+    let best: { p: MatchablePlayer; score: number } | null = null;
+    for (const p of playersList) {
+        const cand = cleanseName(p.full_name);
+        if (!cand) continue;
+        const candLast = lastName(cand);
+        const candFirst = cand.split(' ')[0] || '';
+
+        let score = 0;
+        // Last-name anchor: last names match closely AND first names are in the ballpark.
+        const lastSim = similarity(targetLast, candLast);
+        if (lastSim >= 0.8) {
+            const firstSim = similarity(targetFirst, candFirst);
+            if (firstSim >= 0.6 || targetFirst[0] === candFirst[0]) {
+                score = Math.max(score, 0.5 * lastSim + 0.5 * firstSim + 0.05);
+            }
+        }
+        // Whole-name similarity fallback.
+        const whole = similarity(target, cand);
+        if (whole >= 0.82) score = Math.max(score, whole);
+
+        if (score > 0 && (!best || score > best.score)) best = { p, score };
+    }
+    return best ? best.p : null;
+}
+
+/**
+ * Resolve extracted claims to sleeper_ids and stamp show/week. Tries an EXACT
+ * cleansed match first, then a conservative FUZZY match against `playersList`
+ * (handles audio-transcription misspellings). Unmatched names keep sleeper_id =
+ * null (still stored). Each row carries how it matched so callers can report /
+ * flag fuzzy matches for review.
+ */
 export function resolveClaims(
     claims: ExtractedClaim[],
     show: string,
     week: number,
     nameToId: Map<string, string>,
-): PodClaim[] {
-    return claims.map(c => ({
-        sleeper_id: nameToId.get(cleanseName(c.player_name)) ?? null,
-        player_name: c.player_name,
-        show,
-        week,
-        signal_type: c.signal_type,
-        direction: c.direction,
-        conviction: c.conviction,
-        quote: c.quote,
-    }));
+    playersList?: MatchablePlayer[],
+): ResolvedClaim[] {
+    const byId = playersList ? new Map(playersList.map(p => [p.sleeper_id, p.full_name])) : new Map<string, string>();
+    return claims.map(c => {
+        const base = { player_name: c.player_name, show, week, signal_type: c.signal_type, direction: c.direction, conviction: c.conviction, quote: c.quote };
+        const exact = nameToId.get(cleanseName(c.player_name));
+        if (exact) return { ...base, sleeper_id: exact, matchMethod: 'exact' as const };
+        if (playersList) {
+            const f = fuzzyMatchPlayer(c.player_name, playersList);
+            if (f) return { ...base, sleeper_id: f.sleeper_id, matchMethod: 'fuzzy' as const, matchedName: byId.get(f.sleeper_id) };
+        }
+        return { ...base, sleeper_id: null, matchMethod: 'none' as const };
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────

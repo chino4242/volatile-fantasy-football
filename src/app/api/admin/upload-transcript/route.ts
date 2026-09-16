@@ -34,18 +34,25 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'No player claims could be extracted from this transcript.' }, { status: 400 });
         }
 
-        // Build name → sleeper_id map (skill positions; same pattern as other uploads).
+        // Build name → sleeper_id map (exact) + a matchable list (for fuzzy).
         const allPlayers = await db.select({ sleeper_id: players.sleeper_id, full_name: players.full_name }).from(players);
         const nameToId = new Map<string, string>();
-        for (const p of allPlayers) if (p.full_name) nameToId.set(cleanseName(p.full_name), p.sleeper_id);
+        const playersList: { sleeper_id: string; full_name: string }[] = [];
+        for (const p of allPlayers) {
+            if (p.full_name) { nameToId.set(cleanseName(p.full_name), p.sleeper_id); playersList.push({ sleeper_id: p.sleeper_id, full_name: p.full_name }); }
+        }
 
-        const rows = resolveClaims(extracted, show, week, nameToId);
-        const unmatched = rows.filter(r => r.sleeper_id == null).map(r => r.player_name);
+        const rows = resolveClaims(extracted, show, week, nameToId, playersList);
+        const unmatched = rows.filter(r => r.matchMethod === 'none').map(r => r.player_name);
+        const fuzzy = rows.filter(r => r.matchMethod === 'fuzzy').map(r => `${r.player_name} → ${r.matchedName}`);
+
+        // Strip the match metadata before insert (DB shape only).
+        const insertRows = rows.map(({ matchMethod, matchedName, ...row }) => { void matchMethod; void matchedName; return row; });
 
         // Replace this (show, week) set, then insert.
         await db.delete(podClaims).where(and(eq(podClaims.show, show), eq(podClaims.week, week)));
-        for (let i = 0; i < rows.length; i += 500) {
-            await db.insert(podClaims).values(rows.slice(i, i + 500));
+        for (let i = 0; i < insertRows.length; i += 500) {
+            await db.insert(podClaims).values(insertRows.slice(i, i + 500));
         }
 
         const byDirection = rows.reduce((acc, r) => { acc[r.direction] = (acc[r.direction] || 0) + 1; return acc; }, {} as Record<string, number>);
@@ -55,8 +62,10 @@ export async function POST(request: Request) {
             week,
             claims: rows.length,
             matched: rows.length - unmatched.length,
+            fuzzyMatched: fuzzy.length,
             unmatched: unmatched.length,
             byDirection,
+            fuzzyMatches: fuzzy.slice(0, 50),
             unmatchedNames: unmatched.slice(0, 50),
         });
     } catch (error: unknown) {

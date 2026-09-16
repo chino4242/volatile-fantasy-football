@@ -29,7 +29,13 @@ export function TranscriptForm() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Upload failed');
             const d = data.byDirection || {};
-            setMessage(`Extracted ${data.claims} claims from “${data.show}” wk ${data.week} (bull ${d.bull || 0} · bear ${d.bear || 0} · neutral ${d.neutral || 0}). ${data.matched} matched, ${data.unmatched} unmatched.${data.unmatchedNames?.length ? `\nUnmatched: ${data.unmatchedNames.join(', ')}` : ''}`);
+            const lines = [
+                `Extracted ${data.claims} claims from “${data.show}” wk ${data.week} (bull ${d.bull || 0} · bear ${d.bear || 0} · neutral ${d.neutral || 0}).`,
+                `${data.matched} matched${data.fuzzyMatched ? ` (${data.fuzzyMatched} fuzzy)` : ''}, ${data.unmatched} unmatched.`,
+            ];
+            if (data.fuzzyMatches?.length) lines.push(`Fuzzy matched (verify): ${data.fuzzyMatches.join(', ')}`);
+            if (data.unmatchedNames?.length) lines.push(`Still unmatched: ${data.unmatchedNames.join(', ')}`);
+            setMessage(lines.join('\n'));
             setText('');
         } catch (err: any) {
             setError(err.message || 'Upload error');
