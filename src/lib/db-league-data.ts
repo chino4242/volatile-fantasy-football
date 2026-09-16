@@ -98,7 +98,12 @@ export async function getDbLeagueData(platform: DbPlatform, leagueId: string): P
 
     const format = (league.scoring_format === 'sf' ? 'sf' : '1qb') as '1qb' | 'sf';
 
-    const leagueRosters = await db.select().from(rosters).where(eq(rosters.league_id, leagueId)).orderBy(rosters.id);
+    // Order by the STABLE platform roster_id (not rosters.id, a random UUID that
+    // gets regenerated every sync for Yahoo/MyFFPC via delete-then-reinsert).
+    // numericId is idx+1 below, and it's the identity the portfolio "my team"
+    // selection persists — so it MUST be stable across syncs or saved picks drift
+    // to a different team.
+    const leagueRosters = await db.select().from(rosters).where(eq(rosters.league_id, leagueId)).orderBy(rosters.roster_id);
     const rosterIds = leagueRosters.map(r => r.id);
     const allRosterPlayers = rosterIds.length > 0
         ? await db.select().from(rosterPlayers).where(inArray(rosterPlayers.roster_id, rosterIds))
