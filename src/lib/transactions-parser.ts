@@ -11,7 +11,7 @@
  * can resolve them to DEF_{ABBR}.
  */
 
-export type TransactionAction = 'add' | 'buy' | 'sell';
+export type TransactionAction = 'add' | 'buy' | 'sell' | 'hold';
 
 export interface ParsedTransaction {
     action: TransactionAction;
@@ -33,7 +33,48 @@ export const TEAM_NAME_TO_ABBR: Record<string, string> = {
     titans: 'TEN', commanders: 'WAS',
 };
 
-const HEADER_RE = /^(Add|Buy|Sell)\s+(.+?)\s*$/i;
+const HEADER_RE = /^(Add|Buy|Sell|Hold)\s+(.+?)\s*$/i;
+
+/**
+ * Strip common leading noise from a line before header-matching:
+ *   - a lead-in phrase ending in a colon: "Bonus Transaction:", "Week 2:"
+ *   - list markers: "1.", "1)", "-", "•", "*"
+ * so "Bonus Transaction: Add Pat Bryant" and "1. Buy X" still parse.
+ */
+function stripLeadIn(line: string): string {
+    let s = line.trim();
+    // Remove a leading "<something>:" lead-in ONLY when what follows starts with
+    // an action word (so we don't eat real content).
+    if (/^[^:]{1,40}:\s*(Add|Buy|Sell|Hold)\b/i.test(s)) s = s.slice(s.indexOf(':') + 1).trim();
+    // Remove a leading list marker.
+    s = s.replace(/^(\d+[.)]|[-•*])\s+/, '');
+    return s;
+}
+
+/**
+ * A header is a short "<action> <name>" line — not a prose sentence. Accept it
+ * when the name portion is short (≤ ~8 words) and has no sentence punctuation
+ * mid-string. A single trailing period (e.g. "Jr.") is fine.
+ */
+function looksLikeHeader(namePart: string): boolean {
+    const words = namePart.trim().split(/\s+/);
+    if (words.length > 8) return false;          // too long → prose
+    const body = namePart.replace(/\.$/, '');     // allow a trailing "Jr."
+    if (/[.!?]/.test(body)) return false;         // internal sentence punctuation → prose
+    return true;
+}
+
+/** Split a header name like "Deebo Samuel and Demarcus Robinson" into individual
+ *  players. Splits on standalone " and "/" & "/", ". Defenses are never split;
+ *  only splits when every part looks like a real 2-4 word name. */
+function splitPlayers(name: string, isDefense: boolean): string[] {
+    if (isDefense) return [name];
+    const parts = name.split(/\s+and\s+|\s+&\s+|,\s+/i).map(s => s.trim()).filter(Boolean);
+    if (parts.length > 1 && parts.every(p => {
+        const w = p.split(/\s+/).length; return w >= 2 && w <= 4;
+    })) return parts;
+    return [name];
+}
 
 function normalizeName(headerText: string): { name: string; isDefense: boolean } {
     const t = headerText.trim();
@@ -45,40 +86,45 @@ function normalizeName(headerText: string): { name: string; isDefense: boolean }
         }
         return { name: t, isDefense: true };
     }
-    return { name: t, isDefense: false };
+    return { name: t.replace(/^the\s+/i, ''), isDefense: false };
 }
 
 /**
- * Parse the full transactions feed text into typed items.
+ * Parse the full transactions feed text into typed items. One header may yield
+ * MULTIPLE items when it names several players ("Add Deebo Samuel and Demarcus
+ * Robinson" → two adds sharing the rationale).
  */
 export function parseTransactionsFeed(text: string): ParsedTransaction[] {
     const lines = text.split(/\r?\n/);
-    const items: ParsedTransaction[] = [];
-    let current: ParsedTransaction | null = null;
+    let pending: { action: TransactionAction; rawName: string } | null = null;
     const noteBuffer: string[] = [];
+    const groups: { action: TransactionAction; rawName: string; note: string }[] = [];
 
     const flush = () => {
-        if (current) {
-            current.note = noteBuffer.join('\n').trim();
-            items.push(current);
-        }
+        if (pending) groups.push({ ...pending, note: noteBuffer.join('\n').trim() });
         noteBuffer.length = 0;
     };
 
     for (const line of lines) {
         const trimmed = line.trim();
-        const m = trimmed.match(HEADER_RE);
-        // A header line is short (an action + a name), not a long sentence.
-        const looksLikeHeader = m && trimmed.length <= 60 && !/[.!?]$/.test(trimmed);
-        if (looksLikeHeader) {
+        if (!trimmed) continue;
+        const candidate = stripLeadIn(trimmed);
+        const m = candidate.match(HEADER_RE);
+        if (m && looksLikeHeader(m[2])) {
             flush();
-            const action = m![1].toLowerCase() as TransactionAction;
-            const { name, isDefense } = normalizeName(m![2]);
-            current = { action, playerName: name, rawHeader: m![2].trim(), note: '', isDefense };
-        } else if (current && trimmed) {
+            pending = { action: m[1].toLowerCase() as TransactionAction, rawName: m[2].trim() };
+        } else if (pending) {
             noteBuffer.push(trimmed);
         }
     }
     flush();
+
+    const items: ParsedTransaction[] = [];
+    for (const g of groups) {
+        const { name, isDefense } = normalizeName(g.rawName);
+        for (const playerName of splitPlayers(name, isDefense)) {
+            items.push({ action: g.action, playerName, rawHeader: g.rawName, note: g.note, isDefense });
+        }
+    }
     return items;
 }

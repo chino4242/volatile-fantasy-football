@@ -234,8 +234,8 @@ async function stampTags(league: PortfolioLeague): Promise<void> {
     const tagBy = new Map(tags.map(t => [t.sleeper_id, t.tag as 'buy' | 'sell']));
     // Most recent transaction per player wins (query returns insertion order;
     // last one overwrites — good enough for the current single-feed cadence).
-    const txnBy = new Map<string, { action: 'buy' | 'sell' | 'add'; note: string | null }>();
-    for (const t of txns) if (t.sleeper_id) txnBy.set(t.sleeper_id, { action: t.action as 'buy' | 'sell' | 'add', note: t.note });
+    const txnBy = new Map<string, { action: 'buy' | 'sell' | 'add' | 'hold'; note: string | null }>();
+    for (const t of txns) if (t.sleeper_id) txnBy.set(t.sleeper_id, { action: t.action as 'buy' | 'sell' | 'add' | 'hold', note: t.note });
 
     const stamp = (p: PortfolioPlayer) => {
         p.tag = tagBy.get(p.sleeper_id) ?? null;

@@ -36,8 +36,8 @@ export interface PortfolioPlayer {
     is_starter: boolean;
     /** Chino's manual portfolio-wide tag, if any: 'buy' | 'sell'. */
     tag?: 'buy' | 'sell' | null;
-    /** Analyst transaction action from the feed, if any: 'buy' | 'sell' | 'add'. */
-    txnAction?: 'buy' | 'sell' | 'add' | null;
+    /** Analyst transaction action from the feed, if any: 'buy' | 'sell' | 'add' | 'hold'. */
+    txnAction?: 'buy' | 'sell' | 'add' | 'hold' | null;
     /** The analyst rationale (writeup) tied to txnAction. */
     txnNote?: string | null;
     /** This week's optimizer signal (attached by the portfolio route when weekly
