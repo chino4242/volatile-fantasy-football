@@ -314,9 +314,9 @@ export function FreeAgentTable({ players, rankingsVintage, weeklyWeek }: FreeAge
                     <thead className="bg-zinc-50 dark:bg-zinc-950/50 select-none">
                         <tr>
                             <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider w-12">#</th>
-                            <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Player</th>
-                            <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell">Pos</th>
-                            <th className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Value</th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('full_name')}>Player <SortIcon column={'full_name' as SortColumn} /></th>
+                            <th className="px-3 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider hidden sm:table-cell cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('position')}>Pos <SortIcon column={'position' as SortColumn} /></th>
+                            <th className="px-3 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('fc_value')}>Value <SortIcon column={'fc_value' as SortColumn} /></th>
                             {orderedVisible.map(key => renderHeader(key))}
                         </tr>
                     </thead>
