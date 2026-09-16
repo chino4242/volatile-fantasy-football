@@ -77,7 +77,7 @@ export async function extractClaimsFromTranscript(transcript: string): Promise<E
     const client = new Anthropic({ apiKey });
     const message = await client.messages.create({
         model: 'claude-sonnet-5',
-        max_tokens: 4000,
+        max_tokens: 8000, // claim-dense transcripts produce long JSON — avoid truncation
         system: EXTRACTION_SYSTEM,
         messages: [{ role: 'user', content: transcript.slice(0, 100_000) }], // cap very long transcripts
     });
@@ -94,20 +94,29 @@ export async function extractClaimsFromTranscript(transcript: string): Promise<E
 /** Parse + validate the model's JSON array (tolerant of stray fences/prose). */
 export function parseExtraction(text: string): ExtractedClaim[] {
     if (!text) return [];
-    // Grab the first [...] block in case the model wrapped it.
+    // Grab the first [...] block in case the model wrapped it (e.g. ```json fences).
     const start = text.indexOf('[');
+    if (start === -1) return [];
     const end = text.lastIndexOf(']');
-    if (start === -1 || end === -1 || end < start) return [];
-    let raw: unknown;
-    try {
-        raw = JSON.parse(text.slice(start, end + 1));
-    } catch {
-        return [];
+
+    let raw: unknown = null;
+    // 1) Try the clean full array.
+    if (end > start) {
+        try { raw = JSON.parse(text.slice(start, end + 1)); } catch { /* fall through to salvage */ }
+    }
+    // 2) Salvage a TRUNCATED array (model hit max_tokens mid-JSON): close it at
+    //    the last complete object.
+    if (!Array.isArray(raw)) {
+        const lastObj = text.lastIndexOf('}');
+        if (lastObj > start) {
+            try { raw = JSON.parse(text.slice(start, lastObj + 1) + ']'); } catch { /* give up */ }
+        }
     }
     if (!Array.isArray(raw)) return [];
 
     const out: ExtractedClaim[] = [];
     for (const r of raw as Record<string, unknown>[]) {
+        if (!r || typeof r !== 'object') continue;
         const player_name = typeof r.player_name === 'string' ? r.player_name.trim() : '';
         const signal_type = String(r.signal_type) as PodSignalType;
         const direction = String(r.direction) as PodDirection;
