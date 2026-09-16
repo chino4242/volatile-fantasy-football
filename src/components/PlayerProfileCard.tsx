@@ -110,27 +110,33 @@ const BENCHMARKS: Record<string, Record<string, [number, number]>> = {
         avg_separation: [2.2, 4.5],
         target_share: [0.03, 0.26],
         avg_yac_above_expectation: [-1.5, 1.5],
-        fantasy_points_ppr: [20, 225],
+        fantasy_points_ppr: [5, 22],   // PER-GAME PPR (fringe → elite WR1)
     },
     RB: {
         rush_yards_over_expected_per_att: [-0.5, 1.2],
         target_share: [0.01, 0.10],
         offense_snap_pct: [0.05, 0.67],
-        fantasy_points_ppr: [20, 225],
+        fantasy_points_ppr: [5, 22],   // PER-GAME PPR
     },
     QB: {
         completion_pct_above_expected: [-4.5, 5.7],
-        rushing_yards: [0, 600],
+        rushing_yards: [0, 40],        // PER-GAME rushing yards
         avg_time_to_throw: [3.2, 2.2], // lower is better for time to throw
-        fantasy_points_ppr: [100, 350],
+        fantasy_points_ppr: [12, 26],  // PER-GAME PPR
     },
     TE: {
         target_share: [0.03, 0.20],
         offense_snap_pct: [0.30, 0.85],
         avg_separation: [2.2, 4.5],
-        fantasy_points_ppr: [20, 175],
+        fantasy_points_ppr: [3, 16],   // PER-GAME PPR
     },
 };
+
+/** Metrics stored as SEASON TOTALS that must be graded PER-GAME (divide by
+ *  games_played) so a great week-1 game isn't graded against a full-season
+ *  scale — and a full season isn't over-credited. Rate stats (shares, separation,
+ *  CPOE, etc.) are already per-game averages and pass through unchanged. */
+const PER_GAME_METRICS = new Set(['fantasy_points_ppr', 'rushing_yards']);
 
 const METRIC_LABELS: Record<string, string> = {
     avg_separation: 'Separation',
@@ -192,6 +198,19 @@ function getStatValue(stats: StatsData, key: string): number | null {
     return null;
 }
 
+/** The value to GRADE for a metric: per-game for cumulative totals (PPR points,
+ *  QB rush yards), raw for rate stats. Returns null if unavailable or 0 games. */
+function getGradeValue(stats: StatsData, metric: string): number | null {
+    const raw = getStatValue(stats, metric);
+    if (raw === null) return null;
+    if (PER_GAME_METRICS.has(metric)) {
+        const games = stats.games_played ?? 0;
+        if (!games || games <= 0) return null; // can't per-game a 0-game sample
+        return raw / games;
+    }
+    return raw;
+}
+
 function computeGrades(stats: StatsData, position: string): { metric: string; label: string; grade: Grade; percentile: number; value: number }[] {
     const benchmarks = BENCHMARKS[position];
     if (!benchmarks) return [];
@@ -199,7 +218,7 @@ function computeGrades(stats: StatsData, position: string): { metric: string; la
     const grades: { metric: string; label: string; grade: Grade; percentile: number; value: number }[] = [];
 
     for (const [metric, [min, max]] of Object.entries(benchmarks)) {
-        const value = getStatValue(stats, metric);
+        const value = getGradeValue(stats, metric);
         if (value === null) continue;
 
         // For time to throw, lower is better (inverted benchmark)
@@ -259,8 +278,9 @@ function formatStatValue(metric: string, value: number): string {
     if (metric === 'avg_time_to_throw') {
         return `${value.toFixed(2)}s`;
     }
+    // Per-game metrics: one decimal + "/g" so it's clear this is a per-game rate.
     if (metric === 'fantasy_points_ppr' || metric === 'rushing_yards') {
-        return Math.round(value).toString();
+        return `${value.toFixed(1)}/g`;
     }
     return value.toFixed(2);
 }
@@ -546,7 +566,7 @@ function ProfileTab({
 
                     {Object.entries(benchmarks).map(([metric, [min, max]]) => {
                         const seasonStats = stats.find(s => s.season === selectedSeason) || stats[0];
-                        const value = getStatValue(seasonStats, metric);
+                        const value = getGradeValue(seasonStats, metric);
                         if (value === null) return null;
 
                         const isInverted = metric === 'avg_time_to_throw';
