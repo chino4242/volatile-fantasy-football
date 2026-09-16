@@ -3,7 +3,7 @@ import { db } from '@/db';
 import { players, podClaims } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { cleanseName } from '@/lib/nameUtils';
-import { extractClaimsFromTranscript, resolveClaims } from '@/lib/pod-claims';
+import { extractClaimsFromTranscript, resolveClaims, summarizeClaims } from '@/lib/pod-claims';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // LLM extraction can take a while
@@ -60,6 +60,7 @@ export async function POST(request: Request) {
         }
 
         const byDirection = rows.reduce((acc, r) => { acc[r.direction] = (acc[r.direction] || 0) + 1; return acc; }, {} as Record<string, number>);
+        const summary = summarizeClaims(rows);
         return NextResponse.json({
             success: true,
             show,
@@ -71,6 +72,7 @@ export async function POST(request: Request) {
             byDirection,
             fuzzyMatches: fuzzy.slice(0, 50),
             unmatchedNames: unmatched.slice(0, 50),
+            summary,
         });
     } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : 'Internal server error';

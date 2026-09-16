@@ -353,3 +353,104 @@ export function aggregateClaimsByPlayer(claims: PodClaim[]): Map<string, PlayerP
     }
     return out;
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// Episode summary — a detailed, human-readable roundup of ONE upload, derived
+// entirely from the extracted claims (no extra LLM call, so it never drifts
+// from what actually got stored). Surfaced right after extraction so the user
+// sees who was discussed and what was said without clicking through.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Minimal claim shape the summary needs (ExtractedClaim / PodClaim both satisfy it). */
+type SummarizableClaim = {
+    player_name: string;
+    signal_type: PodSignalType;
+    direction: PodDirection;
+    conviction: number;
+    quote: string;
+};
+
+export interface PlayerSummaryLine {
+    player: string;
+    lean: PodDirection;          // net lean across this player's claims in the episode
+    mentions: number;
+    maxConviction: number;
+    signals: PodSignalType[];    // distinct signal types, most common first
+    topQuote: string;            // the highest-conviction quote for this player
+}
+
+export interface EpisodeSummary {
+    totalClaims: number;
+    players: number;             // distinct players discussed
+    bull: number;
+    bear: number;
+    neutral: number;
+    /** One-line headline, e.g. "39 claims on 34 players — 18 bullish, 12 bearish, 9 neutral." */
+    headline: string;
+    /** Loudest bullish takes (highest conviction first), with quotes. */
+    topBull: PlayerSummaryLine[];
+    /** Loudest bearish takes. */
+    topBear: PlayerSummaryLine[];
+    /** Injury / news items called out in the episode. */
+    injuryNotes: PlayerSummaryLine[];
+    /** Every player discussed, one line each, ordered by notability. */
+    perPlayer: PlayerSummaryLine[];
+}
+
+const DIRECTION_WEIGHT: Record<PodDirection, number> = { bull: 1, bear: -1, neutral: 0 };
+
+/**
+ * Build a detailed episode summary from a set of claims (one show+week upload).
+ * Groups by player, computes each player's net lean + loudest quote, and buckets
+ * the notable ones into bullish / bearish / injury lists. Pure + deterministic.
+ */
+export function summarizeClaims(claims: SummarizableClaim[]): EpisodeSummary | null {
+    if (!claims.length) return null;
+
+    // Group by cleansed name so "Debo" / "Deebo Samuel" style dupes fold together.
+    const byPlayer = new Map<string, SummarizableClaim[]>();
+    for (const c of claims) {
+        const key = cleanseName(c.player_name);
+        const arr = byPlayer.get(key);
+        if (arr) arr.push(c); else byPlayer.set(key, [c]);
+    }
+
+    let bull = 0, bear = 0, neutral = 0;
+    for (const c of claims) {
+        if (c.direction === 'bull') bull++;
+        else if (c.direction === 'bear') bear++;
+        else neutral++;
+    }
+
+    const lines: PlayerSummaryLine[] = [];
+    for (const arr of byPlayer.values()) {
+        // Prefer the human-written display name (longest is usually the fullest form).
+        const player = arr.map(c => c.player_name).sort((a, b) => b.length - a.length)[0];
+        let net = 0, maxConviction = 0;
+        const sigCounts = new Map<PodSignalType, number>();
+        let top = arr[0];
+        for (const c of arr) {
+            net += DIRECTION_WEIGHT[c.direction] * c.conviction;
+            if (c.conviction > maxConviction) { maxConviction = c.conviction; }
+            if (c.conviction > top.conviction) top = c;
+            sigCounts.set(c.signal_type, (sigCounts.get(c.signal_type) ?? 0) + 1);
+        }
+        const lean: PodDirection = net > 0 ? 'bull' : net < 0 ? 'bear' : 'neutral';
+        const signals = [...sigCounts.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
+        lines.push({ player, lean, mentions: arr.length, maxConviction, signals, topQuote: top.quote });
+    }
+
+    // Notability = loudest + most-discussed first.
+    const byNotability = (a: PlayerSummaryLine, b: PlayerSummaryLine) =>
+        (b.maxConviction - a.maxConviction) || (b.mentions - a.mentions) || a.player.localeCompare(b.player);
+
+    const topBull = lines.filter(l => l.lean === 'bull').sort(byNotability).slice(0, 6);
+    const topBear = lines.filter(l => l.lean === 'bear').sort(byNotability).slice(0, 6);
+    const injuryNotes = lines.filter(l => l.signals.includes('injury')).sort(byNotability).slice(0, 8);
+    const perPlayer = [...lines].sort(byNotability);
+
+    const headline = `${claims.length} claim${claims.length === 1 ? '' : 's'} on ${byPlayer.size} player${byPlayer.size === 1 ? '' : 's'} — ${bull} bullish, ${bear} bearish, ${neutral} neutral.`;
+
+    return { totalClaims: claims.length, players: byPlayer.size, bull, bear, neutral, headline, topBull, topBear, injuryNotes, perPlayer };
+}

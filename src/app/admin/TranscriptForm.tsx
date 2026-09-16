@@ -2,6 +2,27 @@
 
 import { useState } from 'react';
 
+interface PlayerSummaryLine {
+    player: string;
+    lean: 'bull' | 'bear' | 'neutral';
+    mentions: number;
+    maxConviction: number;
+    signals: string[];
+    topQuote: string;
+}
+interface EpisodeSummary {
+    totalClaims: number;
+    players: number;
+    bull: number;
+    bear: number;
+    neutral: number;
+    headline: string;
+    topBull: PlayerSummaryLine[];
+    topBear: PlayerSummaryLine[];
+    injuryNotes: PlayerSummaryLine[];
+    perPlayer: PlayerSummaryLine[];
+}
+
 /**
  * Admin form: paste a fantasy-podcast transcript for a show + week.
  * LLM-extracts player-claim atoms → pod_claims (the "un-columnable context"
@@ -15,12 +36,13 @@ export function TranscriptForm({ onUploaded }: { onUploaded?: () => void }) {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+    const [summary, setSummary] = useState<EpisodeSummary | null>(null);
 
     const submit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!text.trim()) { setError('Paste the transcript.'); return; }
         if (!show.trim()) { setError('Enter the show name.'); return; }
-        setLoading(true); setMessage(''); setError('');
+        setLoading(true); setMessage(''); setError(''); setSummary(null);
         try {
             const res = await fetch('/api/admin/upload-transcript', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -36,6 +58,7 @@ export function TranscriptForm({ onUploaded }: { onUploaded?: () => void }) {
             if (data.fuzzyMatches?.length) lines.push(`Fuzzy matched (verify): ${data.fuzzyMatches.join(', ')}`);
             if (data.unmatchedNames?.length) lines.push(`Still unmatched: ${data.unmatchedNames.join(', ')}`);
             setMessage(lines.join('\n'));
+            setSummary(data.summary || null);
             setText('');
             onUploaded?.();
         } catch (err: any) {
@@ -76,6 +99,74 @@ export function TranscriptForm({ onUploaded }: { onUploaded?: () => void }) {
             </form>
             {message && <pre className="mt-4 text-sm text-green-400 whitespace-pre-wrap">{message}</pre>}
             {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
+            {summary && <EpisodeSummaryView summary={summary} />}
+        </div>
+    );
+}
+
+const LEAN_STYLE: Record<string, { cls: string; label: string }> = {
+    bull: { cls: 'text-green-400', label: 'bull' },
+    bear: { cls: 'text-red-400', label: 'bear' },
+    neutral: { cls: 'text-zinc-400', label: 'neutral' },
+};
+
+function PlayerLine({ line }: { line: PlayerSummaryLine }) {
+    const s = LEAN_STYLE[line.lean] || LEAN_STYLE.neutral;
+    return (
+        <div className="py-1.5 border-b border-zinc-800 last:border-0">
+            <div className="flex items-center gap-2 text-sm">
+                <span className="text-white font-medium">{line.player}</span>
+                <span className={`text-xs font-semibold ${s.cls}`}>{s.label}</span>
+                <span className="text-zinc-500 text-xs">
+                    {line.signals.join(', ')}
+                    {line.mentions > 1 ? ` · ${line.mentions} mentions` : ''} · conv {line.maxConviction}/5
+                </span>
+            </div>
+            <p className="text-xs text-zinc-400 italic mt-0.5">“{line.topQuote}”</p>
+        </div>
+    );
+}
+
+function EpisodeSummaryView({ summary }: { summary: EpisodeSummary }) {
+    return (
+        <div className="mt-4 space-y-4">
+            <div className="text-sm text-zinc-200 font-medium">{summary.headline}</div>
+
+            {summary.topBull.length > 0 && (
+                <section>
+                    <h3 className="text-[11px] uppercase tracking-wide text-green-400 font-semibold mb-1">Loudest bullish</h3>
+                    <div className="bg-zinc-950 rounded-lg border border-zinc-800 px-3">
+                        {summary.topBull.map((l, i) => <PlayerLine key={i} line={l} />)}
+                    </div>
+                </section>
+            )}
+
+            {summary.topBear.length > 0 && (
+                <section>
+                    <h3 className="text-[11px] uppercase tracking-wide text-red-400 font-semibold mb-1">Loudest bearish</h3>
+                    <div className="bg-zinc-950 rounded-lg border border-zinc-800 px-3">
+                        {summary.topBear.map((l, i) => <PlayerLine key={i} line={l} />)}
+                    </div>
+                </section>
+            )}
+
+            {summary.injuryNotes.length > 0 && (
+                <section>
+                    <h3 className="text-[11px] uppercase tracking-wide text-amber-400 font-semibold mb-1">Injury / news</h3>
+                    <div className="bg-zinc-950 rounded-lg border border-zinc-800 px-3">
+                        {summary.injuryNotes.map((l, i) => <PlayerLine key={i} line={l} />)}
+                    </div>
+                </section>
+            )}
+
+            <details>
+                <summary className="text-[11px] uppercase tracking-wide text-zinc-500 font-semibold cursor-pointer hover:text-zinc-300">
+                    All {summary.players} players discussed
+                </summary>
+                <div className="bg-zinc-950 rounded-lg border border-zinc-800 px-3 mt-1">
+                    {summary.perPlayer.map((l, i) => <PlayerLine key={i} line={l} />)}
+                </div>
+            </details>
         </div>
     );
 }
