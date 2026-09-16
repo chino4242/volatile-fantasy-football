@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { WeeklyRankingsForm } from './WeeklyRankingsForm';
 import { TransactionsForm } from './TransactionsForm';
+import { TranscriptForm } from './TranscriptForm';
 
 export default function AdminPage() {
     const [file, setFile] = useState<File | null>(null);
@@ -304,6 +305,9 @@ export default function AdminPage() {
 
             {/* Transactions feed */}
             <TransactionsForm />
+
+            {/* Podcast transcript → claims */}
+            <TranscriptForm />
         </div>
     );
 }

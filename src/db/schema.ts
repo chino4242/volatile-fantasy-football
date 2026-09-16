@@ -616,3 +616,29 @@ export const playerTransactions = pgTable("player_transactions", {
         sleeperIdx: index("idx_player_transactions_sleeper").on(table.sleeper_id),
     };
 });
+
+// Pod Claims — the "un-columnable context layer" extracted from fantasy podcast
+// transcripts. Each row is a single player-CLAIM atom (who/signal/direction/
+// conviction/verbatim quote/source/week). Kept SEPARATE from the curated
+// player_transactions editorial feed (raw robot extraction vs. Chino's voice);
+// a strong ("graduated") claim can optionally be promoted into that feed later.
+// Read by the player modal "Pods" tab, portfolio "word on the street" line, and
+// the weekly GM briefing.
+export const podClaims = pgTable("pod_claims", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sleeper_id: text("sleeper_id").references(() => players.sleeper_id, { onDelete: "set null" }), // nullable — unmatched names still stored
+    player_name: text("player_name").notNull(),  // raw name from the transcript
+    show: text("show").notNull(),                 // e.g. "Late Round Podcast"
+    week: integer("week").notNull(),
+    signal_type: text("signal_type").notNull(),   // 'role' | 'injury' | 'coachspeak' | 'vibe' | 'contrarian'
+    direction: text("direction").notNull(),       // 'bull' | 'bear' | 'neutral'
+    conviction: integer("conviction").notNull(),  // 1 (hedge) … 5 (pounding the table)
+    quote: text("quote").notNull(),               // verbatim — the trust receipt
+    created_at: timestamp("created_at").defaultNow(),
+}, (table) => {
+    return {
+        sleeperWeekIdx: index("idx_pod_claims_sleeper_week").on(table.sleeper_id, table.week),
+        weekIdx: index("idx_pod_claims_week").on(table.week),
+    };
+});
+
