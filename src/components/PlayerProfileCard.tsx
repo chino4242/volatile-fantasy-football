@@ -655,7 +655,7 @@ function ProfileTab({
 
 function TrendsTab({ sleeperId }: { sleeperId: string }) {
     const currentYear = new Date().getFullYear();
-    const [selectedTrendSeason, setSelectedTrendSeason] = useState(currentYear - 1);
+    const [selectedTrendSeason, setSelectedTrendSeason] = useState(currentYear);
     const [weeklyStats, setWeeklyStats] = useState<WeeklyStats[] | null>(null);
     const [trendLoading, setTrendLoading] = useState(true);
     const availableTrendSeasons = [currentYear, currentYear - 1, currentYear - 2];
