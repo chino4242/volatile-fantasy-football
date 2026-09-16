@@ -13,6 +13,17 @@ function poolLabel(pool: 'qb' | 'flex' | 'k' | null): string {
     return pool === 'qb' ? 'QB' : pool === 'flex' ? 'Flex' : pool === 'k' ? 'K' : '';
 }
 
+/** Compact rest-of-season signal for a player: "ROS #12 · 18.5 PPG · SOS 3".
+ *  Returns '' when the player has no ROS data (nothing uploaded / no match). */
+function rosLabel(p: { rosRank?: number | null; rosPpg?: number | null; rosSos?: number | null } | null): string {
+    if (!p) return '';
+    const bits: string[] = [];
+    if (p.rosRank != null) bits.push(`ROS #${p.rosRank}`);
+    if (p.rosPpg != null) bits.push(`${p.rosPpg.toFixed(1)} PPG`);
+    if (p.rosSos != null) bits.push(`SOS ${p.rosSos}`);
+    return bits.join(' · ');
+}
+
 export function WaiverUpgradesCard({ upgrades }: { upgrades: WaiverUpgrade[] }) {
     if (!upgrades || upgrades.length === 0) return null;
 
@@ -25,7 +36,7 @@ export function WaiverUpgradesCard({ upgrades }: { upgrades: WaiverUpgrade[] }) 
                     {upgrades.filter(u => !u.informational).length}
                 </span>
             </div>
-            <p className="text-xs text-zinc-500 mb-3">Available players who beat one of yours by this week&apos;s rankings.</p>
+            <p className="text-xs text-zinc-500 mb-3">Available players who beat one of yours by this week&apos;s rankings. Drop guardrail blends rest-of-season &amp; dynasty value.</p>
 
             <ul className="space-y-2">
                 {upgrades.map((u, i) => {
@@ -33,8 +44,13 @@ export function WaiverUpgradesCard({ upgrades }: { upgrades: WaiverUpgrade[] }) 
                     const rankBit = u.addWeeklyRank != null && u.dropWeeklyRank != null && u.comparedTo
                         ? `${pl} #${u.addWeeklyRank} vs ${u.comparedTo.full_name} ${pl} #${u.dropWeeklyRank}`
                         : u.addWeeklyRank != null ? `${pl} #${u.addWeeklyRank} this week` : null;
+                    // ROS signal for the ADD (why he's worth it beyond this week).
+                    const rosBit = rosLabel(u.add);
+                    // Blended keep-value the drop surrenders (0..1000 scale, not raw
+                    // dynasty points), plus the drop's own ROS context.
                     const giveUp = u.type === 'swap' && u.valueSurrendered != null
-                        ? `gives up ${Math.round(u.valueSurrendered).toLocaleString()} value` : null;
+                        ? `drop keep-value ${Math.round(u.valueSurrendered)}` : null;
+                    const dropRos = u.type === 'swap' ? rosLabel(u.drop) : null;
                     const headline = u.informational
                         ? `${u.add.full_name} (${u.add.position ?? '—'}) available — but no worthwhile drop`
                         : u.type === 'add'
@@ -54,8 +70,10 @@ export function WaiverUpgradesCard({ upgrades }: { upgrades: WaiverUpgrade[] }) 
                                     <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400 font-semibold">+{u.weeklyRankGain} spots</span>
                                 )}
                             </div>
-                            {(rankBit || giveUp) && (
-                                <div className="text-[11px] text-zinc-400 mt-0.5">{[rankBit, giveUp].filter(Boolean).join(' · ')}</div>
+                            {(rankBit || rosBit || giveUp || dropRos) && (
+                                <div className="text-[11px] text-zinc-400 mt-0.5">
+                                    {[rankBit, rosBit && `add: ${rosBit}`, giveUp, dropRos && `drop: ${dropRos}`].filter(Boolean).join(' · ')}
+                                </div>
                             )}
                         </li>
                     );

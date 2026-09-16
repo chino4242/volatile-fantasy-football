@@ -75,8 +75,8 @@ export default async function DbTeamPage({ params }: PageProps) {
         data.teams.flatMap(t => t.players.map(p => p.sleeper_id)),
     );
     const waiverUpgrades = await getTeamWaiverUpgrades(
-        myPlayers.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, fc_value: p.fc_value, is_starter: p.is_starter })),
-        data.freeAgents.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, fc_value: p.fc_value })),
+        myPlayers.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, fc_value: p.fc_value, is_starter: p.is_starter, rank_ros_overall: p.rank_ros_overall, rank_ros_pos: p.rank_ros_pos, rank_ros_ppg: p.rank_ros_ppg, ros_sos: p.ros_sos, ros_next4_sos: p.ros_next4_sos, bye_week: p.bye_week })),
+        data.freeAgents.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, fc_value: p.fc_value, rank_ros_overall: p.rank_ros_overall, rank_ros_pos: p.rank_ros_pos, rank_ros_ppg: p.rank_ros_ppg, ros_sos: p.ros_sos, ros_next4_sos: p.ros_next4_sos, bye_week: p.bye_week })),
         data.rosterPositions,
         platform === "yahoo" ? "redraft" : "dynasty",
         { coreCapacity: rosterConfig?.coreCapacity, rosteredInLeague },

@@ -11,7 +11,7 @@
 import { getWeeklyRanks, rankForPosition } from './weekly-rankings';
 import { findWaiverUpgrades, type WaiverUpgrade } from './waiver-upgrades';
 import { getWeeklyKickerRankings } from './kicker-rankings';
-import type { PortfolioPlayer, PortfolioTeam, PortfolioLeagueType } from './portfolio';
+import { blendedKeepValue, KEEP_SCALE, type PortfolioPlayer, type PortfolioTeam, type PortfolioLeagueType } from './portfolio';
 
 /** Minimal player shape the caller provides (DbLeaguePlayer is compatible). */
 export interface UpgradeSourcePlayer {
@@ -21,10 +21,18 @@ export interface UpgradeSourcePlayer {
     team: string | null;
     fc_value: number | null;
     is_starter?: boolean;
+    // Rest-of-season signal (optional — carried through so the drop guardrail
+    // can blend ROS value with market value). DbLeaguePlayer supplies these.
+    rank_ros_overall?: number | null;
+    rank_ros_pos?: number | null;
+    rank_ros_ppg?: number | null;
+    ros_sos?: number | null;
+    ros_next4_sos?: number | null;
+    bye_week?: number | null;
 }
 
-/** Stamp weekly rank onto a player → PortfolioPlayer (only the fields the
- *  waiver-upgrade engine reads). */
+/** Stamp weekly rank onto a player → PortfolioPlayer (the fields the waiver-
+ *  upgrade engine reads, plus the ROS signal for the blended drop guardrail). */
 function toPortfolioPlayer(
     p: UpgradeSourcePlayer,
     byId: Awaited<ReturnType<typeof getWeeklyRanks>>['byId'],
@@ -44,6 +52,12 @@ function toPortfolioPlayer(
         weeklyRank: info.rank,
         weeklyTotal: info.total,
         weeklyPosMatchup: info.posMatchup,
+        rosRank: p.rank_ros_overall ?? null,
+        rosPosRank: p.rank_ros_pos ?? null,
+        rosPpg: p.rank_ros_ppg ?? null,
+        rosSos: p.ros_sos ?? null,
+        rosNext4Sos: p.ros_next4_sos ?? null,
+        byeWeek: p.bye_week ?? null,
     };
 }
 
@@ -104,5 +118,10 @@ export async function getTeamWaiverUpgrades(
         actualCoreCount: myPlayers.length,
         startedTeams: opts.startedTeams,
         maxSuggestions: 25,
+        // Blend ROS + dynasty value for the drop guardrail (all league types),
+        // matching the portfolio action center.
+        longTermValueOf: blendedKeepValue,
+        blockAtValue: KEEP_SCALE.BLOCK,
+        cautionAtValue: KEEP_SCALE.CAUTION,
     });
 }

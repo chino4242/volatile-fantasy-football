@@ -25,6 +25,8 @@ import {
     labelTeam,
     weakestStarter,
     optimizePortfolioTeam,
+    blendedKeepValue,
+    KEEP_SCALE,
 } from './portfolio';
 import {
     generateTransactionSuggestions,
@@ -319,51 +321,18 @@ function waiverUpgradeItems(input: ActionCenterInput, limit: number): ActionItem
     if (!config) return [];
 
     // Drop guardrail value = "how much would it hurt to drop this player?" We
-    // BLEND two lenses and take the stronger signal, so a player valuable by
-    // EITHER dynasty market value OR rest-of-season production is protected —
-    // for every league type (dynasty, keeper, redraft alike). Both lenses are
-    // mapped onto a common 0..1000 "keep score":
-    //   • ROS   : rank 1 → ~1000, deeper ranks lower; PPG proxies the unranked.
-    //   • Market: FantasyCalc value mapped through its own block/caution anchors
-    //             (4000 → 1000, 1500 → 850) so a top dynasty asset still blocks.
-    // Thresholds are then on this shared scale: block ≥ 960 (≈ROS top-40 / a
-    // top-market asset), caution ≥ 850 (≈ROS top-150 / a meaningful market piece).
-    const ROS_MAX = 1000;
-    const BLOCK = ROS_MAX - 40;    // 960
-    const CAUTION = ROS_MAX - 150; // 850
-    const FC_BLOCK = 4000;         // FantasyCalc value that means "never drop"
-    const FC_CAUTION = 1500;       // FantasyCalc value that means "think twice"
-
-    const rosScore = (p: PortfolioPlayer): number | null => {
-        if (p.rosRank != null) return ROS_MAX - p.rosRank;
-        if (p.rosPpg != null) return Math.min(p.rosPpg * 10, CAUTION - 1); // unranked: PPG proxy, never auto-blocks
-        return null;
-    };
-    // Map a FantasyCalc market value onto the shared 0..1000 keep-scale using the
-    // FC block/caution values as anchors (piecewise-linear), so "top market asset"
-    // lands at/above BLOCK and a "meaningful piece" lands at/above CAUTION.
-    const marketScore = (p: PortfolioPlayer): number | null => {
-        const v = p.marketValue;
-        if (v == null) return null;
-        if (v >= FC_BLOCK) return BLOCK + Math.min((v - FC_BLOCK) / FC_BLOCK, 1) * (ROS_MAX - BLOCK);
-        if (v >= FC_CAUTION) return CAUTION + ((v - FC_CAUTION) / (FC_BLOCK - FC_CAUTION)) * (BLOCK - CAUTION);
-        return (v / FC_CAUTION) * CAUTION; // below caution scales into 0..850
-    };
-    const blendedKeepValue = (p: PortfolioPlayer): number | null => {
-        const r = rosScore(p);
-        const m = marketScore(p);
-        if (r == null && m == null) return null; // unknown by both → safe to drop
-        return Math.max(r ?? 0, m ?? 0);          // protect if strong by EITHER lens
-    };
-
+    // BLEND rest-of-season value and dynasty market value (protect if strong by
+    // EITHER lens) on a shared 0..1000 keep-scale, for every league type. The
+    // blend + thresholds live in portfolio.ts so this and the team page's
+    // waiver-upgrades card agree.
     const upgrades = findWaiverUpgrades(team, league.freeAgents, league.rosterPositions, league.leagueType, {
         coreCapacity: config.coreCapacity,
         actualCoreCount: team.players.filter(p => p.position !== 'PICK').length,
         maxSuggestions: limit,
         startedTeams: input.startedTeams,
         longTermValueOf: blendedKeepValue,
-        blockAtValue: BLOCK,
-        cautionAtValue: CAUTION,
+        blockAtValue: KEEP_SCALE.BLOCK,
+        cautionAtValue: KEEP_SCALE.CAUTION,
     });
 
     const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);

@@ -36,6 +36,14 @@ interface PlayerData {
     redraft_rank_pos?: number | null;
     redraft_rank_tier?: number | null;
     redraft_auction_value?: number | null;
+    // Rest-of-season ranks + detail (from the ROS upload).
+    rank_ros_overall?: number | null;
+    rank_ros_pos?: number | null;
+    rank_ros_tier?: number | null;
+    rank_ros_ppg?: number | null;
+    ros_sos?: number | null;
+    ros_next4_sos?: number | null;
+    bye_week?: number | null;
     writeups?: { source: string; analysis_text: string }[] | null;
     zap_score?: number | null;
     zap_analysis?: string | null;
@@ -80,6 +88,10 @@ const BASE_COLUMNS: ColDef[] = [
     { key: 'internal_pos_rd', label: 'My Pos (Redraft)', description: 'Your proprietary redraft position rank', defaultOn: false, group: 'internal' },
     { key: 'tier_dyn', label: 'My Tier (Dynasty)', description: 'Your proprietary dynasty tier grouping', defaultOn: false, group: 'internal' },
     { key: 'tier_rd', label: 'My Tier (Redraft)', description: 'Your proprietary redraft tier grouping', defaultOn: false, group: 'internal' },
+    { key: 'ros_rank', label: 'ROS Rank', description: 'Your rest-of-season overall rank (forward-looking value for the remainder of the season)', defaultOn: true, group: 'internal' },
+    { key: 'ros_pos', label: 'ROS Pos', description: 'Your rest-of-season position rank (e.g. RB5)', defaultOn: false, group: 'internal' },
+    { key: 'ros_ppg', label: 'ROS PPG', description: 'Projected rest-of-season points per game', defaultOn: false, group: 'internal' },
+    { key: 'ros_sos', label: 'ROS SOS', description: 'Rest-of-season strength of schedule for the position (1 = easiest remaining slate, 32 = hardest)', defaultOn: false, group: 'internal' },
     { key: 'value_gap', label: 'Signal', description: 'BUY/SELL indicator: market rank vs. your rank. Positive gap = market undervalues (BUY)', defaultOn: true, group: 'internal' },
 ];
 
@@ -383,6 +395,10 @@ export function TeamRosterTable({
             internal_pos_rd: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} onClick={() => handleSort('redraft_rank_pos')}>Redraft Pos <SortIcon column="redraft_rank_pos" /></th>,
             tier_dyn: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} onClick={() => handleSort(sf ? 'rank_sf_tier' : 'rank_1qb_tier')}>Dynasty Tier <SortIcon column={sf ? 'rank_sf_tier' : 'rank_1qb_tier'} /></th>,
             tier_rd: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} onClick={() => handleSort('redraft_rank_tier')}>Redraft Tier <SortIcon column="redraft_rank_tier" /></th>,
+            ros_rank: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} onClick={() => handleSort('rank_ros_overall')}>ROS Rank <SortIcon column="rank_ros_overall" /></th>,
+            ros_pos: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} onClick={() => handleSort('rank_ros_pos')}>ROS Pos <SortIcon column="rank_ros_pos" /></th>,
+            ros_ppg: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} onClick={() => handleSort('rank_ros_ppg')}>ROS PPG <SortIcon column="rank_ros_ppg" /></th>,
+            ros_sos: <th key={key} className={`px-3 sm:px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg} cursor-pointer group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-colors`} onClick={() => handleSort('ros_sos')}>ROS SOS <SortIcon column="ros_sos" /></th>,
             value_gap: <th key={key} className={`px-3 sm:px-6 py-3 text-center text-xs font-medium text-zinc-400 uppercase tracking-wider ${vffBg}`}>Signal</th>,
         };
         if (headers[key]) return headers[key];
@@ -414,6 +430,10 @@ export function TeamRosterTable({
             internal_pos_rd: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${vffBgCell}`}><span className="font-mono text-sm text-amber-600 dark:text-amber-400">{player.redraft_rank_pos ? `${player.position}${player.redraft_rank_pos}` : '–'}</span></td>,
             tier_dyn: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${vffBgCell}`}><span className={`font-mono text-sm ${getTierColorClass(fcTier)}`}>{fcTier ? `T${fcTier}` : '–'}</span></td>,
             tier_rd: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${vffBgCell}`}><span className="font-mono text-sm text-amber-600 dark:text-amber-400">{player.redraft_rank_tier ? `T${player.redraft_rank_tier}` : '–'}</span></td>,
+            ros_rank: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${vffBgCell}`}><span className="font-mono text-sm text-purple-700 dark:text-purple-300">{player.rank_ros_overall || '–'}</span></td>,
+            ros_pos: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${vffBgCell}`}><span className="font-mono text-sm text-purple-700 dark:text-purple-300">{player.rank_ros_pos ? `${player.position}${player.rank_ros_pos}` : '–'}</span></td>,
+            ros_ppg: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${vffBgCell}`}><span className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{player.rank_ros_ppg != null ? Number(player.rank_ros_ppg).toFixed(1) : '–'}</span></td>,
+            ros_sos: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right ${vffBgCell}`}><span className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{player.ros_sos ?? '–'}</span></td>,
             value_gap: <td key={key} className={`px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-center ${vffBgCell}`}>{gapLabel ? <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ${gapLabel.color}`}>{gapLabel.label}</span> : '–'}</td>,
         };
         if (cells[key]) return cells[key];

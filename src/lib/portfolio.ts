@@ -173,6 +173,51 @@ export function toPortfolioPlayer(
     };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Blended "keep value" — how much it would hurt to DROP a player, judged by
+// BOTH rest-of-season value AND dynasty market value (protect if strong by
+// EITHER lens), on a shared 0..1000 scale. Used as the waiver drop guardrail
+// for ALL league types. Shared by the portfolio action center and the team
+// page's waiver-upgrades card so the two surfaces agree.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Shared 0..1000 keep-scale constants + thresholds. */
+export const KEEP_SCALE = {
+    MAX: 1000,
+    BLOCK: 960,     // ROS top-~40 / top market asset → never drop for a streamer
+    CAUTION: 850,   // ROS top-~150 / meaningful market piece → think twice
+    FC_BLOCK: 4000, // FantasyCalc value meaning "never drop"
+    FC_CAUTION: 1500, // FantasyCalc value meaning "think twice"
+} as const;
+
+/** Rest-of-season score on the keep-scale (higher = more valuable to keep). */
+export function rosKeepScore(p: PortfolioPlayer): number | null {
+    const { MAX, CAUTION } = KEEP_SCALE;
+    if (p.rosRank != null) return MAX - p.rosRank;
+    if (p.rosPpg != null) return Math.min(p.rosPpg * 10, CAUTION - 1); // unranked: PPG proxy, never auto-blocks
+    return null;
+}
+
+/** Market (FantasyCalc) value mapped onto the shared keep-scale via its block/
+ *  caution anchors, so a top dynasty asset still lands at/above BLOCK. */
+export function marketKeepScore(p: PortfolioPlayer): number | null {
+    const { MAX, BLOCK, CAUTION, FC_BLOCK, FC_CAUTION } = KEEP_SCALE;
+    const v = p.marketValue;
+    if (v == null) return null;
+    if (v >= FC_BLOCK) return BLOCK + Math.min((v - FC_BLOCK) / FC_BLOCK, 1) * (MAX - BLOCK);
+    if (v >= FC_CAUTION) return CAUTION + ((v - FC_CAUTION) / (FC_BLOCK - FC_CAUTION)) * (BLOCK - CAUTION);
+    return (v / FC_CAUTION) * CAUTION;
+}
+
+/** Protect a player who's strong by EITHER lens: max(ROS, market) keep-score.
+ *  null only when BOTH lenses are unknown (→ safe to drop). */
+export function blendedKeepValue(p: PortfolioPlayer): number | null {
+    const r = rosKeepScore(p);
+    const m = marketKeepScore(p);
+    if (r == null && m == null) return null;
+    return Math.max(r ?? 0, m ?? 0);
+}
+
 
 
 // ─────────────────────────────────────────────────────────────────────────
