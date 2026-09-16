@@ -50,6 +50,13 @@ const EXTRACTION_SYSTEM = `You extract structured fantasy-football "player claim
 
 A claim is a statement about ONE specific NFL player that could influence a fantasy start/sit, add/drop, or trade decision — the kind of context that does NOT show up in a stat column or ranking: role/usage shifts, injury or practice nuance, coach-speak decoding, the analyst's conviction/vibe, or contrarian takes.
 
+IMPORTANT — these transcripts are auto-generated from audio, so expect:
+- Heavy noise: repeated/duplicated sentences, filler, crosstalk, false starts, and long off-topic comedy tangents. Read past all of it.
+- Multiple hosts and multiple segments (e.g. week-in-review "take checks", news and notes, matchup previews, mailbag/trade questions). A typical fantasy episode contains MANY claims (often 15-40) scattered throughout — they are rarely stated cleanly in one place.
+- Claims buried inside banter. "I feel good about X", "the usage of Y was not what it was", "Z is a must-start", "I'd trade away W", ranking a player in rest-of-season order — these are all claims. Extract them.
+
+Dig the claims out of the noise. Returning an empty array should be RARE — only when the transcript genuinely contains no talk about specific NFL players at all. If players are discussed, extract every distinct claim you can support with a quote.
+
 Return ONLY a JSON array (no prose, no markdown fences). Each element:
 {
   "player_name": "<full player name exactly as a human would write it, e.g. 'Devaughn Vele'>",
