@@ -76,7 +76,7 @@ export function canonicalPos(pos: string | null | undefined): string {
  * lineup at its position (dedicated slots) or in a flex pool it's needed for?
  * This is the general "don't drop below your starting requirement anywhere" guard.
  */
-function wouldBreakLineup(
+export function wouldBreakLineup(
     candidate: TxnPlayer,
     myCountsByPos: Record<string, number>,
     config: RosterConfig,
@@ -108,7 +108,7 @@ function wouldBreakLineup(
 }
 
 /** Count my players per canonical position (excluding picks). */
-function countByPosition(players: TxnPlayer[]): Record<string, number> {
+export function countByPosition(players: TxnPlayer[]): Record<string, number> {
     const counts: Record<string, number> = {};
     for (const p of players) {
         if (p.position === 'PICK') continue;

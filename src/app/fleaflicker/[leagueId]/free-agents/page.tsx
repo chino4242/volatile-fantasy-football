@@ -8,20 +8,10 @@ import Link from "next/link";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { cleanseName } from "@/lib/nameUtils";
 import { getWeeklyRanks, rankForPosition } from "@/lib/weekly-rankings";
-import { getTeamWaiverUpgrades } from "@/lib/team-waiver-upgrades";
-import { WaiverUpgradesCard } from "@/components/WaiverUpgradesCard";
+import { recommendWaiverValue, type WaiverValuePlayer } from "@/lib/waiver-value";
+import { buildRosterConfigFromSlots } from "@/lib/transaction-suggestions";
+import { WaiverValueCard } from "@/components/WaiverValueCard";
 import { FreeAgentTeamSelector } from "@/components/FreeAgentTeamSelector";
-
-/** Expand Fleaflicker starting-slot COUNTS into the flat roster_positions array
- *  the lineup/waiver engine expects (e.g. {QB:1,RB:2,FLEX:2,...} → ['QB','RB',
- *  'RB','FLEX','FLEX',…]). */
-function rosterPositionsFromSlots(slots: { QB?: number; RB?: number; WR?: number; TE?: number; FLEX?: number; DST?: number; PK?: number }): string[] {
-    const out: string[] = [];
-    const push = (label: string, n?: number) => { for (let i = 0; i < (n || 0); i++) out.push(label); };
-    push('QB', slots.QB); push('RB', slots.RB); push('WR', slots.WR); push('TE', slots.TE);
-    push('FLEX', slots.FLEX); push('DST', slots.DST); push('PK', slots.PK);
-    return out;
-}
 
 export const dynamic = 'force-dynamic';
 
@@ -135,11 +125,11 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
 
         const rankingsVintage = formatVintage(await getRankingsVintage(format));
 
-        // Fetch user's roster for FAAB recommendations (if team param provided)
+        // Fetch user's roster for personalized waiver recommendations (?team=).
         let myRoster: { full_name: string; position: string | null; fc_value: number | null; redraft_rank_overall: number | null; redraft_auction_value: number | null }[] = [];
         let rosterSlots: { QB: number; RB: number; WR: number; TE: number; FLEX: number } | undefined;
-        // Team-aware waiver upgrades (adds WITH a guarded drop) via the shared engine.
-        let waiverUpgrades: Awaited<ReturnType<typeof getTeamWaiverUpgrades>> = [];
+        // Value-based waiver recommendations (adds WITH a guarded drop), ROS-driven.
+        let waiverRecs: ReturnType<typeof recommendWaiverValue> = [];
         if (teamParam) {
             const teamId = parseInt(teamParam);
             const userRoster = fleaflickerData.rosters.find(r => r.id === teamId);
@@ -159,29 +149,28 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                 const slots = await getFleaflickerRosterSlots(leagueId);
                 rosterSlots = slots;
 
-                // Build the shared-engine inputs: my players + free agents as
-                // UpgradeSourcePlayer (carry ROS so the drop guardrail is ROS-aware).
-                const myUpgradePlayers = myRosterRows
+                // Map both sides into the value engine's WaiverValuePlayer shape.
+                const toWvp = (db: typeof dbPlayers[number]): WaiverValuePlayer => ({
+                    sleeper_id: db.sleeper_id, full_name: db.full_name, position: db.position, team: db.team,
+                    fc_value: db.fc_value,
+                    rosRank: db.rank_ros_overall ?? null, rosPosRank: db.rank_ros_pos ?? null,
+                    rosPpg: db.rank_ros_ppg != null ? Number(db.rank_ros_ppg) : null,
+                    rosSos: db.ros_sos ?? null, byeWeek: db.bye_week ?? null,
+                    weeklyRank: null,
+                });
+                const myWvp = myRosterRows
                     .filter(({ db }) => db && ["QB", "RB", "WR", "TE"].includes(db.position || ""))
-                    .map(({ db }) => ({
-                        sleeper_id: db!.sleeper_id, full_name: db!.full_name, position: db!.position,
-                        team: db!.team, fc_value: db!.fc_value, is_starter: false,
-                        rank_ros_overall: db!.rank_ros_overall, rank_ros_pos: db!.rank_ros_pos,
-                        rank_ros_ppg: db!.rank_ros_ppg != null ? Number(db!.rank_ros_ppg) : null,
-                        ros_sos: db!.ros_sos, ros_next4_sos: db!.ros_next4_sos, bye_week: db!.bye_week,
-                    }));
-                const faUpgradePlayers = freeAgentsFinal.map(p => ({
-                    sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position,
-                    team: p.team, fc_value: p.fc_value,
-                    rank_ros_overall: p.rank_ros_overall, rank_ros_pos: p.rank_ros_pos,
-                    rank_ros_ppg: p.rank_ros_ppg != null ? Number(p.rank_ros_ppg) : null,
-                    ros_sos: p.ros_sos, ros_next4_sos: p.ros_next4_sos, bye_week: p.bye_week,
+                    .map(({ db }) => toWvp(db!));
+                const faWvp: WaiverValuePlayer[] = freeAgentsFinal.map(p => ({
+                    sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team,
+                    fc_value: p.fc_value,
+                    rosRank: p.rank_ros_overall ?? null, rosPosRank: p.rank_ros_pos ?? null,
+                    rosPpg: p.rank_ros_ppg != null ? Number(p.rank_ros_ppg) : null,
+                    rosSos: p.ros_sos ?? null, byeWeek: p.bye_week ?? null,
+                    weeklyRank: p.weekly_rank ?? null,
                 }));
-                const rosterPositions = rosterPositionsFromSlots(slots);
-                waiverUpgrades = await getTeamWaiverUpgrades(
-                    myUpgradePlayers, faUpgradePlayers, rosterPositions, 'redraft',
-                    { coreCapacity: slots.total },
-                );
+                const config = buildRosterConfigFromSlots(slots);
+                waiverRecs = recommendWaiverValue(myWvp, faWvp, config, { actualCoreCount: userRoster.players.length, limit: 15 });
             }
         }
 
@@ -203,10 +192,10 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                         </div>
                     </div>
 
-                    {/* Team-aware waiver upgrades: adds WITH the guarded drop (shared engine). */}
-                    {waiverUpgrades.length > 0 && (
+                    {/* Team-aware value recommendations: adds WITH the guarded drop. */}
+                    {waiverRecs.length > 0 && (
                         <div className="mb-6">
-                            <WaiverUpgradesCard upgrades={waiverUpgrades} />
+                            <WaiverValueCard recs={waiverRecs} />
                         </div>
                     )}
 
