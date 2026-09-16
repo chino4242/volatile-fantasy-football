@@ -8,6 +8,20 @@ import Link from "next/link";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { cleanseName } from "@/lib/nameUtils";
 import { getWeeklyRanks, rankForPosition } from "@/lib/weekly-rankings";
+import { getTeamWaiverUpgrades } from "@/lib/team-waiver-upgrades";
+import { WaiverUpgradesCard } from "@/components/WaiverUpgradesCard";
+import { FreeAgentTeamSelector } from "@/components/FreeAgentTeamSelector";
+
+/** Expand Fleaflicker starting-slot COUNTS into the flat roster_positions array
+ *  the lineup/waiver engine expects (e.g. {QB:1,RB:2,FLEX:2,...} → ['QB','RB',
+ *  'RB','FLEX','FLEX',…]). */
+function rosterPositionsFromSlots(slots: { QB?: number; RB?: number; WR?: number; TE?: number; FLEX?: number; DST?: number; PK?: number }): string[] {
+    const out: string[] = [];
+    const push = (label: string, n?: number) => { for (let i = 0; i < (n || 0); i++) out.push(label); };
+    push('QB', slots.QB); push('RB', slots.RB); push('WR', slots.WR); push('TE', slots.TE);
+    push('FLEX', slots.FLEX); push('DST', slots.DST); push('PK', slots.PK);
+    return out;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -124,22 +138,50 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
         // Fetch user's roster for FAAB recommendations (if team param provided)
         let myRoster: { full_name: string; position: string | null; fc_value: number | null; redraft_rank_overall: number | null; redraft_auction_value: number | null }[] = [];
         let rosterSlots: { QB: number; RB: number; WR: number; TE: number; FLEX: number } | undefined;
+        // Team-aware waiver upgrades (adds WITH a guarded drop) via the shared engine.
+        let waiverUpgrades: Awaited<ReturnType<typeof getTeamWaiverUpgrades>> = [];
         if (teamParam) {
             const teamId = parseInt(teamParam);
             const userRoster = fleaflickerData.rosters.find(r => r.id === teamId);
             if (userRoster) {
-                // Match roster players to DB for redraft ranks
-                myRoster = userRoster.players.map(p => {
+                // Match roster players to DB rows (values / ranks / ROS) by name.
+                const myRosterRows = userRoster.players.map(p => {
                     const dbMatch = dbPlayers.find(db => cleanseName(db.full_name || '') === cleanseName(p.full_name));
-                    return {
-                        full_name: p.full_name,
-                        position: dbMatch?.position || null,
-                        fc_value: dbMatch?.fc_value || null,
-                        redraft_rank_overall: dbMatch?.redraft_rank_overall || null,
-                        redraft_auction_value: null,
-                    };
+                    return { ffName: p.full_name, db: dbMatch };
                 });
-                rosterSlots = await getFleaflickerRosterSlots(leagueId);
+                myRoster = myRosterRows.map(({ ffName, db }) => ({
+                    full_name: ffName,
+                    position: db?.position || null,
+                    fc_value: db?.fc_value || null,
+                    redraft_rank_overall: db?.redraft_rank_overall || null,
+                    redraft_auction_value: null,
+                }));
+                const slots = await getFleaflickerRosterSlots(leagueId);
+                rosterSlots = slots;
+
+                // Build the shared-engine inputs: my players + free agents as
+                // UpgradeSourcePlayer (carry ROS so the drop guardrail is ROS-aware).
+                const myUpgradePlayers = myRosterRows
+                    .filter(({ db }) => db && ["QB", "RB", "WR", "TE"].includes(db.position || ""))
+                    .map(({ db }) => ({
+                        sleeper_id: db!.sleeper_id, full_name: db!.full_name, position: db!.position,
+                        team: db!.team, fc_value: db!.fc_value, is_starter: false,
+                        rank_ros_overall: db!.rank_ros_overall, rank_ros_pos: db!.rank_ros_pos,
+                        rank_ros_ppg: db!.rank_ros_ppg != null ? Number(db!.rank_ros_ppg) : null,
+                        ros_sos: db!.ros_sos, ros_next4_sos: db!.ros_next4_sos, bye_week: db!.bye_week,
+                    }));
+                const faUpgradePlayers = freeAgentsFinal.map(p => ({
+                    sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position,
+                    team: p.team, fc_value: p.fc_value,
+                    rank_ros_overall: p.rank_ros_overall, rank_ros_pos: p.rank_ros_pos,
+                    rank_ros_ppg: p.rank_ros_ppg != null ? Number(p.rank_ros_ppg) : null,
+                    ros_sos: p.ros_sos, ros_next4_sos: p.ros_next4_sos, bye_week: p.bye_week,
+                }));
+                const rosterPositions = rosterPositionsFromSlots(slots);
+                waiverUpgrades = await getTeamWaiverUpgrades(
+                    myUpgradePlayers, faUpgradePlayers, rosterPositions, 'redraft',
+                    { coreCapacity: slots.total },
+                );
             }
         }
 
@@ -147,13 +189,26 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
             <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8">
                 <div className="max-w-4xl mx-auto">
                     <div className="mb-6 sm:mb-8">
-                        <div className="flex items-center gap-4 sm:gap-6 bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
+                        <div className="flex items-center justify-between gap-4 flex-wrap bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded-xl shadow-sm ring-1 ring-zinc-900/5">
                             <div className="min-w-0">
                                 <h1 className="text-xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-50 truncate">Top Free Agents</h1>
                                 <div className="text-xs sm:text-base text-zinc-500 mt-0.5 sm:mt-1">Available in league (Top 200 by {format === 'sf' ? 'SF' : '1QB'} Value)</div>
                             </div>
+                            <FreeAgentTeamSelector
+                                platform="fleaflicker"
+                                leagueId={leagueId}
+                                currentTeam={teamParam ?? null}
+                                teams={fleaflickerData.rosters.map(r => ({ id: String(r.id), name: r.owners?.[0]?.display_name || `Team ${r.id}` }))}
+                            />
                         </div>
                     </div>
+
+                    {/* Team-aware waiver upgrades: adds WITH the guarded drop (shared engine). */}
+                    {waiverUpgrades.length > 0 && (
+                        <div className="mb-6">
+                            <WaiverUpgradesCard upgrades={waiverUpgrades} />
+                        </div>
+                    )}
 
                     {/* FAAB Targets (personalized recommendations) */}
                     {myRoster.length > 0 && (
