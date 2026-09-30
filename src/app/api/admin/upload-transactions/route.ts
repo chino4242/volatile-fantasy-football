@@ -67,8 +67,8 @@ export async function POST(request: Request) {
             if (sleeperId && (t.action === 'buy' || t.action === 'sell' || t.action === 'add')) {
                 tagged++;
                 await db.insert(playerTags)
-                    .values({ sleeper_id: sleeperId, tag: t.action, note: t.note?.slice(0, 500) || null })
-                    .onConflictDoUpdate({ target: playerTags.sleeper_id, set: { tag: t.action, note: t.note?.slice(0, 500) || null, updated_at: new Date() } });
+                    .values({ sleeper_id: sleeperId, tag: t.action, note: t.note?.slice(0, 500) || null, week })
+                    .onConflictDoUpdate({ target: playerTags.sleeper_id, set: { tag: t.action, note: t.note?.slice(0, 500) || null, week, updated_at: new Date() } });
             }
         }
 

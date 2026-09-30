@@ -8,6 +8,7 @@ interface TagRow {
     sleeper_id: string;
     tag: 'buy' | 'sell' | 'add';
     note: string | null;
+    week: number | null;
     full_name: string;
     position: string | null;
     team: string | null;
@@ -33,6 +34,7 @@ export function TagManager({ onChange }: { onChange?: () => void }) {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SearchResult[]>([]);
     const [searching, setSearching] = useState(false);
+    const [weekFilter, setWeekFilter] = useState<number | 'all'>('all');
 
     const loadTags = useCallback(async () => {
         setLoading(true);
@@ -78,8 +80,16 @@ export function TagManager({ onChange }: { onChange?: () => void }) {
         onChange?.();
     };
 
-    const buys = tags.filter(t => t.tag === 'buy' || t.tag === 'add');
-    const sells = tags.filter(t => t.tag === 'sell');
+    // Distinct weeks present across all tags (desc), for the dropdown. Tags with
+    // no week (manual board tags) live under the "Undated" option (value -1).
+    const weeks = Array.from(new Set(tags.map(t => t.week).filter((w): w is number => w != null))).sort((a, b) => b - a);
+    const hasUndated = tags.some(t => t.week == null);
+
+    const matchesWeek = (t: TagRow) =>
+        weekFilter === 'all' ? true : weekFilter === -1 ? t.week == null : t.week === weekFilter;
+
+    const buys = tags.filter(t => (t.tag === 'buy' || t.tag === 'add') && matchesWeek(t));
+    const sells = tags.filter(t => t.tag === 'sell' && matchesWeek(t));
 
     return (
         <div className="bg-white dark:bg-zinc-900 rounded-xl ring-1 ring-zinc-900/5 shadow-sm mb-5">
@@ -122,10 +132,27 @@ export function TagManager({ onChange }: { onChange?: () => void }) {
                     {loading ? (
                         <div className="text-sm text-zinc-400 flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading tags…</div>
                     ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <TagColumn title="Buy / Add" rows={buys} color="green" onRemove={removeTag} />
-                            <TagColumn title="Sell / Drop" rows={sells} color="red" onRemove={removeTag} />
-                        </div>
+                        <>
+                            {weeks.length > 0 && (
+                                <div className="flex items-center gap-2 mb-3">
+                                    <label htmlFor="tag-week-filter" className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Week</label>
+                                    <select
+                                        id="tag-week-filter"
+                                        value={weekFilter}
+                                        onChange={e => setWeekFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                                        className="text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        <option value="all">All weeks</option>
+                                        {weeks.map(w => <option key={w} value={w}>Week {w}</option>)}
+                                        {hasUndated && <option value={-1}>Undated</option>}
+                                    </select>
+                                </div>
+                            )}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <TagColumn title="Buy / Add" rows={buys} color="green" onRemove={removeTag} />
+                                <TagColumn title="Sell / Drop" rows={sells} color="red" onRemove={removeTag} />
+                            </div>
+                        </>
                     )}
                 </div>
             )}
@@ -146,6 +173,7 @@ function TagColumn({ title, rows, color, onRemove }: { title: string; rows: TagR
                         <li key={t.sleeper_id} className="text-sm flex items-center justify-between gap-2 group">
                             <Link href={`/portfolio/player/${t.sleeper_id}`} className="truncate text-zinc-800 dark:text-zinc-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline">
                                 {t.full_name} <span className="text-zinc-400">({t.position})</span>
+                                {t.week != null && <span className="ml-1.5 text-[10px] font-medium text-zinc-400 dark:text-zinc-500">W{t.week}</span>}
                             </Link>
                             <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(t.sleeper_id); }} className="text-zinc-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" title="Remove tag">
                                 <X className="h-3.5 w-3.5" />

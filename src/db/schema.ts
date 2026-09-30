@@ -567,6 +567,7 @@ export const playerTags = pgTable("player_tags", {
     sleeper_id: text("sleeper_id").primaryKey().references(() => players.sleeper_id, { onDelete: "cascade" }),
     tag: text("tag").notNull(), // 'buy' | 'sell' | 'add'
     note: text("note"),
+    week: integer("week"),      // NFL week this directive came from (null = manual/undated)
     created_at: timestamp("created_at").defaultNow(),
     updated_at: timestamp("updated_at").defaultNow(),
 });

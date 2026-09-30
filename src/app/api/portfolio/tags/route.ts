@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
         sleeper_id: t.sleeper_id,
         tag: t.tag,
         note: t.note,
+        week: t.week ?? null,
         full_name: infoById.get(t.sleeper_id)?.full_name || t.sleeper_id,
         position: infoById.get(t.sleeper_id)?.position || null,
         team: infoById.get(t.sleeper_id)?.team || null,
