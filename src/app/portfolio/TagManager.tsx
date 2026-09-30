@@ -6,7 +6,7 @@ import { Search, X, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface TagRow {
     sleeper_id: string;
-    tag: 'buy' | 'sell';
+    tag: 'buy' | 'sell' | 'add';
     note: string | null;
     full_name: string;
     position: string | null;
@@ -78,7 +78,7 @@ export function TagManager({ onChange }: { onChange?: () => void }) {
         onChange?.();
     };
 
-    const buys = tags.filter(t => t.tag === 'buy');
+    const buys = tags.filter(t => t.tag === 'buy' || t.tag === 'add');
     const sells = tags.filter(t => t.tag === 'sell');
 
     return (
@@ -87,7 +87,7 @@ export function TagManager({ onChange }: { onChange?: () => void }) {
                 <span className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
                     {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     Buy / Sell board
-                    <span className="text-xs font-normal text-zinc-400">({buys.length} buy · {sells.length} sell)</span>
+                    <span className="text-xs font-normal text-zinc-400">({buys.length} buy/add · {sells.length} sell)</span>
                 </span>
                 <span className="text-xs text-zinc-400">your portfolio-wide directives</span>
             </button>

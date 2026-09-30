@@ -565,7 +565,7 @@ export const draftPlans = pgTable("draft_plans", {
 // portfolio recommendation engine (e.g. undervalued-FA sweep) across all leagues.
 export const playerTags = pgTable("player_tags", {
     sleeper_id: text("sleeper_id").primaryKey().references(() => players.sleeper_id, { onDelete: "cascade" }),
-    tag: text("tag").notNull(), // 'buy' | 'sell'
+    tag: text("tag").notNull(), // 'buy' | 'sell' | 'add'
     note: text("note"),
     created_at: timestamp("created_at").defaultNow(),
     updated_at: timestamp("updated_at").defaultNow(),

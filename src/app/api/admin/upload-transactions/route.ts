@@ -10,7 +10,8 @@ import { parseTransactionsFeed } from '@/lib/transactions-parser';
  *   body: { text: string, week?: number }
  *
  * Parses the "N Transactions" feed → player_transactions (buy/sell/add + note).
- * buy/sell also upsert player_tags so they boost the portfolio FA sweep.
+ * buy/sell/add also upsert player_tags so they surface on the Buy/Sell board and
+ * boost the portfolio FA sweep (add + buy → "Buy / Add" column, sell → "Sell / Drop").
  * Re-uploading a given week replaces that week's transactions.
  */
 export async function POST(request: Request) {
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
         }
 
         const unmatched: string[] = [];
-        let buySell = 0;
+        let tagged = 0;
         for (const t of parsed) {
             const sleeperId = resolveId(t);
             if (!sleeperId) unmatched.push(t.playerName);
@@ -60,9 +61,11 @@ export async function POST(request: Request) {
                 week,
             });
 
-            // buy/sell → mirror into the global tag board (feeds the FA sweep).
-            if (sleeperId && (t.action === 'buy' || t.action === 'sell')) {
-                buySell++;
+            // buy/sell/add → mirror into the global tag board (feeds the FA sweep
+            // and the Buy/Sell board). 'add' lands in the "Buy / Add" column;
+            // 'sell' in the "Sell / Drop" column. 'hold' is not a board directive.
+            if (sleeperId && (t.action === 'buy' || t.action === 'sell' || t.action === 'add')) {
+                tagged++;
                 await db.insert(playerTags)
                     .values({ sleeper_id: sleeperId, tag: t.action, note: t.note?.slice(0, 500) || null })
                     .onConflictDoUpdate({ target: playerTags.sleeper_id, set: { tag: t.action, note: t.note?.slice(0, 500) || null, updated_at: new Date() } });
@@ -75,7 +78,7 @@ export async function POST(request: Request) {
             week,
             parsed: parsed.length,
             counts,
-            taggedBuySell: buySell,
+            taggedBuySell: tagged,
             unmatched: unmatched.length,
             unmatchedNames: unmatched,
         });

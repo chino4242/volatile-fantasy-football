@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 /**
  * GET  /api/portfolio/tags                → list all tags (joined w/ player name/pos)
  * GET  /api/portfolio/tags?search=mahomes → search players to tag (name match)
- * POST /api/portfolio/tags  {sleeper_id, tag:'buy'|'sell', note?}  → upsert a tag
+ * POST /api/portfolio/tags  {sleeper_id, tag:'buy'|'sell'|'add', note?}  → upsert a tag
  * DELETE /api/portfolio/tags?sleeper_id=  → remove a tag
  */
 export async function GET(request: NextRequest) {
@@ -50,8 +50,8 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         const { sleeper_id, tag, note } = body || {};
-        if (!sleeper_id || (tag !== "buy" && tag !== "sell")) {
-            return NextResponse.json({ error: "sleeper_id and tag ('buy'|'sell') required" }, { status: 400 });
+        if (!sleeper_id || (tag !== "buy" && tag !== "sell" && tag !== "add")) {
+            return NextResponse.json({ error: "sleeper_id and tag ('buy'|'sell'|'add') required" }, { status: 400 });
         }
         await db
             .insert(playerTags)

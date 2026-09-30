@@ -5,7 +5,7 @@ import { useState } from 'react';
 /**
  * Admin form: paste the "N Transactions" analyst feed for a week.
  * Parses "Add/Buy/Sell <Player>" headers + rationale → player_transactions;
- * buy/sell also mirror into the global buy/sell board.
+ * buy/sell/add also mirror into the global Buy/Sell board (add → "Buy / Add").
  */
 export function TransactionsForm() {
     const [text, setText] = useState('');
@@ -26,7 +26,7 @@ export function TransactionsForm() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Upload failed');
             const c = data.counts || {};
-            setMessage(`Parsed ${data.parsed} (buy ${c.buy || 0} · sell ${c.sell || 0} · add ${c.add || 0}). Tagged ${data.taggedBuySell} buy/sell. ${data.unmatched} unmatched.${data.unmatchedNames?.length ? `\nUnmatched: ${data.unmatchedNames.join(', ')}` : ''}`);
+            setMessage(`Parsed ${data.parsed} (buy ${c.buy || 0} · sell ${c.sell || 0} · add ${c.add || 0}). Tagged ${data.taggedBuySell} to Buy/Sell board. ${data.unmatched} unmatched.${data.unmatchedNames?.length ? `\nUnmatched: ${data.unmatchedNames.join(', ')}` : ''}`);
             setText('');
         } catch (err: any) {
             setError(err.message || 'Upload error');

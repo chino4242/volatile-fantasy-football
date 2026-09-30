@@ -34,8 +34,8 @@ export interface PortfolioPlayer {
     marketValue: number | null;
     /** Only meaningful for players ON a roster. */
     is_starter: boolean;
-    /** Chino's manual portfolio-wide tag, if any: 'buy' | 'sell'. */
-    tag?: 'buy' | 'sell' | null;
+    /** Chino's manual portfolio-wide tag, if any: 'buy' | 'sell' | 'add'. */
+    tag?: 'buy' | 'sell' | 'add' | null;
     /** Analyst transaction action from the feed, if any: 'buy' | 'sell' | 'add' | 'hold'. */
     txnAction?: 'buy' | 'sell' | 'add' | 'hold' | null;
     /** The analyst rationale (writeup) tied to txnAction. */

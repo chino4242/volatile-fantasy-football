@@ -27,7 +27,7 @@ interface LeagueSituation {
 }
 interface Situation {
     player: { sleeper_id: string; full_name: string; position: string | null; team: string | null; age: number | null };
-    tag: 'buy' | 'sell' | null;
+    tag: 'buy' | 'sell' | 'add' | null;
     writeup: string | null;
     perLeague: LeagueSituation[];
 }
@@ -99,7 +99,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ sleeper
                 </div>
                 <div className="flex items-center gap-3">
                     <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-100">{p?.full_name || '…'}</h1>
-                    {sit?.tag === 'buy' && <span className="text-xs font-bold text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 rounded px-2 py-0.5">BUY / ADD</span>}
+                    {(sit?.tag === 'buy' || sit?.tag === 'add') && <span className="text-xs font-bold text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 rounded px-2 py-0.5">BUY / ADD</span>}
                     {sit?.tag === 'sell' && <span className="text-xs font-bold text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40 rounded px-2 py-0.5">SELL / DROP</span>}
                 </div>
                 {p && <p className="text-sm text-zinc-500 mt-0.5 mb-6">{p.position}{p.team ? ` · ${p.team}` : ''}{p.age ? ` · age ${p.age}` : ''}</p>}
@@ -136,7 +136,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ sleeper
     );
 }
 
-function LeagueCard({ lg, tag }: { lg: LeagueSituation; tag: 'buy' | 'sell' | null }) {
+function LeagueCard({ lg, tag }: { lg: LeagueSituation; tag: 'buy' | 'sell' | 'add' | null }) {
     if (lg.status === 'not-in-league' || lg.status === 'error') return null;
     const PLATFORM: Record<string, string> = { sleeper: 'Sleeper', fleaflicker: 'Fleaflicker', yahoo: 'Yahoo', myffpc: 'MyFFPC' };
 

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/portfolio/player-situation
- * Body: { sleeper_id, tag?: 'buy'|'sell', refs: [{ platform, leagueId, leagueName?, format?, type?, myRosterId? }] }
+ * Body: { sleeper_id, tag?: 'buy'|'sell'|'add', refs: [{ platform, leagueId, leagueName?, format?, type?, myRosterId? }] }
  *
  * Cross-league breakdown for ONE player: the analyst writeup + per-league status
  * (on my roster / on an opponent / available), and — for opponent/mine cases — a
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         const sleeperId: string = body?.sleeper_id;
-        const tag: 'buy' | 'sell' | undefined = body?.tag;
+        const tag: 'buy' | 'sell' | 'add' | undefined = body?.tag;
         const refs: Array<{ platform: string; leagueId: string; leagueName?: string; format?: string; type?: string; myRosterId?: string | null }> = body?.refs || [];
         if (!sleeperId) return NextResponse.json({ error: "Missing sleeper_id" }, { status: 400 });
 
@@ -73,7 +73,7 @@ function analyzeLeague(
     league: PortfolioLeague,
     ref: { myRosterId?: string | null },
     sleeperId: string,
-    tag: 'buy' | 'sell' | undefined,
+    tag: 'buy' | 'sell' | 'add' | undefined,
     label: string,
 ) {
     const myTeam = ref.myRosterId ? league.teams.find(t => t.rosterId === String(ref.myRosterId)) : undefined;
