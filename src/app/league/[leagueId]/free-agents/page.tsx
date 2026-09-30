@@ -148,7 +148,14 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
                     rosSos: p.ros_sos ?? null, byeWeek: p.bye_week ?? null,
                     weeklyRank: (p as typeof freeAgentsFinal[number]).weekly_rank ?? null,
                 });
-                const myWvp = myRows.filter(p => ["QB", "RB", "WR", "TE"].includes(p.position || "")).map(toWvp);
+                // Weekly ranks for MY roster too, so the card's add-vs-drop table can
+                // show a this-week comparison (FA weekly ranks were already stamped).
+                const { byId: myWeeklyById } = await getWeeklyRanks(myRows.map(p => p.sleeper_id));
+                const myWvp = myRows.filter(p => ["QB", "RB", "WR", "TE"].includes(p.position || "")).map(p => {
+                    const w = toWvp(p);
+                    w.weeklyRank = rankForPosition(p.position, myWeeklyById.get(p.sleeper_id)).rank;
+                    return w;
+                });
                 const faWvp = freeAgentsFinal.map(toWvp);
                 const rosterPositions = await getSleeperRosterPositions(leagueId);
                 const config = buildRosterConfig(rosterPositions);

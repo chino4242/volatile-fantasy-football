@@ -209,6 +209,8 @@ export function recommendWaiverValue(
 export interface DropSuggestion {
     /** null when there's an open roster spot (pure add, no drop needed). */
     drop: WaiverValuePlayer | null;
+    /** The add's own signals, so the UI can build an add-vs-drop comparison. */
+    add: WaiverValuePlayer;
     /** Drop-side guardrail: safe / caution / block (safe for pure adds). */
     tier: DropTier;
     /** True when a legal drop exists (or an open spot) — i.e. the add is actionable. */
@@ -251,7 +253,7 @@ export function suggestDropForAdd(
     const rosterCount = Math.max(options.actualCoreCount ?? 0, roster.length);
     const openSpot = config ? rosterCount < config.coreCapacity : false;
     if (openSpot) {
-        return { drop: null, tier: 'safe', actionable: true, addScore, dropKeepValue: null, gain: null, downgrade: false, reasons, strongThisWeek };
+        return { drop: null, add, tier: 'safe', actionable: true, addScore, dropKeepValue: null, gain: null, downgrade: false, reasons, strongThisWeek };
     }
 
     // Otherwise find the lowest keep-value LEGAL drop (won't break the lineup).
@@ -264,11 +266,12 @@ export function suggestDropForAdd(
     const best = droppable[0];
     if (!best) {
         // No legal drop (every body is lineup-locked).
-        return { drop: null, tier: 'safe', actionable: false, addScore, dropKeepValue: null, gain: null, downgrade: false, reasons, strongThisWeek };
+        return { drop: null, add, tier: 'safe', actionable: false, addScore, dropKeepValue: null, gain: null, downgrade: false, reasons, strongThisWeek };
     }
     const gain = addScore - best.keep;
     return {
         drop: best.p,
+        add,
         tier: tierFor(best.keep),
         actionable: true,
         addScore,

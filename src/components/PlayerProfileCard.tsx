@@ -878,7 +878,7 @@ function StatBox({ label, value, perGame }: { label: string; value: string; perG
  * color-coded by the drop guardrail (safe / caution / block).
  */
 function SuggestedMove({ suggestion, myTeamName, addName }: { suggestion: DropSuggestion; myTeamName?: string | null; addName: string }) {
-    const { drop, tier, actionable, downgrade, reasons } = suggestion;
+    const { drop, add, tier, actionable, downgrade, reasons } = suggestion;
     const teamLabel = myTeamName ? `for ${myTeamName}` : 'for your team';
 
     // No legal drop available (every body is lineup-locked).
@@ -932,7 +932,92 @@ function SuggestedMove({ suggestion, myTeamName, addName }: { suggestion: DropSu
                 {downgrade ? 'Heads up — this would be a value downgrade; only if you need the position now.' : tierStyle.note}
             </p>
             {reasons.length > 0 && <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{reasons.join(' · ')}</p>}
+
+            {/* Add-vs-drop comparison: ROS, this week, dynasty value */}
+            <div className="mt-2.5 rounded-lg overflow-hidden ring-1 ring-zinc-200 dark:ring-zinc-700">
+                <table className="w-full text-[11px]">
+                    <thead>
+                        <tr className="bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
+                            <th className="text-left font-medium px-2 py-1">Metric</th>
+                            <th className="text-right font-medium px-2 py-1 text-emerald-600 dark:text-emerald-400">Add</th>
+                            <th className="text-right font-medium px-2 py-1 text-zinc-500">Drop</th>
+                            <th className="text-right font-medium px-2 py-1">Δ</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        <CompareRow
+                            label="ROS Rank"
+                            addVal={add.rosRank} dropVal={drop.rosRank}
+                            addText={fmtRank(add.rosRank, add.rosPosRank, add.position)}
+                            dropText={fmtRank(drop.rosRank, drop.rosPosRank, drop.position)}
+                            lowerBetter
+                        />
+                        <CompareRow
+                            label="ROS PPG"
+                            addVal={add.rosPpg} dropVal={drop.rosPpg}
+                            addText={add.rosPpg != null ? add.rosPpg.toFixed(1) : '—'}
+                            dropText={drop.rosPpg != null ? drop.rosPpg.toFixed(1) : '—'}
+                        />
+                        <CompareRow
+                            label="This Week"
+                            addVal={add.weeklyRank} dropVal={drop.weeklyRank}
+                            addText={add.weeklyRank != null ? `#${add.weeklyRank}` : '—'}
+                            dropText={drop.weeklyRank != null ? `#${drop.weeklyRank}` : '—'}
+                            lowerBetter
+                        />
+                        <CompareRow
+                            label="Dynasty Value"
+                            addVal={add.fc_value} dropVal={drop.fc_value}
+                            addText={add.fc_value != null ? add.fc_value.toLocaleString() : '—'}
+                            dropText={drop.fc_value != null ? drop.fc_value.toLocaleString() : '—'}
+                        />
+                    </tbody>
+                </table>
+            </div>
+            <p className="mt-1 text-[10px] text-zinc-400">
+                ROS Rank / This Week: lower is better. Δ is the swap&apos;s net change (add − drop).
+            </p>
         </div>
+    );
+}
+
+/** Format an overall rank with optional position rank, e.g. "#46 (RB20)". */
+function fmtRank(overall: number | null, pos: number | null, position: string | null): string {
+    if (overall == null) return '—';
+    const p = pos != null && position ? ` (${position}${pos})` : '';
+    return `#${overall}${p}`;
+}
+
+/** One row of the add-vs-drop comparison. Colors the delta green when the swap
+ *  is an improvement (respecting whether lower is better for the metric). */
+function CompareRow({ label, addVal, dropVal, addText, dropText, lowerBetter }: {
+    label: string;
+    addVal: number | null;
+    dropVal: number | null;
+    addText: string;
+    dropText: string;
+    lowerBetter?: boolean;
+}) {
+    let delta: string = '—';
+    let cls = 'text-zinc-400';
+    if (addVal != null && dropVal != null) {
+        const raw = addVal - dropVal;                 // add − drop
+        const improved = lowerBetter ? raw < 0 : raw > 0;
+        const worse = lowerBetter ? raw > 0 : raw < 0;
+        const shown = lowerBetter ? -raw : raw;        // show improvement as positive
+        const sign = shown > 0 ? '+' : '';
+        delta = raw === 0 ? '0' : `${sign}${Math.round(shown).toLocaleString()}`;
+        cls = improved ? 'text-emerald-600 dark:text-emerald-400 font-medium'
+            : worse ? 'text-red-600 dark:text-red-400 font-medium'
+            : 'text-zinc-400';
+    }
+    return (
+        <tr>
+            <td className="px-2 py-1 text-zinc-600 dark:text-zinc-400">{label}</td>
+            <td className="px-2 py-1 text-right font-mono text-zinc-800 dark:text-zinc-200">{addText}</td>
+            <td className="px-2 py-1 text-right font-mono text-zinc-500 dark:text-zinc-400">{dropText}</td>
+            <td className={`px-2 py-1 text-right font-mono ${cls}`}>{delta}</td>
+        </tr>
     );
 }
 

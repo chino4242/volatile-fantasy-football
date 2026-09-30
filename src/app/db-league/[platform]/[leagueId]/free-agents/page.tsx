@@ -102,7 +102,11 @@ export default async function DbFreeAgentsPage({ params, searchParams }: PagePro
                 rosRank: p.rank_ros_overall, rosPosRank: p.rank_ros_pos, rosPpg: p.rank_ros_ppg,
                 rosSos: p.ros_sos, byeWeek: p.bye_week, weeklyRank: null,
             });
-            const myWvp = myTeam.players.filter(p => ["QB", "RB", "WR", "TE"].includes(p.position || "")).map(toWvp);
+            const myWvp = myTeam.players.filter(p => ["QB", "RB", "WR", "TE"].includes(p.position || "")).map(p => {
+                const w = toWvp(p);
+                w.weeklyRank = rankForPosition(p.position, weeklyById.get(p.sleeper_id)).rank;
+                return w;
+            });
             const faWvp: WaiverValuePlayer[] = data.freeAgents
                 .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position || ""))
                 .map(p => {

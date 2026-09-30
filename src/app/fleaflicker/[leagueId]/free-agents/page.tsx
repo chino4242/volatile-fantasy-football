@@ -173,6 +173,10 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                 const myWvp = myRosterRows
                     .filter(({ db }) => db && ["QB", "RB", "WR", "TE"].includes(db.position || ""))
                     .map(({ db }) => toWvp(db!));
+                // Weekly ranks for MY roster too, so the card's add-vs-drop table can
+                // show a this-week comparison.
+                const { byId: myWeeklyById } = await getWeeklyRanks(myWvp.map(p => p.sleeper_id));
+                for (const p of myWvp) p.weeklyRank = rankForPosition(p.position, myWeeklyById.get(p.sleeper_id)).rank;
                 const faWvp: WaiverValuePlayer[] = freeAgentsFinal.map(p => ({
                     sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team,
                     fc_value: p.fc_value,
