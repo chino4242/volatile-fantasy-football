@@ -4,6 +4,7 @@ import { eq, inArray, notInArray, and, gt, desc, isNotNull } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { MyFFPCFreeAgentTable } from "./MyFFPCFreeAgentTable";
+import { getAnalystSignals } from "@/lib/analyst-signals";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,18 @@ export default async function MyFFPCFreeAgentsPage({
         .orderBy(desc(playerValues.fc_value_1qb))
         .limit(300);
 
+    // Stamp the analyst signal (Buy/Sell board) so trusted pickups stand out.
+    const analystSignals = await getAnalystSignals();
+    const freeAgentsWithSignals = freeAgents.map(p => {
+        const sig = analystSignals.get(p.sleeper_id);
+        return {
+            ...p,
+            analyst_tag: sig?.tag ?? null,
+            analyst_note: sig?.note ?? null,
+            analyst_week: sig?.week ?? null,
+        };
+    });
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6">
             <div className="max-w-5xl mx-auto">
@@ -92,7 +105,7 @@ export default async function MyFFPCFreeAgentsPage({
                     </p>
                 </div>
 
-                <MyFFPCFreeAgentTable players={freeAgents} />
+                <MyFFPCFreeAgentTable players={freeAgentsWithSignals} />
             </div>
         </div>
     );

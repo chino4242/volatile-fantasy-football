@@ -12,6 +12,7 @@ import { recommendWaiverValue, type WaiverValuePlayer } from "@/lib/waiver-value
 import { buildRosterConfigFromSlots } from "@/lib/transaction-suggestions";
 import { WaiverValueCard } from "@/components/WaiverValueCard";
 import { FreeAgentTeamSelector } from "@/components/FreeAgentTeamSelector";
+import { getAnalystSignals } from "@/lib/analyst-signals";
 
 export const dynamic = 'force-dynamic';
 
@@ -104,14 +105,19 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
         // Stamp this week's rank (flex/qb/dst pools) onto each free agent so the
         // table can show "current weekly rank" — the most up-to-date start/sit signal.
         const { week: weeklyWeek, byId: weeklyById } = await getWeeklyRanks(freeAgentsWithWriteups.map(p => p.sleeper_id));
+        const analystSignals = await getAnalystSignals();
         const freeAgentsFinal = freeAgentsWithWriteups.map(p => {
             const info = rankForPosition(p.position, weeklyById.get(p.sleeper_id));
+            const sig = analystSignals.get(p.sleeper_id);
             return {
                 ...p,
                 rank_ros_ppg: p.rank_ros_ppg != null ? Number(p.rank_ros_ppg) : null,
                 weekly_rank: info.rank,
                 weekly_total: info.total,
                 weekly_pos_matchup: info.posMatchup,
+                analyst_tag: sig?.tag ?? null,
+                analyst_note: sig?.note ?? null,
+                analyst_week: sig?.week ?? null,
             };
         });
 

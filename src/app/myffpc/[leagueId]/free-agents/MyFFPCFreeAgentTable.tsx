@@ -12,6 +12,23 @@ interface FreeAgent {
     rank_1qb_overall: number | null;
     rank_1qb_tier: number | null;
     redraft_auction_value: number | null;
+    analyst_tag?: 'buy' | 'sell' | 'add' | null;
+    analyst_note?: string | null;
+    analyst_week?: number | null;
+}
+
+/** Analyst pickup indicator: filled green star when a trusted analyst tags the
+ *  player as add/buy. Tooltip carries the note + week for context. */
+function AnalystPickup({ player }: { player: FreeAgent }) {
+    if (player.analyst_tag !== 'add' && player.analyst_tag !== 'buy') return null;
+    const verb = player.analyst_tag === 'add' ? 'Add' : 'Buy';
+    const wk = player.analyst_week != null ? ` (Week ${player.analyst_week})` : '';
+    const title = `Analyst pickup — ${verb}${wk}${player.analyst_note ? `: ${player.analyst_note}` : ''}`;
+    return (
+        <span title={title} aria-label={title} className="inline-flex flex-shrink-0 text-green-500 dark:text-green-400" style={{ lineHeight: 0 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+        </span>
+    );
 }
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE'] as const;
@@ -81,7 +98,8 @@ export function MyFFPCFreeAgentTable({ players }: { players: FreeAgent[] }) {
                                     {player.position}
                                 </span>
                                 <div className="min-w-0">
-                                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                                    <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate flex items-center gap-1">
+                                        <AnalystPickup player={player} />
                                         {player.full_name}
                                     </div>
                                     <div className="text-xs text-zinc-500">{player.team || 'FA'}</div>
@@ -119,7 +137,7 @@ export function MyFFPCFreeAgentTable({ players }: { players: FreeAgent[] }) {
                                 >
                                     <td className="px-4 py-3 text-xs font-mono text-zinc-400">{idx + 1}</td>
                                     <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">
-                                        {player.full_name}
+                                        <span className="inline-flex items-center gap-1"><AnalystPickup player={player} />{player.full_name}</span>
                                     </td>
                                     <td className="px-4 py-3">
                                         <span className={`text-xs font-bold px-2 py-0.5 rounded ${getPositionBadgeColor(player.position)}`}>

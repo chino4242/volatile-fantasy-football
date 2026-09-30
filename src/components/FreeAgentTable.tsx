@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Star } from "lucide-react";
 import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
 import PlayerProfileCard from '@/components/PlayerProfileCard';
@@ -34,6 +34,21 @@ function PlayerAvatar({ sleeperId, name }: { sleeperId: string; name: string }) 
                 <span className="text-[10px] sm:text-xs font-medium text-zinc-400 dark:text-zinc-500">{name?.[0] || '?'}</span>
             )}
         </div>
+    );
+}
+
+/** Analyst pickup indicator: a filled green star when a trusted analyst has the
+ *  player tagged as an add/buy (from the Buy/Sell board). Tooltip carries the
+ *  note + week for context. Renders nothing for untagged players or sell tags. */
+function AnalystPickup({ player }: { player: FreeAgentData }) {
+    if (player.analyst_tag !== 'add' && player.analyst_tag !== 'buy') return null;
+    const verb = player.analyst_tag === 'add' ? 'Add' : 'Buy';
+    const wk = player.analyst_week != null ? ` (Week ${player.analyst_week})` : '';
+    const title = `Analyst pickup — ${verb}${wk}${player.analyst_note ? `: ${player.analyst_note}` : ''}`;
+    return (
+        <span title={title} aria-label={title} className="inline-flex flex-shrink-0">
+            <Star className="h-3.5 w-3.5 text-green-500 dark:text-green-400 fill-green-500 dark:fill-green-400" />
+        </span>
     );
 }
 
@@ -72,6 +87,11 @@ export interface FreeAgentData {
     weekly_rank?: number | null;
     weekly_total?: number | null;
     weekly_pos_matchup?: number | null;
+    // Analyst signal (stamped by the page from player_tags): 'add'/'buy' = a
+    // trusted pickup, 'sell' carried for completeness. note/week give context.
+    analyst_tag?: 'buy' | 'sell' | 'add' | null;
+    analyst_note?: string | null;
+    analyst_week?: number | null;
 }
 
 interface FreeAgentTableProps {
@@ -252,6 +272,7 @@ export function FreeAgentTable({ players, rankingsVintage, weeklyWeek }: FreeAge
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-1.5 min-w-0">
+                                            <AnalystPickup player={player} />
                                             <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{player.full_name}</span>
                                             <span className="text-[9px] text-zinc-400">📊</span>
                                         </div>
@@ -298,7 +319,8 @@ export function FreeAgentTable({ players, rankingsVintage, weeklyWeek }: FreeAge
                                     <div className="flex items-center">
                                         <PlayerAvatar sleeperId={player.sleeper_id} name={player.full_name || ''} />
                                         <div>
-                                            <button className="text-sm font-medium text-zinc-900 dark:text-zinc-100 hover:text-indigo-600 dark:hover:text-indigo-400 text-left" onClick={() => setSelectedPlayer(player)} title="View player stats">
+                                            <button className="text-sm font-medium text-zinc-900 dark:text-zinc-100 hover:text-indigo-600 dark:hover:text-indigo-400 text-left inline-flex items-center gap-1" onClick={() => setSelectedPlayer(player)} title="View player stats">
+                                                <AnalystPickup player={player} />
                                                 {player.full_name} <span className="text-[10px] text-zinc-400">📊</span>
                                             </button>
                                             <div className="text-xs text-zinc-500 flex items-center gap-1 sm:hidden">

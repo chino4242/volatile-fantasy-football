@@ -8,6 +8,7 @@ import { recommendWaiverValue, type WaiverValuePlayer } from "@/lib/waiver-value
 import { buildRosterConfig } from "@/lib/transaction-suggestions";
 import { WaiverValueCard } from "@/components/WaiverValueCard";
 import { FreeAgentTeamSelector } from "@/components/FreeAgentTeamSelector";
+import { getAnalystSignals } from "@/lib/analyst-signals";
 
 export const dynamic = "force-dynamic";
 
@@ -64,11 +65,16 @@ export default async function DbFreeAgentsPage({ params, searchParams }: PagePro
 
     // Stamp this week's rank onto each free agent.
     const { week: weeklyWeek, byId: weeklyById } = await getWeeklyRanks(players.map(p => p.sleeper_id));
+    const analystSignals = await getAnalystSignals();
     for (const p of players) {
         const info = rankForPosition(p.position, weeklyById.get(p.sleeper_id));
         p.weekly_rank = info.rank;
         p.weekly_total = info.total;
         p.weekly_pos_matchup = info.posMatchup;
+        const sig = analystSignals.get(p.sleeper_id);
+        p.analyst_tag = sig?.tag ?? null;
+        p.analyst_note = sig?.note ?? null;
+        p.analyst_week = sig?.week ?? null;
     }
 
     const positionTotals = players.reduce((acc, p) => {
