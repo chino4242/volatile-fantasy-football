@@ -124,9 +124,15 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
 
         // Team-aware value recommendations (?team= = roster_id).
         let waiverRecs: ReturnType<typeof recommendWaiverValue> = [];
+        let myRosterForDrops: WaiverValuePlayer[] | undefined;
+        let dropRosterConfig: ReturnType<typeof buildRosterConfig> | null = null;
+        let myCoreCount: number | undefined;
+        let myTeamName: string | null = null;
         if (teamParam) {
             const myRoster = rosters.find(r => String(r.roster_id) === teamParam);
             if (myRoster && (myRoster.players?.length ?? 0) > 0) {
+                myTeamName = users.find(u => u.user_id === myRoster.owner_id)?.display_name || `Team ${myRoster.roster_id}`;
+                myCoreCount = myRoster.players.length;
                 // Pull my roster players' value rows (they're excluded from the FA query).
                 const myRows = await db
                     .select(valueColumns(format))
@@ -146,6 +152,8 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
                 const faWvp = freeAgentsFinal.map(toWvp);
                 const rosterPositions = await getSleeperRosterPositions(leagueId);
                 const config = buildRosterConfig(rosterPositions);
+                myRosterForDrops = myWvp;
+                dropRosterConfig = config;
                 waiverRecs = recommendWaiverValue(myWvp, faWvp, config, { actualCoreCount: myRoster.players.length, limit: 15 });
             }
         }
@@ -197,7 +205,7 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
                         ))}
                     </div>
 
-                    <FreeAgentTable players={freeAgentsFinal} rankingsVintage={rankingsVintage} weeklyWeek={weeklyWeek} />
+                    <FreeAgentTable players={freeAgentsFinal} rankingsVintage={rankingsVintage} weeklyWeek={weeklyWeek} myRosterForDrops={myRosterForDrops} rosterConfig={dropRosterConfig} actualCoreCount={myCoreCount} myTeamName={myTeamName} />
                 </div>
             </div>
         );

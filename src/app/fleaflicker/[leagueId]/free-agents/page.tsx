@@ -136,10 +136,16 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
         let rosterSlots: { QB: number; RB: number; WR: number; TE: number; FLEX: number } | undefined;
         // Value-based waiver recommendations (adds WITH a guarded drop), ROS-driven.
         let waiverRecs: ReturnType<typeof recommendWaiverValue> = [];
+        let myRosterForDrops: WaiverValuePlayer[] | undefined;
+        let dropRosterConfig: ReturnType<typeof buildRosterConfigFromSlots> | null = null;
+        let myCoreCount: number | undefined;
+        let myTeamName: string | null = null;
         if (teamParam) {
             const teamId = parseInt(teamParam);
             const userRoster = fleaflickerData.rosters.find(r => r.id === teamId);
             if (userRoster) {
+                myTeamName = userRoster.owners?.[0]?.display_name || `Team ${userRoster.id}`;
+                myCoreCount = userRoster.players.length;
                 // Match roster players to DB rows (values / ranks / ROS) by name.
                 const myRosterRows = userRoster.players.map(p => {
                     const dbMatch = dbPlayers.find(db => cleanseName(db.full_name || '') === cleanseName(p.full_name));
@@ -176,6 +182,8 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                     weeklyRank: p.weekly_rank ?? null,
                 }));
                 const config = buildRosterConfigFromSlots(slots);
+                myRosterForDrops = myWvp;
+                dropRosterConfig = config;
                 waiverRecs = recommendWaiverValue(myWvp, faWvp, config, { actualCoreCount: userRoster.players.length, limit: 15 });
             }
         }
@@ -227,7 +235,7 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
                         ))}
                     </div>
 
-                    <FreeAgentTable players={freeAgentsFinal} rankingsVintage={rankingsVintage} weeklyWeek={weeklyWeek} />
+                    <FreeAgentTable players={freeAgentsFinal} rankingsVintage={rankingsVintage} weeklyWeek={weeklyWeek} myRosterForDrops={myRosterForDrops} rosterConfig={dropRosterConfig} actualCoreCount={myCoreCount} myTeamName={myTeamName} />
                 </div>
             </div>
         );

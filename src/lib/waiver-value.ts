@@ -204,3 +204,78 @@ export function recommendWaiverValue(
     // Best gains first.
     return recs.sort((a, b) => b.gain - a.gain).slice(0, limit);
 }
+
+/** The suggested move for a single clicked free agent, relative to my roster. */
+export interface DropSuggestion {
+    /** null when there's an open roster spot (pure add, no drop needed). */
+    drop: WaiverValuePlayer | null;
+    /** Drop-side guardrail: safe / caution / block (safe for pure adds). */
+    tier: DropTier;
+    /** True when a legal drop exists (or an open spot) — i.e. the add is actionable. */
+    actionable: boolean;
+    /** Composite value the add brings. */
+    addScore: number;
+    /** The drop's keep-value we'd surrender (null for pure add). */
+    dropKeepValue: number | null;
+    /** add value − drop keep-value (null for pure add). */
+    gain: number | null;
+    /** True when dropping the best candidate would still be a value LOSS. */
+    downgrade: boolean;
+    /** Short reasons for the add (ROS/PPG/need). */
+    reasons: string[];
+    strongThisWeek: boolean;
+}
+
+/**
+ * For ONE clicked free agent, compute the single best guarded drop on my roster
+ * (or flag an open spot). Reuses the exact keep-value / lineup-legality logic the
+ * batch recommender uses, so the modal's suggestion matches the page's card.
+ * Returns null only when there's no roster context to reason about.
+ */
+export function suggestDropForAdd(
+    add: WaiverValuePlayer,
+    myPlayers: WaiverValuePlayer[],
+    config: RosterConfig | null,
+    options: { actualCoreCount?: number } = {},
+): DropSuggestion | null {
+    const roster = myPlayers.filter(p => VALUED.has(canonicalPos(p.position)));
+    if (roster.length === 0 && !options.actualCoreCount) return null;
+
+    const { score: addScore, strongThisWeek } = playerScore(add);
+    const need = config
+        ? (config.startingSlots[canonicalPos(add.position || '')] ?? 0) > (countByPosition(roster as unknown as TxnPlayer[])[canonicalPos(add.position || '')] ?? 0)
+        : false;
+    const reasons = addReasons(add, need);
+
+    // Open core spot → pure add, no drop needed.
+    const rosterCount = Math.max(options.actualCoreCount ?? 0, roster.length);
+    const openSpot = config ? rosterCount < config.coreCapacity : false;
+    if (openSpot) {
+        return { drop: null, tier: 'safe', actionable: true, addScore, dropKeepValue: null, gain: null, downgrade: false, reasons, strongThisWeek };
+    }
+
+    // Otherwise find the lowest keep-value LEGAL drop (won't break the lineup).
+    const counts = config ? countByPosition(roster as unknown as TxnPlayer[]) : {};
+    const droppable = roster
+        .map(p => ({ p, keep: blendedKeepValue(p as unknown as PortfolioPlayer) ?? 0 }))
+        .filter(({ p }) => !(config && wouldBreakLineup(p as unknown as TxnPlayer, counts, config)))
+        .sort((a, b) => a.keep - b.keep);
+
+    const best = droppable[0];
+    if (!best) {
+        // No legal drop (every body is lineup-locked).
+        return { drop: null, tier: 'safe', actionable: false, addScore, dropKeepValue: null, gain: null, downgrade: false, reasons, strongThisWeek };
+    }
+    const gain = addScore - best.keep;
+    return {
+        drop: best.p,
+        tier: tierFor(best.keep),
+        actionable: true,
+        addScore,
+        dropKeepValue: best.keep,
+        gain,
+        downgrade: gain < 0,
+        reasons,
+        strongThisWeek,
+    };
+}

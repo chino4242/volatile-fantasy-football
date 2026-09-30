@@ -87,9 +87,15 @@ export default async function DbFreeAgentsPage({ params, searchParams }: PagePro
 
     // Team-aware value recommendations (?team= = numericId).
     let waiverRecs: ReturnType<typeof recommendWaiverValue> = [];
+    let myRosterForDrops: WaiverValuePlayer[] | undefined;
+    let dropRosterConfig: ReturnType<typeof buildRosterConfig> | null = null;
+    let myCoreCount: number | undefined;
+    let myTeamName: string | null = null;
     if (teamParam) {
         const myTeam = data.teams.find(t => String(t.numericId) === teamParam);
         if (myTeam) {
+            myTeamName = myTeam.ownerName;
+            myCoreCount = myTeam.players.length;
             const toWvp = (p: DbLeaguePlayer): WaiverValuePlayer => ({
                 sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team,
                 fc_value: p.fc_value,
@@ -104,6 +110,8 @@ export default async function DbFreeAgentsPage({ params, searchParams }: PagePro
                     return { ...toWvp(p), weeklyRank: info.rank };
                 });
             const config = buildRosterConfig(data.rosterPositions);
+            myRosterForDrops = myWvp;
+            dropRosterConfig = config;
             waiverRecs = recommendWaiverValue(myWvp, faWvp, config, { actualCoreCount: myTeam.players.length, limit: 15 });
         }
     }
@@ -151,7 +159,7 @@ export default async function DbFreeAgentsPage({ params, searchParams }: PagePro
                     ))}
                 </div>
 
-                <FreeAgentTable players={players} rankingsVintage={rankingsVintage} weeklyWeek={weeklyWeek} />
+                <FreeAgentTable players={players} rankingsVintage={rankingsVintage} weeklyWeek={weeklyWeek} myRosterForDrops={myRosterForDrops} rosterConfig={dropRosterConfig} actualCoreCount={myCoreCount} myTeamName={myTeamName} />
             </div>
         </div>
     );

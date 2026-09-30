@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Info, ArrowRightLeft } from 'lucide-react';
+import type { DropSuggestion } from '@/lib/waiver-value';
 
 // --- Types ---
 
@@ -19,6 +20,10 @@ interface PlayerProfileCardProps {
     zapComps?: string | null;
     zapAnalysis?: string | null;
     writeups?: { source: string; analysis_text: string; ai_summary?: string; ai_confidence?: number; ai_bull_case?: string; ai_bear_case?: string; ai_comps?: string }[] | null;
+    /** Team-specific "who to drop for this add" suggestion (free-agent screens). */
+    dropSuggestion?: DropSuggestion | null;
+    /** My team's display name, for the suggestion header. */
+    myTeamName?: string | null;
 }
 
 interface StatsData {
@@ -301,6 +306,8 @@ export default function PlayerProfileCard({
     zapComps,
     zapAnalysis,
     writeups,
+    dropSuggestion,
+    myTeamName,
 }: PlayerProfileCardProps) {
     const [activeTab, setActiveTab] = useState<Tab>('profile');
     const [apiData, setApiData] = useState<ApiResponse | null>(null);
@@ -415,6 +422,9 @@ export default function PlayerProfileCard({
                             selectedSeason={selectedSeason}
                             onSeasonChange={setSelectedSeason}
                             availableSeasons={availableSeasons}
+                            dropSuggestion={dropSuggestion}
+                            myTeamName={myTeamName}
+                            playerName={playerName}
                         />
                     )}
                     {activeTab === 'trends' && (
@@ -454,6 +464,9 @@ function ProfileTab({
     selectedSeason,
     onSeasonChange,
     availableSeasons,
+    dropSuggestion,
+    myTeamName,
+    playerName,
 }: {
     dynastyValue?: number;
     auctionValue?: number | null;
@@ -468,12 +481,18 @@ function ProfileTab({
     selectedSeason: number | null;
     onSeasonChange: (s: number) => void;
     availableSeasons: number[];
+    dropSuggestion?: DropSuggestion | null;
+    myTeamName?: string | null;
+    playerName: string;
 }) {
     const benchmarks = BENCHMARKS[position];
     const seasonsToShow = availableSeasons.slice(0, 2);
 
     return (
         <div className="space-y-4">
+            {/* Suggested move for my team (free-agent screens with a team selected) */}
+            {dropSuggestion && <SuggestedMove suggestion={dropSuggestion} myTeamName={myTeamName} addName={playerName} />}
+
             {/* Value Display */}
             <div className="flex gap-3">
                 <div className="flex-1 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3 text-center">
@@ -849,6 +868,70 @@ function StatBox({ label, value, perGame }: { label: string; value: string; perG
             <div className="text-[9px] uppercase text-zinc-500 dark:text-zinc-400">{label}</div>
             <div className="text-lg font-bold text-zinc-900 dark:text-white">{value}</div>
             <div className="text-[10px] text-zinc-500">{perGame}</div>
+        </div>
+    );
+}
+
+/**
+ * "Suggested move for your team" — reuses the guarded-drop engine. Shows the
+ * best legal drop to make room for this add (or an open-spot / downgrade note),
+ * color-coded by the drop guardrail (safe / caution / block).
+ */
+function SuggestedMove({ suggestion, myTeamName, addName }: { suggestion: DropSuggestion; myTeamName?: string | null; addName: string }) {
+    const { drop, tier, actionable, downgrade, reasons } = suggestion;
+    const teamLabel = myTeamName ? `for ${myTeamName}` : 'for your team';
+
+    // No legal drop available (every body is lineup-locked).
+    if (!drop && !actionable) {
+        return (
+            <div className="rounded-lg p-3 bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-zinc-200 dark:ring-zinc-700">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold">
+                    <ArrowRightLeft className="w-3 h-3" /> Suggested move {teamLabel}
+                </div>
+                <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                    No safe drop — every roster player is needed to fill your lineup.
+                </p>
+            </div>
+        );
+    }
+
+    // Open roster spot — pure add, no drop needed.
+    if (!drop) {
+        return (
+            <div className="rounded-lg p-3 bg-green-50 dark:bg-green-950/30 ring-1 ring-green-500/30">
+                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-green-600 dark:text-green-400 font-semibold">
+                    <ArrowRightLeft className="w-3 h-3" /> Suggested move {teamLabel}
+                </div>
+                <p className="mt-1 text-sm font-medium text-green-700 dark:text-green-300">
+                    Open roster spot — add {addName}, no drop needed.
+                </p>
+                {reasons.length > 0 && <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{reasons.join(' · ')}</p>}
+            </div>
+        );
+    }
+
+    const tierStyle =
+        tier === 'block' ? { ring: 'ring-red-500/30', bg: 'bg-red-50 dark:bg-red-950/30', name: 'text-red-600 dark:text-red-400', icon: '⛔', note: 'Valuable asset — probably keep him.' }
+        : tier === 'caution' ? { ring: 'ring-amber-500/30', bg: 'bg-amber-50 dark:bg-amber-950/30', name: 'text-amber-600 dark:text-amber-400', icon: '⚠️', note: 'Has value — weigh it before dropping.' }
+        : { ring: 'ring-emerald-500/30', bg: 'bg-emerald-50 dark:bg-emerald-950/30', name: 'text-emerald-700 dark:text-emerald-300', icon: '', note: 'Safe drop — low keep value.' };
+
+    return (
+        <div className={`rounded-lg p-3 ${downgrade ? 'bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-zinc-200 dark:ring-zinc-700' : `${tierStyle.bg} ring-1 ${tierStyle.ring}`}`}>
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold">
+                <ArrowRightLeft className="w-3 h-3" /> Suggested move {teamLabel}
+            </div>
+            <p className="mt-1 text-sm text-zinc-800 dark:text-zinc-200">
+                Drop{' '}
+                <span className={`font-semibold ${tierStyle.name}`}>
+                    {tierStyle.icon && `${tierStyle.icon} `}{drop.full_name}
+                </span>
+                <span className="text-[11px] text-zinc-400"> ({drop.position})</span>
+                {' '}for {addName}.
+            </p>
+            <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                {downgrade ? 'Heads up — this would be a value downgrade; only if you need the position now.' : tierStyle.note}
+            </p>
+            {reasons.length > 0 && <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{reasons.join(' · ')}</p>}
         </div>
     );
 }

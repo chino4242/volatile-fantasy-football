@@ -5,6 +5,8 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Star } from "lucide-react";
 import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
 import PlayerProfileCard from '@/components/PlayerProfileCard';
+import { suggestDropForAdd, type WaiverValuePlayer, type DropSuggestion } from '@/lib/waiver-value';
+import type { RosterConfig } from '@/lib/transaction-suggestions';
 
 const COLUMNS: ColumnDef[] = [
     { key: 'weekly_rank', label: 'Week Rank', defaultOn: true, group: 'weekly' },
@@ -99,12 +101,21 @@ interface FreeAgentTableProps {
     rankingsVintage?: string | null;
     /** The week the weekly_rank values are for (for the column header). */
     weeklyWeek?: number | null;
+    /** My roster (value/ROS signals) for computing a suggested drop when a
+     *  player is clicked. Omitted when no team is selected. */
+    myRosterForDrops?: WaiverValuePlayer[];
+    /** Roster slot config for lineup-legal drop selection. */
+    rosterConfig?: RosterConfig | null;
+    /** True core roster size (for open-spot detection when names don't all match). */
+    actualCoreCount?: number;
+    /** My team's display name, for the suggestion header. */
+    myTeamName?: string | null;
 }
 
 type SortColumn = 'fc_value' | 'fc_rank' | 'full_name' | 'position' | 'rank_overall' | 'rank_pos' | 'rank_tier' | 'redraft_rank_overall' | 'redraft_rank_pos' | 'redraft_rank_tier' | 'rank_ros_overall' | 'rank_ros_pos' | 'rank_ros_ppg' | 'ros_sos' | 'weekly_rank';
 type SortDirection = 'asc' | 'desc';
 
-export function FreeAgentTable({ players, rankingsVintage, weeklyWeek }: FreeAgentTableProps) {
+export function FreeAgentTable({ players, rankingsVintage, weeklyWeek, myRosterForDrops, rosterConfig, actualCoreCount, myTeamName }: FreeAgentTableProps) {
     const [sortColumn, setSortColumn] = useState<SortColumn>('fc_value');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
     const [filterPosition, setFilterPosition] = useState<string>('ALL');
@@ -118,6 +129,22 @@ export function FreeAgentTable({ players, rankingsVintage, weeklyWeek }: FreeAge
     ];
     const { visibleCols, columnOrder, toggle: toggleCol, reorder, show, orderedVisible } = useColumnState(COLUMNS, 'vff_free_agent_columns');
     const [selectedPlayer, setSelectedPlayer] = useState<FreeAgentData | null>(null);
+
+    /** Map a clicked FA row → the WaiverValuePlayer shape the drop engine reads,
+     *  then compute the single best guarded drop for my roster. Returns null when
+     *  there's no team context (no roster passed). */
+    const computeDropSuggestion = (p: FreeAgentData): DropSuggestion | null => {
+        if (!myRosterForDrops || myRosterForDrops.length === 0) return null;
+        const add: WaiverValuePlayer = {
+            sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team,
+            fc_value: p.fc_value,
+            rosRank: p.rank_ros_overall ?? null, rosPosRank: p.rank_ros_pos ?? null,
+            rosPpg: p.rank_ros_ppg != null ? Number(p.rank_ros_ppg) : null,
+            rosSos: p.ros_sos ?? null, byeWeek: p.bye_week ?? null,
+            weeklyRank: p.weekly_rank ?? null,
+        };
+        return suggestDropForAdd(add, myRosterForDrops, rosterConfig ?? null, { actualCoreCount });
+    };
 
     const handleSort = (column: SortColumn) => {
         if (sortColumn === column) {
@@ -362,6 +389,8 @@ export function FreeAgentTable({ players, rankingsVintage, weeklyWeek }: FreeAge
                     zapCategory={selectedPlayer.zap_category}
                     zapComps={selectedPlayer.zap_comps}
                     zapAnalysis={selectedPlayer.zap_analysis}
+                    dropSuggestion={computeDropSuggestion(selectedPlayer)}
+                    myTeamName={myTeamName ?? undefined}
                 />
             )}
         </div>
