@@ -365,8 +365,8 @@ export default function PlayerProfileCard({
 
     const hasMoveContext = !!(addPlayer && myRoster && myRoster.length > 0);
     const tabs: { id: Tab; label: string }[] = [
-        ...(hasMoveContext ? [{ id: 'move' as Tab, label: 'Move' }] : []),
         { id: 'profile', label: 'Profile' },
+        ...(hasMoveContext ? [{ id: 'move' as Tab, label: 'Move' }] : []),
         { id: 'trends', label: 'Trends' },
         { id: 'scouting', label: 'Scouting' },
         { id: 'pods', label: 'Pods' },
