@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Info, ArrowRightLeft } from 'lucide-react';
-import type { DropSuggestion } from '@/lib/waiver-value';
+import { suggestDropForAdd, type WaiverValuePlayer, type DropSuggestion } from '@/lib/waiver-value';
+import type { RosterConfig } from '@/lib/transaction-suggestions';
 
 // --- Types ---
 
@@ -20,9 +21,16 @@ interface PlayerProfileCardProps {
     zapComps?: string | null;
     zapAnalysis?: string | null;
     writeups?: { source: string; analysis_text: string; ai_summary?: string; ai_confidence?: number; ai_bull_case?: string; ai_bear_case?: string; ai_comps?: string }[] | null;
-    /** Team-specific "who to drop for this add" suggestion (free-agent screens). */
-    dropSuggestion?: DropSuggestion | null;
-    /** My team's display name, for the suggestion header. */
+    /** The clicked player as a WaiverValuePlayer (add side of a potential move). */
+    addPlayer?: WaiverValuePlayer | null;
+    /** My full roster (value/ROS/weekly signals) — powers the "Move" tab's drop
+     *  picker + comparison. Omitted when no team is selected. */
+    myRoster?: WaiverValuePlayer[];
+    /** Roster slot config for lineup-legal default-drop selection. */
+    rosterConfig?: RosterConfig | null;
+    /** True core roster size (open-spot detection). */
+    actualCoreCount?: number;
+    /** My team's display name, for the tab/header. */
     myTeamName?: string | null;
 }
 
@@ -87,7 +95,7 @@ interface WeeklyStats {
     fantasy_points_ppr: number;
 }
 
-type Tab = 'profile' | 'trends' | 'scouting' | 'pods';
+type Tab = 'profile' | 'trends' | 'scouting' | 'pods' | 'move';
 type Grade = 'A+' | 'A' | 'B+' | 'B' | 'C' | 'D' | 'F';
 
 // --- Constants ---
@@ -306,10 +314,13 @@ export default function PlayerProfileCard({
     zapComps,
     zapAnalysis,
     writeups,
-    dropSuggestion,
+    addPlayer,
+    myRoster,
+    rosterConfig,
+    actualCoreCount,
     myTeamName,
 }: PlayerProfileCardProps) {
-    const [activeTab, setActiveTab] = useState<Tab>('profile');
+    const [activeTab, setActiveTab] = useState<Tab>(addPlayer && myRoster && myRoster.length > 0 ? 'move' : 'profile');
     const [apiData, setApiData] = useState<ApiResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
@@ -352,7 +363,9 @@ export default function PlayerProfileCard({
     // Estimate age from years of experience (draft age ~21)
     const estimatedAge = yearsExp != null ? 21 + yearsExp : null;
 
+    const hasMoveContext = !!(addPlayer && myRoster && myRoster.length > 0);
     const tabs: { id: Tab; label: string }[] = [
+        ...(hasMoveContext ? [{ id: 'move' as Tab, label: 'Move' }] : []),
         { id: 'profile', label: 'Profile' },
         { id: 'trends', label: 'Trends' },
         { id: 'scouting', label: 'Scouting' },
@@ -407,6 +420,15 @@ export default function PlayerProfileCard({
 
                 {/* Tab Content */}
                 <div className="flex-1 overflow-y-auto px-5 pb-5">
+                    {activeTab === 'move' && addPlayer && myRoster && (
+                        <MoveTab
+                            addPlayer={addPlayer}
+                            myRoster={myRoster}
+                            rosterConfig={rosterConfig ?? null}
+                            actualCoreCount={actualCoreCount}
+                            myTeamName={myTeamName}
+                        />
+                    )}
                     {activeTab === 'profile' && (
                         <ProfileTab
                             dynastyValue={dynastyValue}
@@ -422,9 +444,6 @@ export default function PlayerProfileCard({
                             selectedSeason={selectedSeason}
                             onSeasonChange={setSelectedSeason}
                             availableSeasons={availableSeasons}
-                            dropSuggestion={dropSuggestion}
-                            myTeamName={myTeamName}
-                            playerName={playerName}
                         />
                     )}
                     {activeTab === 'trends' && (
@@ -464,9 +483,6 @@ function ProfileTab({
     selectedSeason,
     onSeasonChange,
     availableSeasons,
-    dropSuggestion,
-    myTeamName,
-    playerName,
 }: {
     dynastyValue?: number;
     auctionValue?: number | null;
@@ -481,18 +497,12 @@ function ProfileTab({
     selectedSeason: number | null;
     onSeasonChange: (s: number) => void;
     availableSeasons: number[];
-    dropSuggestion?: DropSuggestion | null;
-    myTeamName?: string | null;
-    playerName: string;
 }) {
     const benchmarks = BENCHMARKS[position];
     const seasonsToShow = availableSeasons.slice(0, 2);
 
     return (
         <div className="space-y-4">
-            {/* Suggested move for my team (free-agent screens with a team selected) */}
-            {dropSuggestion && <SuggestedMove suggestion={dropSuggestion} myTeamName={myTeamName} addName={playerName} />}
-
             {/* Value Display */}
             <div className="flex gap-3">
                 <div className="flex-1 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-3 text-center">
@@ -873,110 +883,144 @@ function StatBox({ label, value, perGame }: { label: string; value: string; perG
 }
 
 /**
- * "Suggested move for your team" — reuses the guarded-drop engine. Shows the
- * best legal drop to make room for this add (or an open-spot / downgrade note),
- * color-coded by the drop guardrail (safe / caution / block).
+ * "Move" tab — plan the add. Reuses the guarded-drop engine to pick a default
+ * drop, but lets you choose ANY roster player to drop and recomputes the
+ * add-vs-drop comparison (ROS, this week, dynasty value) accordingly.
  */
-function SuggestedMove({ suggestion, myTeamName, addName }: { suggestion: DropSuggestion; myTeamName?: string | null; addName: string }) {
-    const { drop, add, tier, actionable, downgrade, reasons } = suggestion;
-    const teamLabel = myTeamName ? `for ${myTeamName}` : 'for your team';
+function MoveTab({ addPlayer, myRoster, rosterConfig, actualCoreCount, myTeamName }: {
+    addPlayer: WaiverValuePlayer;
+    myRoster: WaiverValuePlayer[];
+    rosterConfig: RosterConfig | null;
+    actualCoreCount?: number;
+    myTeamName?: string | null;
+}) {
+    const teamLabel = myTeamName ? myTeamName : 'your team';
 
-    // No legal drop available (every body is lineup-locked).
-    if (!drop && !actionable) {
-        return (
-            <div className="rounded-lg p-3 bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-zinc-200 dark:ring-zinc-700">
-                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold">
-                    <ArrowRightLeft className="w-3 h-3" /> Suggested move {teamLabel}
-                </div>
-                <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                    No safe drop — every roster player is needed to fill your lineup.
-                </p>
-            </div>
-        );
-    }
+    // Engine's recommended drop (guardrail + open-spot detection).
+    const suggestion: DropSuggestion | null = useMemo(
+        () => suggestDropForAdd(addPlayer, myRoster, rosterConfig, { actualCoreCount }),
+        [addPlayer, myRoster, rosterConfig, actualCoreCount],
+    );
 
-    // Open roster spot — pure add, no drop needed.
-    if (!drop) {
-        return (
-            <div className="rounded-lg p-3 bg-green-50 dark:bg-green-950/30 ring-1 ring-green-500/30">
-                <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-green-600 dark:text-green-400 font-semibold">
-                    <ArrowRightLeft className="w-3 h-3" /> Suggested move {teamLabel}
-                </div>
-                <p className="mt-1 text-sm font-medium text-green-700 dark:text-green-300">
-                    Open roster spot — add {addName}, no drop needed.
-                </p>
-                {reasons.length > 0 && <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{reasons.join(' · ')}</p>}
-            </div>
-        );
-    }
+    // Roster players you could drop, sorted by value asc (worst-to-keep first)
+    // so the most droppable bodies are near the top of the list.
+    const dropChoices = useMemo(
+        () => [...myRoster].sort((a, b) => (a.fc_value ?? 0) - (b.fc_value ?? 0)),
+        [myRoster],
+    );
 
-    const tierStyle =
-        tier === 'block' ? { ring: 'ring-red-500/30', bg: 'bg-red-50 dark:bg-red-950/30', name: 'text-red-600 dark:text-red-400', icon: '⛔', note: 'Valuable asset — probably keep him.' }
-        : tier === 'caution' ? { ring: 'ring-amber-500/30', bg: 'bg-amber-50 dark:bg-amber-950/30', name: 'text-amber-600 dark:text-amber-400', icon: '⚠️', note: 'Has value — weigh it before dropping.' }
-        : { ring: 'ring-emerald-500/30', bg: 'bg-emerald-50 dark:bg-emerald-950/30', name: 'text-emerald-700 dark:text-emerald-300', icon: '', note: 'Safe drop — low keep value.' };
+    // Selected drop: defaults to the engine's pick (or first choice as fallback).
+    const defaultDropId = suggestion?.drop?.sleeper_id ?? dropChoices[0]?.sleeper_id ?? '';
+    const [dropId, setDropId] = useState<string>(defaultDropId);
+    useEffect(() => { setDropId(defaultDropId); }, [defaultDropId]);
+
+    const drop = dropChoices.find(p => p.sleeper_id === dropId) ?? null;
+    const isSuggested = drop?.sleeper_id === suggestion?.drop?.sleeper_id;
+    const openSpot = suggestion?.drop == null && suggestion?.actionable === true;
+
+    // Tier note applies to the ENGINE'S suggested drop; for a manual pick we just
+    // show the value comparison (no keep-guardrail claim).
+    const tier = isSuggested ? suggestion?.tier : undefined;
+    const tierNote =
+        tier === 'block' ? { name: 'text-red-600 dark:text-red-400', icon: '⛔', note: 'Valuable asset — probably keep him.' }
+        : tier === 'caution' ? { name: 'text-amber-600 dark:text-amber-400', icon: '⚠️', note: 'Has value — weigh it before dropping.' }
+        : tier === 'safe' ? { name: 'text-emerald-700 dark:text-emerald-300', icon: '', note: 'Safe drop — low keep value.' }
+        : { name: 'text-zinc-700 dark:text-zinc-300', icon: '', note: '' };
 
     return (
-        <div className={`rounded-lg p-3 ${downgrade ? 'bg-zinc-50 dark:bg-zinc-800/50 ring-1 ring-zinc-200 dark:ring-zinc-700' : `${tierStyle.bg} ring-1 ${tierStyle.ring}`}`}>
+        <div className="space-y-3">
             <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 font-semibold">
-                <ArrowRightLeft className="w-3 h-3" /> Suggested move {teamLabel}
+                <ArrowRightLeft className="w-3 h-3" /> Plan a move for {teamLabel}
             </div>
-            <p className="mt-1 text-sm text-zinc-800 dark:text-zinc-200">
-                Drop{' '}
-                <span className={`font-semibold ${tierStyle.name}`}>
-                    {tierStyle.icon && `${tierStyle.icon} `}{drop.full_name}
-                </span>
-                <span className="text-[11px] text-zinc-400"> ({drop.position})</span>
-                {' '}for {addName}.
-            </p>
-            <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                {downgrade ? 'Heads up — this would be a value downgrade; only if you need the position now.' : tierStyle.note}
-            </p>
-            {reasons.length > 0 && <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">{reasons.join(' · ')}</p>}
 
-            {/* Add-vs-drop comparison: ROS, this week, dynasty value */}
-            <div className="mt-2.5 rounded-lg overflow-hidden ring-1 ring-zinc-200 dark:ring-zinc-700">
-                <table className="w-full text-[11px]">
-                    <thead>
-                        <tr className="bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
-                            <th className="text-left font-medium px-2 py-1">Metric</th>
-                            <th className="text-right font-medium px-2 py-1 text-emerald-600 dark:text-emerald-400">Add</th>
-                            <th className="text-right font-medium px-2 py-1 text-zinc-500">Drop</th>
-                            <th className="text-right font-medium px-2 py-1">Δ</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                        <CompareRow
-                            label="ROS Rank"
-                            addVal={add.rosRank} dropVal={drop.rosRank}
-                            addText={fmtRank(add.rosRank, add.rosPosRank, add.position)}
-                            dropText={fmtRank(drop.rosRank, drop.rosPosRank, drop.position)}
-                            lowerBetter
-                        />
-                        <CompareRow
-                            label="ROS PPG"
-                            addVal={add.rosPpg} dropVal={drop.rosPpg}
-                            addText={add.rosPpg != null ? add.rosPpg.toFixed(1) : '—'}
-                            dropText={drop.rosPpg != null ? drop.rosPpg.toFixed(1) : '—'}
-                        />
-                        <CompareRow
-                            label="This Week"
-                            addVal={add.weeklyRank} dropVal={drop.weeklyRank}
-                            addText={add.weeklyRank != null ? `#${add.weeklyRank}` : '—'}
-                            dropText={drop.weeklyRank != null ? `#${drop.weeklyRank}` : '—'}
-                            lowerBetter
-                        />
-                        <CompareRow
-                            label="Dynasty Value"
-                            addVal={add.fc_value} dropVal={drop.fc_value}
-                            addText={add.fc_value != null ? add.fc_value.toLocaleString() : '—'}
-                            dropText={drop.fc_value != null ? drop.fc_value.toLocaleString() : '—'}
-                        />
-                    </tbody>
-                </table>
-            </div>
-            <p className="mt-1 text-[10px] text-zinc-400">
-                ROS Rank / This Week: lower is better. Δ is the swap&apos;s net change (add − drop).
-            </p>
+            {openSpot && (
+                <div className="rounded-lg p-3 bg-green-50 dark:bg-green-950/30 ring-1 ring-green-500/30">
+                    <p className="text-sm font-medium text-green-700 dark:text-green-300">
+                        Open roster spot — add {addPlayer.full_name}, no drop needed.
+                    </p>
+                    <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        You can still preview a swap below.
+                    </p>
+                </div>
+            )}
+
+            {/* Drop picker */}
+            <label className="block">
+                <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Drop for {addPlayer.full_name}</span>
+                <select
+                    value={dropId}
+                    onChange={e => setDropId(e.target.value)}
+                    className="mt-1 w-full text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                    {dropChoices.map(p => (
+                        <option key={p.sleeper_id} value={p.sleeper_id}>
+                            {p.full_name} ({p.position}){p.sleeper_id === suggestion?.drop?.sleeper_id ? ' — suggested' : ''}
+                        </option>
+                    ))}
+                </select>
+            </label>
+
+            {drop && (
+                <>
+                    <p className="text-sm text-zinc-800 dark:text-zinc-200">
+                        Drop{' '}
+                        <span className={`font-semibold ${tierNote.name}`}>
+                            {tierNote.icon && `${tierNote.icon} `}{drop.full_name}
+                        </span>
+                        <span className="text-[11px] text-zinc-400"> ({drop.position})</span>
+                        {' '}for {addPlayer.full_name}.
+                        {isSuggested && <span className="ml-1 text-[10px] font-semibold text-indigo-500">suggested</span>}
+                    </p>
+                    {isSuggested && tierNote.note && (
+                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{tierNote.note}</p>
+                    )}
+
+                    {/* Add-vs-drop comparison table */}
+                    <div className="rounded-lg overflow-hidden ring-1 ring-zinc-200 dark:ring-zinc-700">
+                        <table className="w-full text-[11px]">
+                            <thead>
+                                <tr className="bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
+                                    <th className="text-left font-medium px-2 py-1.5">Metric</th>
+                                    <th className="text-right font-medium px-2 py-1.5 text-emerald-600 dark:text-emerald-400">Add</th>
+                                    <th className="text-right font-medium px-2 py-1.5 text-zinc-500">Drop</th>
+                                    <th className="text-right font-medium px-2 py-1.5">Δ</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                <CompareRow
+                                    label="ROS Rank"
+                                    addVal={addPlayer.rosRank} dropVal={drop.rosRank}
+                                    addText={fmtRank(addPlayer.rosRank, addPlayer.rosPosRank, addPlayer.position)}
+                                    dropText={fmtRank(drop.rosRank, drop.rosPosRank, drop.position)}
+                                    lowerBetter
+                                />
+                                <CompareRow
+                                    label="ROS PPG"
+                                    addVal={addPlayer.rosPpg} dropVal={drop.rosPpg}
+                                    addText={addPlayer.rosPpg != null ? addPlayer.rosPpg.toFixed(1) : '—'}
+                                    dropText={drop.rosPpg != null ? drop.rosPpg.toFixed(1) : '—'}
+                                />
+                                <CompareRow
+                                    label="This Week"
+                                    addVal={addPlayer.weeklyRank} dropVal={drop.weeklyRank}
+                                    addText={addPlayer.weeklyRank != null ? `#${addPlayer.weeklyRank}` : '—'}
+                                    dropText={drop.weeklyRank != null ? `#${drop.weeklyRank}` : '—'}
+                                    lowerBetter
+                                />
+                                <CompareRow
+                                    label="Dynasty Value"
+                                    addVal={addPlayer.fc_value} dropVal={drop.fc_value}
+                                    addText={addPlayer.fc_value != null ? addPlayer.fc_value.toLocaleString() : '—'}
+                                    dropText={drop.fc_value != null ? drop.fc_value.toLocaleString() : '—'}
+                                />
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="text-[10px] text-zinc-400">
+                        ROS Rank / This Week: lower is better. Δ is the swap&apos;s net change (add − drop). A dash means we don&apos;t have that stat for the player.
+                    </p>
+                </>
+            )}
         </div>
     );
 }
