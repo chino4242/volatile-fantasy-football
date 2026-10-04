@@ -66,7 +66,32 @@ export interface OptimizerResult {
     /** Swaps to get from the current lineup to optimal. Empty = already optimal. */
     swaps: LineupSwap[];
     isOptimal: boolean;
+    /**
+     * Players NOT in the optimal lineup (the "bench" in the optimal sense),
+     * sorted best→worst by rank. Each carries how close it is to cracking the
+     * lineup: the smallest rank gap to the weakest optimal starter it could
+     * replace (a slot it's eligible for). `gapToStart` is that gap (bench.rank -
+     * weakestEligibleStarter.rank); smaller = closer. null when it has no rank or
+     * no eligible slot exists. `isCloseCall` flags a small gap (configurable).
+     */
+    bench: BenchEntry[];
 }
+
+export interface BenchEntry {
+    player: OptimizerPlayer;
+    /** The slot label whose current optimal starter this bench player is closest
+     *  to displacing (the eligible slot with the smallest gap). null if none. */
+    nearestSlot: string | null;
+    /** Rank gap to that slot's optimal starter (bench.rank - starter.rank).
+     *  Positive = bench is worse by this many spots. null when unrankable. */
+    gapToStart: number | null;
+    /** True when the gap is small enough to be a "close call" worth a look. */
+    isCloseCall: boolean;
+}
+
+/** A bench player within this many rank spots of a startable slot is a "close
+ *  call" worth surfacing. Position ranks are dense, so a few spots is meaningful. */
+export const CLOSE_CALL_THRESHOLD = 5;
 
 // ── Slot eligibility ─────────────────────────────────────────────────────────
 
@@ -220,5 +245,37 @@ export function optimizeAndDiff(players: OptimizerPlayer[], slots: LineupSlot[])
     // Sort swaps by biggest rank upgrade first.
     swaps.sort((a, b) => (b.rankGain ?? 0) - (a.rankGain ?? 0));
 
-    return { optimal, swaps, isOptimal: swaps.length === 0 };
+    // Bench = everyone not in the optimal lineup. For each, find how close they
+    // are to cracking the lineup: the eligible slot whose optimal starter they're
+    // nearest to displacing (smallest rank gap). Locked players are shown too (so
+    // the view is complete) but a locked player is never a real "close call".
+    const optimalStarters = optimal
+        .filter(a => a.player)
+        .map(a => ({ slot: a.slot, player: a.player as OptimizerPlayer }));
+    const benchPlayers = players.filter(p => !optimalIds.has(p.sleeper_id));
+
+    const bench: BenchEntry[] = benchPlayers.map(p => {
+        let nearestSlot: string | null = null;
+        let gapToStart: number | null = null;
+        if (p.rank != null && p.position != null) {
+            for (const st of optimalStarters) {
+                const slotDef = slots.find(s => s.slot === st.slot);
+                if (!slotDef || !slotDef.eligible.has(p.position)) continue;
+                if (st.player.rank == null) continue;
+                const gap = p.rank - st.player.rank; // >0 → bench is worse by `gap`
+                if (gapToStart == null || gap < gapToStart) {
+                    gapToStart = gap;
+                    nearestSlot = st.slot;
+                }
+            }
+        }
+        const isCloseCall = !p.locked && gapToStart != null && gapToStart > 0 && gapToStart <= CLOSE_CALL_THRESHOLD;
+        return { player: p, nearestSlot, gapToStart, isCloseCall };
+    });
+
+    // Sort bench best→worst by rank (unranked last), so the most relevant names
+    // are at the top.
+    bench.sort((a, b) => (a.player.rank ?? Number.POSITIVE_INFINITY) - (b.player.rank ?? Number.POSITIVE_INFINITY));
+
+    return { optimal, swaps, isOptimal: swaps.length === 0, bench };
 }

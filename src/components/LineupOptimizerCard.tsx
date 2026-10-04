@@ -1,5 +1,6 @@
 import { ArrowRight, CheckCircle2, AlertTriangle } from "lucide-react";
 import type { TeamOptimization } from "@/lib/weekly-rankings";
+import { CLOSE_CALL_THRESHOLD } from "@/lib/lineup-optimizer";
 
 /**
  * Renders a team's lineup optimization: suggested swaps (rank-based) + the
@@ -81,6 +82,47 @@ export function LineupOptimizerCard({ opt }: { opt: TeamOptimization }) {
                     ))}
                 </div>
             </div>
+
+            {/* Bench — the rest of the roster, with "close calls" flagged. */}
+            {opt.bench.length > 0 && (
+                <div className="border-t border-zinc-100 dark:border-zinc-800 pt-3 mt-3">
+                    <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-xs font-medium text-zinc-500">Bench</span>
+                        {opt.bench.some(b => b.isCloseCall) && (
+                            <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 rounded px-1.5 py-0.5">
+                                {opt.bench.filter(b => b.isCloseCall).length} close call{opt.bench.filter(b => b.isCloseCall).length > 1 ? 's' : ''}
+                            </span>
+                        )}
+                    </div>
+                    <ul className="space-y-1">
+                        {opt.bench.map((b, i) => (
+                            <li
+                                key={i}
+                                className={`flex items-center justify-between gap-2 text-sm rounded px-1.5 py-1 ${b.isCloseCall ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}
+                            >
+                                <span className="flex items-center gap-2 min-w-0">
+                                    <span className="text-[10px] font-semibold uppercase text-zinc-400 w-10 flex-shrink-0">{b.player.position ?? '—'}</span>
+                                    <span className="truncate text-zinc-700 dark:text-zinc-300">{b.player.full_name}</span>
+                                    {b.player.rank != null && <span className="text-xs text-zinc-400 flex-shrink-0">#{b.player.rank}</span>}
+                                </span>
+                                {b.isCloseCall && b.gapToStart != null ? (
+                                    <span
+                                        className="text-[11px] font-medium text-amber-600 dark:text-amber-400 flex-shrink-0 whitespace-nowrap"
+                                        title={`Only ${b.gapToStart} rank spot${b.gapToStart > 1 ? 's' : ''} behind your ${b.nearestSlot} starter`}
+                                    >
+                                        {b.gapToStart} off {b.nearestSlot}
+                                    </span>
+                                ) : b.player.rank == null ? (
+                                    <span className="text-[11px] text-zinc-400 flex-shrink-0">unranked</span>
+                                ) : null}
+                            </li>
+                        ))}
+                    </ul>
+                    <p className="text-[11px] text-zinc-400 mt-2">
+                        &quot;Close call&quot; = a bench player within {CLOSE_CALL_THRESHOLD} rank spots of a starter they could replace.
+                    </p>
+                </div>
+            )}
         </div>
     );
 }

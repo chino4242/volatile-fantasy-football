@@ -70,6 +70,75 @@ describe('optimizeAndDiff', () => {
     });
 });
 
+describe('optimizeAndDiff — bench + close calls', () => {
+    it('returns every non-optimal player on the bench, best-rank first', () => {
+        const slots = buildSlots(['RB', 'BN', 'BN']);
+        const r = [
+            P('rb1', 'Starter', 'RB', 5, true),
+            P('rb2', 'Bench A', 'RB', 20, false),
+            P('rb3', 'Bench B', 'RB', 9, false),
+        ];
+        const d = optimizeAndDiff(r, slots);
+        // Optimal RB is rb1 (rank 5); the other two are bench, sorted 9 then 20.
+        expect(d.bench.map(b => b.player.sleeper_id)).toEqual(['rb3', 'rb2']);
+    });
+
+    it('flags a bench player within the close-call threshold of a startable slot', () => {
+        const slots = buildSlots(['RB', 'BN']);
+        // Starter rank 5; bench rank 7 → gap 2 (<= 5) → close call to RB.
+        const r = [P('rb1', 'Starter', 'RB', 5, true), P('rb2', 'Bench', 'RB', 7, false)];
+        const d = optimizeAndDiff(r, slots);
+        const bench = d.bench.find(b => b.player.sleeper_id === 'rb2')!;
+        expect(bench.isCloseCall).toBe(true);
+        expect(bench.gapToStart).toBe(2);
+        expect(bench.nearestSlot).toBe('RB');
+    });
+
+    it('does NOT flag a bench player far below the starter', () => {
+        const slots = buildSlots(['RB', 'BN']);
+        const r = [P('rb1', 'Starter', 'RB', 5, true), P('rb2', 'Bench', 'RB', 40, false)];
+        const d = optimizeAndDiff(r, slots);
+        const bench = d.bench.find(b => b.player.sleeper_id === 'rb2')!;
+        expect(bench.isCloseCall).toBe(false);
+        expect(bench.gapToStart).toBe(35);
+    });
+
+    it('computes gap against the eligible slot only (position-aware)', () => {
+        // A bench WR is close to the WR starter, not the (ineligible) RB slot.
+        const slots = buildSlots(['RB', 'WR', 'BN']);
+        const r = [
+            P('rb1', 'RB Starter', 'RB', 2, true),
+            P('wr1', 'WR Starter', 'WR', 10, true),
+            P('wr2', 'WR Bench', 'WR', 12, false),
+        ];
+        const d = optimizeAndDiff(r, slots);
+        const bench = d.bench.find(b => b.player.sleeper_id === 'wr2')!;
+        expect(bench.nearestSlot).toBe('WR');
+        expect(bench.gapToStart).toBe(2);
+        expect(bench.isCloseCall).toBe(true);
+    });
+
+    it('marks an unranked bench player with no gap and not a close call', () => {
+        const slots = buildSlots(['RB', 'BN']);
+        const r = [P('rb1', 'Starter', 'RB', 5, true), P('rb2', 'Unranked', 'RB', null, false)];
+        const d = optimizeAndDiff(r, slots);
+        const bench = d.bench.find(b => b.player.sleeper_id === 'rb2')!;
+        expect(bench.gapToStart).toBeNull();
+        expect(bench.isCloseCall).toBe(false);
+    });
+
+    it('never flags a LOCKED bench player as a close call', () => {
+        const slots = buildSlots(['RB', 'BN']);
+        const r = [
+            P('rb1', 'Starter', 'RB', 5, true),
+            { ...P('rb2', 'Locked Bench', 'RB', 6, false), locked: true },
+        ];
+        const d = optimizeAndDiff(r, slots);
+        const bench = d.bench.find(b => b.player.sleeper_id === 'rb2')!;
+        expect(bench.isCloseCall).toBe(false); // locked → can't be played this week
+    });
+});
+
 describe('optimizeAndDiff — locked (already-played) players', () => {
     const slots = buildSlots(['RB', 'BN']);
 
