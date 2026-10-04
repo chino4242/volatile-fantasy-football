@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getWeeklyKickerRankings } from '@/lib/kicker-rankings';
+import { getWeeklyKickerRankings } from '@/lib/weekly-rankings';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/portfolio/kicker-rankings
- * Returns the current-week kicker rankings (scraped from Subvertadown), used by
- * the Action Center to recommend the best available kicker to stream in any
- * league that starts a kicker. Cached upstream; empty list on failure.
+ * Returns the current-week kicker rankings from weekly_rankings (kind='k'),
+ * uploaded via Admin → Weekly Rankings (K). Used by the Action Center to
+ * recommend the best available kicker to stream in any league that starts a
+ * kicker. Empty list if none uploaded. (Replaces the old Subvertadown scrape.)
  */
 export async function GET() {
     try {

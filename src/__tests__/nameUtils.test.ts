@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cleanseName, resolveDefenseId } from '../lib/nameUtils';
+import { cleanseName, resolveDefenseId, kickerMatchKey, fixTeamAbbr } from '../lib/nameUtils';
 
 describe('nameUtils', () => {
     it('cleanses names correctly', () => {
@@ -40,5 +40,42 @@ describe('resolveDefenseId', () => {
         expect(resolveDefenseId('Seattle Seahawks', valid)).toBe('DEF_SEA');
         // Dallas isn't in the valid set → null even though the nickname matches.
         expect(resolveDefenseId('Dallas Cowboys', valid)).toBeNull();
+    });
+});
+
+
+describe('fixTeamAbbr', () => {
+    it('normalizes external abbrs to our DB convention', () => {
+        expect(fixTeamAbbr('JAC')).toBe('JAX');
+        expect(fixTeamAbbr('LA')).toBe('LAR');
+        expect(fixTeamAbbr('WSH')).toBe('WAS');
+        expect(fixTeamAbbr('OAK')).toBe('LV');
+        expect(fixTeamAbbr('SD')).toBe('LAC');
+    });
+    it('passes through already-correct abbrs and uppercases', () => {
+        expect(fixTeamAbbr('dal')).toBe('DAL');
+        expect(fixTeamAbbr('SEA')).toBe('SEA');
+        expect(fixTeamAbbr(null)).toBe('');
+    });
+});
+
+describe('kickerMatchKey', () => {
+    it('keys on cleansed last-name + normalized team', () => {
+        // CSV side: last-name only + team (JAC → JAX).
+        expect(kickerMatchKey('Little', 'JAC')).toBe('little|JAX');
+        expect(kickerMatchKey('Aubrey', 'DAL')).toBe('aubrey|DAL');
+    });
+    it('takes the last token of a full name (DB side) so both sides agree', () => {
+        expect(kickerMatchKey('Cam Little', 'JAX')).toBe('little|JAX');
+        // CSV last-name "Little" on JAC and DB full-name "Cam Little" on JAX → same key.
+        expect(kickerMatchKey('Little', 'JAC')).toBe(kickerMatchKey('Cam Little', 'JAX'));
+    });
+    it('strips suffixes/punctuation via cleanseName', () => {
+        expect(kickerMatchKey('Aubrey Jr.', 'DAL')).toBe('aubrey|DAL');
+    });
+    it('returns null when name or team is missing', () => {
+        expect(kickerMatchKey('', 'DAL')).toBeNull();
+        expect(kickerMatchKey('Aubrey', null)).toBeNull();
+        expect(kickerMatchKey('Aubrey', '')).toBeNull();
     });
 });

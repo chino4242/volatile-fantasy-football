@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { players, weeklyRankings } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { cleanseName } from '@/lib/nameUtils';
+import { cleanseName, kickerMatchKey } from '@/lib/nameUtils';
 import { TEAM_NAME_TO_ABBR } from '@/lib/transactions-parser';
 
 /**
@@ -62,6 +62,16 @@ function resolveDefenseId(name: string, defByAbbr: Map<string, string>): string 
         }
     }
     return null;
+}
+
+/**
+ * Resolve a kicker row to a sleeper_id. Kicker CSVs list the LAST NAME only
+ * (e.g. "Aubrey") plus the NFL team, so we key on (cleansed last-name, team) via
+ * the shared kickerMatchKey. Returns null if no seeded kicker matches.
+ */
+function resolveKickerId(name: string, team: string | null, kByLastTeam: Map<string, string>): string | null {
+    const key = kickerMatchKey(name, team);
+    return key ? (kByLastTeam.get(key) ?? null) : null;
 }
 
 /**
@@ -145,7 +155,7 @@ export async function POST(request: Request) {
         const week = toInt(formData.get('week'));
 
         if (!file) return NextResponse.json({ error: 'Missing file' }, { status: 400 });
-        if (kind !== 'flex' && kind !== 'qb' && kind !== 'dst') return NextResponse.json({ error: "kind must be 'flex', 'qb', or 'dst'" }, { status: 400 });
+        if (kind !== 'flex' && kind !== 'qb' && kind !== 'dst' && kind !== 'k') return NextResponse.json({ error: "kind must be 'flex', 'qb', 'dst', or 'k'" }, { status: 400 });
         if (week == null || week < 1 || week > 25) return NextResponse.json({ error: 'week must be 1-25' }, { status: 400 });
 
         const text = await file.text();
@@ -156,7 +166,7 @@ export async function POST(request: Request) {
         // Locate columns by header name (tolerant of the "FLEX"/"QB"/"Defense" player column).
         const idx = (...names: string[]) => { for (const n of names) { const i = headers.indexOf(n); if (i !== -1) return i; } return -1; };
         const cRank = idx('rank');
-        const cPlayer = idx('flex', 'qb', 'quarterback', 'player', 'name', 'running back', 'wide receiver', 'tight end', 'defense', 'dst', 'd/st');
+        const cPlayer = idx('flex', 'qb', 'quarterback', 'player', 'name', 'running back', 'wide receiver', 'tight end', 'defense', 'dst', 'd/st', 'kicker', 'k');
         const cTeam = idx('team');
         const cOpp = idx('opponent', 'opp');
         const cTotal = idx('total');
@@ -165,17 +175,24 @@ export async function POST(request: Request) {
         const cTier = idx('tier');
         const cSpread = idx('spread');
 
-        if (cPlayer === -1) return NextResponse.json({ error: `Could not find a player/defense column. Detected headers: [${headers.join(', ')}]. Expected one of: FLEX, QB, Quarterback, Player, Name, Defense.` }, { status: 400 });
+        if (cPlayer === -1) return NextResponse.json({ error: `Could not find a player/defense column. Detected headers: [${headers.join(', ')}]. Expected one of: FLEX, QB, Quarterback, Player, Name, Defense, Kicker.` }, { status: 400 });
 
         // Player name → sleeper_id (skill players by cleansed name; defenses by
-        // team-name → DEF_{ABBR}).
-        const allPlayers = await db.select({ sleeper_id: players.sleeper_id, full_name: players.full_name }).from(players);
+        // team-name → DEF_{ABBR}; kickers by last-name + team).
+        const allPlayers = await db.select({ sleeper_id: players.sleeper_id, full_name: players.full_name, last_name: players.last_name, position: players.position, team: players.team }).from(players);
         const byName = new Map<string, string>();
         const defByAbbr = new Map<string, string>();
+        const kByLastTeam = new Map<string, string>();
         for (const p of allPlayers) {
             if (p.full_name) byName.set(cleanseName(p.full_name), p.sleeper_id);
             const m = p.sleeper_id.match(/^DEF_([A-Z]{2,4})$/);
             if (m) defByAbbr.set(m[1], p.sleeper_id);
+            if (p.position === 'K' && p.team) {
+                // Key on the explicit last_name when present, else the last token
+                // of the full name — same keying the CSV side uses (kickerMatchKey).
+                const key = kickerMatchKey(p.last_name || p.full_name || '', p.team);
+                if (key) kByLastTeam.set(key, p.sleeper_id);
+            }
         }
 
         const rows: typeof weeklyRankings.$inferInsert[] = [];
@@ -185,9 +202,12 @@ export async function POST(request: Request) {
             const f = splitLine(line);
             const name = cPlayer >= 0 ? f[cPlayer] : null;
             if (!name) continue;
+            const teamRaw = cTeam >= 0 ? (f[cTeam] || null) : null;
             const sleeperId = kind === 'dst'
                 ? resolveDefenseId(name, defByAbbr)
-                : (byName.get(cleanseName(name)) || null);
+                : kind === 'k'
+                    ? resolveKickerId(name, teamRaw, kByLastTeam)
+                    : (byName.get(cleanseName(name)) || null);
             if (!sleeperId) { unmatched.push(name); }
             // Dedupe within the file by sleeper_id (skip dupes; keep first/best rank).
             const dedupeKey = sleeperId || `name:${cleanseName(name)}`;
@@ -198,8 +218,8 @@ export async function POST(request: Request) {
                 week,
                 kind,
                 rank: cRank >= 0 ? toInt(f[cRank]) : null,
-                position: cPos >= 0 ? (f[cPos] || null) : (kind === 'qb' ? 'QB' : kind === 'dst' ? 'DEF' : null),
-                team: cTeam >= 0 ? (f[cTeam] || null) : null,
+                position: cPos >= 0 ? (f[cPos] || null) : (kind === 'qb' ? 'QB' : kind === 'dst' ? 'DEF' : kind === 'k' ? 'K' : null),
+                team: teamRaw,
                 opponent: cOpp >= 0 ? (f[cOpp] || null) : null,
                 total: cTotal >= 0 ? toNum(f[cTotal]) : null,
                 pos_matchup: cMatchup >= 0 ? toInt(f[cMatchup]) : null,

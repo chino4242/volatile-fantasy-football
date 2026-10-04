@@ -126,6 +126,55 @@ export async function getWeeklyDstRankings(week?: number): Promise<{ week: numbe
     return { week: wk, list };
 }
 
+/** A weekly kicker streaming ranking row (one per kicker in the uploaded list). */
+export interface WeeklyKickerRank {
+    sleeper_id: string;
+    rank: number | null;
+    tier: number | null;
+    /** Projected score, if the source provides one (tier-based uploads omit it). */
+    score: number | null;
+    opponent: string | null;
+    team: string | null;
+    name: string | null;
+}
+
+/**
+ * All kicker streaming rankings for a week (the full uploaded list, kind='k').
+ * Mirrors getWeeklyDstRankings — used to recommend the best available kicker to
+ * stream per league. Ordered by rank ascending. Only rows that resolved to a
+ * kicker sleeper_id. Replaces the old Subvertadown scrape (now CSV-upload fed).
+ */
+export async function getWeeklyKickerRankings(week?: number): Promise<{ week: number | null; list: WeeklyKickerRank[] }> {
+    const wk = week ?? (await getLatestWeek());
+    if (wk == null) return { week: wk, list: [] };
+    const rows = await db
+        .select({
+            sleeper_id: weeklyRankings.sleeper_id,
+            rank: weeklyRankings.rank,
+            tier: weeklyRankings.tier,
+            total: weeklyRankings.total,
+            opponent: weeklyRankings.opponent,
+            team: weeklyRankings.team,
+            player_name: weeklyRankings.player_name,
+        })
+        .from(weeklyRankings)
+        .where(and(eq(weeklyRankings.week, wk), eq(weeklyRankings.kind, 'k')));
+
+    const list: WeeklyKickerRank[] = rows
+        .filter(r => r.sleeper_id)
+        .map(r => ({
+            sleeper_id: r.sleeper_id as string,
+            rank: r.rank ?? null,
+            tier: r.tier ?? null,
+            score: toNum(r.total),
+            opponent: r.opponent ?? null,
+            team: r.team ?? null,
+            name: r.player_name ?? null,
+        }))
+        .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
+    return { week: wk, list };
+}
+
 /**
  * Resolve the correct weekly rank for a player given its position:
  *  - QB → the 'qb' list rank.

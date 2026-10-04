@@ -8,9 +8,8 @@
  * optimizer uses), then runs the weekly-lineup upgrade finder.
  */
 
-import { getWeeklyRanks, rankForPosition } from './weekly-rankings';
+import { getWeeklyRanks, rankForPosition, getWeeklyKickerRankings } from './weekly-rankings';
 import { findWaiverUpgrades, type WaiverUpgrade } from './waiver-upgrades';
-import { getWeeklyKickerRankings } from './kicker-rankings';
 import { blendedKeepValue, KEEP_SCALE, type PortfolioPlayer, type PortfolioTeam, type PortfolioLeagueType } from './portfolio';
 
 /** Minimal player shape the caller provides (DbLeaguePlayer is compatible). */
@@ -79,9 +78,9 @@ export async function getTeamWaiverUpgrades(
     if (!rosterPositions || rosterPositions.length === 0) return [];
 
     // Kickers aren't valued by FantasyCalc, so they're absent from the DB
-    // free-agent pool. Pull the scraped kicker rankings and add any kicker NOT
-    // rostered in this league as an available free agent, so kicker upgrades
-    // surface alongside skill-position ones.
+    // free-agent pool. Pull the uploaded kicker rankings (weekly_rankings k) and
+    // add any kicker NOT rostered in this league as an available free agent, so
+    // kicker upgrades surface alongside skill-position ones.
     const startsKicker = rosterPositions.some(t => {
         const u = (t || '').toUpperCase();
         return u === 'K' || u === 'PK';
@@ -94,7 +93,7 @@ export async function getTeamWaiverUpgrades(
             for (const k of kr.list) {
                 if (!k.sleeper_id || rostered.has(k.sleeper_id)) continue;
                 kickerFAs.push({
-                    sleeper_id: k.sleeper_id, full_name: k.name, position: 'K',
+                    sleeper_id: k.sleeper_id, full_name: k.name ?? k.sleeper_id, position: 'K',
                     team: k.team, fc_value: null,
                 });
             }

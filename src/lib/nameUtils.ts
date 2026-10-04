@@ -60,3 +60,32 @@ export function resolveDefenseId(name: string, validIds?: Set<string>): string |
     }
     return null;
 }
+
+// NFL team abbr fixes → our DB convention. External CSV sources commonly use
+// JAC/LA/WSH/OAK/SD/STL; we store JAX/LAR/WAS/LV/LAC.
+const TEAM_ABBR_FIX: Record<string, string> = {
+    JAC: 'JAX', LA: 'LAR', WSH: 'WAS', OAK: 'LV', SD: 'LAC', STL: 'LAR',
+};
+
+/** Normalize an NFL team abbr to our DB convention (JAC→JAX, etc.). */
+export function fixTeamAbbr(a: string | null | undefined): string {
+    const up = (a || '').toUpperCase().trim();
+    return TEAM_ABBR_FIX[up] || up;
+}
+
+/**
+ * Build the lookup key for matching a kicker by LAST NAME + NFL team. Kicker
+ * ranking CSVs list only the last name (e.g. "Aubrey") plus the team, so we key
+ * on (cleansed last-name, normalized team abbr). Use the SAME function to build
+ * both sides of the match (the seeded players index and the CSV row) so they
+ * agree. Returns null when either part is missing.
+ *
+ * `name` may be a full name or a last name — we always take the last token.
+ */
+export function kickerMatchKey(name: string, team: string | null | undefined): string | null {
+    if (typeof name !== 'string') return null;
+    const last = cleanseName(name).split(' ').filter(Boolean).pop() || '';
+    const abbr = fixTeamAbbr(team);
+    if (!last || !abbr) return null;
+    return `${last}|${abbr}`;
+}

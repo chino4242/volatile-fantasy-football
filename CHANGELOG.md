@@ -4,6 +4,25 @@ All notable changes to the Volatile Fantasy Football platform.
 
 ## [Unreleased]
 
+### Changed - Kicker Rankings via CSV Upload (retire scrape) (2026-10-04)
+
+- **Weekly kicker rankings are now uploaded as a CSV** (Admin → Weekly Rankings →
+  K), matching the DST model — replacing the Subvertadown HTML scrape. Removes
+  the scrape fragility (silent breakage on markup/ToS changes) and gives a single
+  source of truth.
+- CSV columns: `Rank, Kicker, Team, Tier, Opponent`. The Kicker column is a LAST
+  NAME only (e.g. "Aubrey"); rows resolve to a seeded kicker by
+  `(cleansed last-name, normalized team abbr)` via the new shared `kickerMatchKey`
+  helper. Team abbrs are normalized (JAC→JAX, LA→LAR, etc.) so the CSV's
+  convention matches our DB. Verified 32/32 on a real sample.
+- `upload-weekly` POST now accepts `kind='k'` and stores rows in `weekly_rankings`
+  (kind='k') — the same table/shape flex/qb/dst use, so the lineup optimizer and
+  kicker-streaming engine read them unchanged.
+- `getWeeklyKickerRankings` moved to `src/lib/weekly-rankings.ts` (DB reader,
+  mirrors `getWeeklyDstRankings`); `src/lib/kicker-rankings.ts` (scraper, cheerio)
+  deleted. `team-waiver-upgrades` repointed to the DB reader.
+- New helpers `kickerMatchKey` + `fixTeamAbbr` in `nameUtils` (unit-tested).
+
 ### Fixed - Defense Streaming Availability & Game-Time Gating (2026-09-27)
 
 - **Rostered Sleeper defenses are now detected as unavailable.** Sleeper returns
