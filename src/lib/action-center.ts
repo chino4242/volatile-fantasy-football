@@ -149,10 +149,11 @@ const KIND_LABEL: Record<ActionKind, string> = {
     sell: 'Sell-window',
 };
 
-// The cross-league Action Center (top of the hub) shows ONLY urgent, time-
-// sensitive actions. Waiver adds + DEF streaming are per-league concerns and
-// render inside each league card instead (see buildLeagueActions).
-const URGENT_KINDS: ActionKind[] = ['lineup', 'trade'];
+// The cross-league Action Center (top of the hub) shows urgent, time-sensitive
+// actions. DEF streaming is week-scoped and time-sensitive (you must set it
+// before kickoff), so it's promoted here alongside lineup + trade. Waiver adds
+// stay per-league (rendered inside each league card, see buildLeagueActions).
+const URGENT_KINDS: ActionKind[] = ['lineup', 'trade', 'stream'];
 
 /**
  * Deep-link target for a league/team. v1 links to the in-app league view (the
@@ -404,20 +405,52 @@ function tradeItems(input: ActionCenterInput): ActionItem[] {
     }));
 }
 
+/** Format a DST row's context suffix, e.g. "vs ARI · tier 1 · -10". */
+function dstContext(d: DstRankInput): string {
+    const oppNote = d.opponent ? `vs ${d.opponent}` : '';
+    const tierNote = d.tier != null ? `tier ${d.tier}` : '';
+    const spreadNote = d.spread != null ? `${d.spread > 0 ? '+' : ''}${d.spread}` : '';
+    return [oppNote, tierNote, spreadNote].filter(Boolean).join(' · ');
+}
+
 /**
- * DEF streaming: for REDRAFT leagues, recommend the best-ranked AVAILABLE defense
- * (per the weekly DST rankings) when it beats my current starter's ranking — a
- * DST-for-DST swap that keeps a legal lineup (never drops my only DEF for nothing).
- * Requires a known my-team + a supplied DST list. Dynasty leagues are skipped
- * (streaming defenses is a redraft activity).
+ * DEF streaming: recommend the best-ranked AVAILABLE defense (per the weekly DST
+ * rankings) when it beats my current starter's ranking — a DST-for-DST swap that
+ * keeps a legal lineup (never drops my only DEF for nothing).
+ *
+ * Gated on the league actually STARTING a defense (a DST/DEF slot), NOT on league
+ * type — you stream defenses in dynasty/keeper leagues too, so long as the lineup
+ * has a DEF slot. This mirrors the kicker-streaming gate. Leagues without a DEF
+ * slot (e.g. some superflex formats) are skipped so they don't get noise.
+ *
+ * Surfaces up to the top 3 available streamers via `meta.alternatives` so the UI
+ * can offer a choice, while the headline names the single best pickup. Requires a
+ * known my-team + a supplied DST list.
  */
 function streamItems(input: ActionCenterInput): ActionItem[] {
     const { league, myRosterId, dstRankings } = input;
     if (!dstRankings || dstRankings.length === 0) return [];
-    if (league.leagueType !== 'redraft') return [];
     if (!myRosterId) return [];
     const myTeam = league.teams.find(t => t.rosterId === myRosterId);
     if (!myTeam) return [];
+
+    // Gate: only leagues that actually start a defense (a slot eligible for DEF).
+    const slots = buildSlots(league.rosterPositions);
+    const startsDefense = slots.some(s => s.eligible.size === 1 && s.eligible.has('DEF'));
+    if (!startsDefense) return [];
+
+    // A defense's NFL team abbr lives in its sleeper_id as DEF_{ABBR} (our DB
+    // convention, matching startedTeams). Used for game-time gating.
+    const started = input.startedTeams;
+    const abbrOf = (defId: string): string | null => {
+        const m = defId.match(/^DEF_([A-Z]{2,4})$/);
+        return m ? m[1] : null;
+    };
+    const hasPlayed = (defId: string): boolean => {
+        if (!started) return false; // fail open (no scoreboard → no gating)
+        const abbr = abbrOf(defId);
+        return abbr != null && started.has(abbr);
+    };
 
     // Rank lookup from the uploaded list.
     const rankById = new Map<string, DstRankInput>();
@@ -433,12 +466,18 @@ function streamItems(input: ActionCenterInput): ActionItem[] {
 
     // My current DEF (if any) + its rank.
     const myDef = myTeam.players.find(p => (p.position === 'DEF' || p.position === 'DST'));
+    // If my current DEF's game has already kicked off, its score is locked in —
+    // swapping it out this week does nothing. Suppress the suggestion entirely
+    // (the drop half is invalid; better to say nothing than recommend a no-op).
+    if (myDef && hasPlayed(myDef.sleeper_id)) return [];
     const myRank = myDef ? (rankById.get(myDef.sleeper_id)?.rank ?? null) : null;
 
-    // Best-ranked available defense from the list.
-    const bestAvailable = dstRankings
-        .filter(d => d.rank != null && !rosteredDef.has(d.sleeper_id))
-        .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))[0];
+    // Available defenses, best-ranked first. Exclude any whose NFL game has
+    // already started — a defense that already played can't help you this week.
+    const available = dstRankings
+        .filter(d => d.rank != null && !rosteredDef.has(d.sleeper_id) && !hasPlayed(d.sleeper_id))
+        .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
+    const bestAvailable = available[0];
     if (!bestAvailable) return [];
 
     // Recommend only if it's a genuine upgrade: I have no DEF, my DEF isn't ranked
@@ -447,13 +486,24 @@ function streamItems(input: ActionCenterInput): ActionItem[] {
     if (!isUpgrade) return [];
 
     const link = deepLinkFor(league.platform, league.leagueId, myRosterId, input.myffpcLtuid);
-    const oppNote = bestAvailable.opponent ? `vs ${bestAvailable.opponent}` : '';
-    const tierNote = bestAvailable.tier != null ? `tier ${bestAvailable.tier}` : '';
-    const spreadNote = bestAvailable.spread != null ? `${bestAvailable.spread > 0 ? '+' : ''}${bestAvailable.spread}` : '';
-    const detailBits = [oppNote, tierNote, spreadNote].filter(Boolean).join(' · ');
+    const detailBits = dstContext(bestAvailable);
     const headline = myDef
         ? `Stream ${bestAvailable.name ?? bestAvailable.sleeper_id} · drop ${myDef.full_name}`
         : `Stream ${bestAvailable.name ?? bestAvailable.sleeper_id} (DEF)`;
+
+    // Up to the top 3 available streamers, so the UI can offer a choice. Each
+    // carries its own name + context; the first is the headline pickup.
+    const alternatives = available.slice(0, 3).map(d => ({
+        defId: d.sleeper_id,
+        name: d.name ?? d.sleeper_id,
+        rank: d.rank,
+        context: dstContext(d) || null,
+    }));
+    // A muted second line naming the other options (beyond the headline pickup).
+    const others = alternatives.slice(1);
+    const subDetail = others.length
+        ? `Also available: ${others.map(o => `${o.name}${o.rank != null ? ` (#${o.rank})` : ''}`).join(', ')}`
+        : null;
 
     return [{
         id: `stream:${league.platform}:${league.leagueId}:${bestAvailable.sleeper_id}`,
@@ -464,7 +514,7 @@ function streamItems(input: ActionCenterInput): ActionItem[] {
         platform: league.platform,
         leagueId: league.leagueId,
         deepLink: link,
-        meta: { defId: bestAvailable.sleeper_id, rank: bestAvailable.rank, myRank },
+        meta: { defId: bestAvailable.sleeper_id, rank: bestAvailable.rank, myRank, alternatives, subDetail },
     }];
 }
 
@@ -487,6 +537,12 @@ function streamKickerItems(input: ActionCenterInput): ActionItem[] {
     const startsKicker = slots.some(s => s.eligible.size === 1 && s.eligible.has('K'));
     if (!startsKicker) return [];
 
+    // A kicker whose NFL game already started can't help this week. Kicker
+    // ranking rows carry the NFL team abbr in `team`; gate on startedTeams.
+    const started = input.startedTeams;
+    const hasPlayed = (abbr: string | null): boolean =>
+        !!(started && abbr && started.has(abbr.toUpperCase()));
+
     const rankById = new Map<string, KickerRankInput>();
     for (const k of kickerRankings) rankById.set(k.sleeper_id, k);
 
@@ -499,10 +555,12 @@ function streamKickerItems(input: ActionCenterInput): ActionItem[] {
     }
 
     const myK = myTeam.players.find(p => (p.position === 'K' || p.position === 'PK'));
+    // My kicker already played → swapping is a no-op; suppress the suggestion.
+    if (myK && hasPlayed(myK.team)) return [];
     const myRank = myK ? (rankById.get(myK.sleeper_id)?.rank ?? null) : null;
 
     const bestAvailable = kickerRankings
-        .filter(k => k.rank != null && !rosteredK.has(k.sleeper_id))
+        .filter(k => k.rank != null && !rosteredK.has(k.sleeper_id) && !hasPlayed(k.team))
         .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))[0];
     if (!bestAvailable) return [];
 
@@ -560,10 +618,10 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
     // tally — caution and informational items stay quiet by design.
     const badgeWorthyUpgrades = waiverUpgrade.filter(i => i.meta?.badgeWorthy === true).length;
     const counts = { lineup: lineup.length, trade: trade.length, waiver: waiver.length, waiverUpgrade: badgeWorthyUpgrades, stream: stream.length, sell: 0 };
-    // The cross-league Action Center is urgent-only (lineup + trade). Waiver +
-    // stream are surfaced per-league in the cards, so they don't gate the quiet
-    // state of the top strip.
-    const urgentEmpty = lineup.length + trade.length === 0;
+    // The cross-league Action Center is urgent-only (lineup + trade + DEF
+    // streaming). Waiver adds stay per-league in the cards, so they don't gate
+    // the quiet state of the top strip.
+    const urgentEmpty = lineup.length + trade.length + stream.length === 0;
 
     if (seasonMode === 'in-season') {
         const byKind: Record<ActionKind, ActionItem[]> = { lineup, trade, waiver, 'waiver-upgrade': waiverUpgrade, stream, 'stream-k': streamK, sell: [] };
@@ -611,9 +669,9 @@ export function buildActionCenter(inputs: ActionCenterInput[], opts: ActionCente
 
 /**
  * Per-league in-season recommendations rendered INSIDE that league's card:
- * actionable waiver ADD→DROP swaps + a DEF streaming suggestion (redraft only).
- * Kept out of the cross-league Action Center (which is urgent-only). Returns []
- * when my-team is unknown (both are roster-specific).
+ * actionable waiver ADD→DROP swaps + kicker streaming. DEF streaming is NOT here
+ * — it's promoted to the cross-league Action Center (urgent, week-scoped). Kept
+ * out means no double-render. Returns [] when my-team is unknown (roster-specific).
  */
 export function buildLeagueActions(input: ActionCenterInput, waiverPerLeague = 3): ActionItem[] {
     return [
@@ -621,7 +679,6 @@ export function buildLeagueActions(input: ActionCenterInput, waiverPerLeague = 3
         // "show more") — request a deeper list than the value-based waivers.
         ...waiverUpgradeItems(input, 15),
         ...waiverItems(input, waiverPerLeague),
-        ...streamItems(input),
         ...streamKickerItems(input),
     ];
 }

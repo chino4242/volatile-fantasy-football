@@ -229,6 +229,9 @@ function ActionRow({ item, onAck }: { item: ActionItem; onAck: (ackKey: string) 
                         </span>
                     )}
                 </div>
+                {item.meta?.subDetail ? (
+                    <div className="text-[11px] text-zinc-400 mt-0.5 truncate">{item.meta.subDetail as string}</div>
+                ) : null}
                 <span className="inline-block mt-1 text-[11px] text-zinc-500 bg-zinc-100 dark:bg-zinc-800 rounded px-1.5 py-0.5">
                     {item.leagueName} · {platform}
                 </span>

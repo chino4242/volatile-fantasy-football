@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { players, playerValues, playerTags, playerTransactions } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { cleanseName } from "@/lib/nameUtils";
-import { getLeagueData, getSleeperRosterPositions } from "@/lib/sleeper";
+import { cleanseName, resolveDefenseId } from "@/lib/nameUtils";
+import { getLeagueData, getSleeperRosterPositions, normalizeSleeperStarterId } from "@/lib/sleeper";
 import { getFleaflickerLeague, getFleaflickerWeekLineups } from "@/lib/fleaflicker";
 import { getDbLeagueData, type DbPlatform } from "@/lib/db-league-data";
 import { getWeeklyRanks, rankForPosition } from "@/lib/weekly-rankings";
@@ -73,7 +73,14 @@ async function buildSleeper(
     const { users, rosters } = await getLeagueData(leagueId);
     const rosterPositions = await getSleeperRosterPositions(leagueId);
 
-    const rosteredIds = [...new Set(rosters.flatMap(r => r.players || []))];
+    // Sleeper returns team defenses as a bare NFL abbr (e.g. "SEA"); our players
+    // table stores them as DEF_{ABBR}. Normalize every roster id so defenses join
+    // to their value row (and, critically, so a rostered defense is detected as
+    // unavailable by the streaming engine). Without this, every top-ranked D/ST
+    // looks like a free agent.
+    const norm = (id: string) => normalizeSleeperStarterId(id);
+
+    const rosteredIds = [...new Set(rosters.flatMap(r => (r.players || []).map(norm)))];
     const valueRows = await selectValueRows([...rosteredIds]);
     const byId = new Map(valueRows.map(r => [String(r.sleeper_id), r]));
 
@@ -81,9 +88,10 @@ async function buildSleeper(
         users.find(u => u.user_id === ownerId)?.display_name || `Team`;
 
     const teams = rosters.map(r => {
-        const starters = new Set(r.starters || []);
+        const starters = new Set((r.starters || []).map(norm));
         const teamPlayers: PortfolioPlayer[] = (r.players || [])
-            .map(pid => {
+            .map(raw => {
+                const pid = norm(raw);
                 const row = byId.get(pid);
                 return row ? toPortfolioPlayer(row, cols, starters.has(pid)) : null;
             })
@@ -117,12 +125,21 @@ async function buildFleaflicker(
     // matches the pattern the existing Fleaflicker page uses).
     const allPlayers = await db.select({ sleeper_id: players.sleeper_id, full_name: players.full_name }).from(players);
     const idByName = new Map<string, string>();
-    for (const p of allPlayers) idByName.set(cleanseName(p.full_name), p.sleeper_id);
+    const validDefIds = new Set<string>();
+    for (const p of allPlayers) {
+        idByName.set(cleanseName(p.full_name), p.sleeper_id);
+        if (/^DEF_[A-Z]{2,4}$/.test(p.sleeper_id)) validDefIds.add(p.sleeper_id);
+    }
 
     const rosteredSleeperIds = new Set<string>();
     const nameToSleeper = new Map<string, string>();
     for (const nm of allNames) {
-        const sid = idByName.get(cleanseName(nm));
+        // Fleaflicker sends a defense's name as the team name (e.g. "Seattle
+        // Seahawks"), which won't match our "Seattle Seahawks DEF" row by
+        // cleansed name. Fall back to the team-nickname → DEF_{ABBR} resolver so
+        // rostered defenses are detected (and thus correctly marked unavailable
+        // by the streaming engine).
+        const sid = idByName.get(cleanseName(nm)) || resolveDefenseId(nm, validDefIds);
         if (sid) { nameToSleeper.set(nm, sid); rosteredSleeperIds.add(sid); }
     }
 
@@ -231,7 +248,7 @@ async function stampTags(league: PortfolioLeague): Promise<void> {
         db.select({ sleeper_id: playerTags.sleeper_id, tag: playerTags.tag }).from(playerTags),
         db.select({ sleeper_id: playerTransactions.sleeper_id, action: playerTransactions.action, note: playerTransactions.note }).from(playerTransactions),
     ]);
-    const tagBy = new Map(tags.map(t => [t.sleeper_id, t.tag as 'buy' | 'sell']));
+    const tagBy = new Map(tags.map(t => [t.sleeper_id, t.tag as 'buy' | 'sell' | 'add']));
     // Most recent transaction per player wins (query returns insertion order;
     // last one overwrites — good enough for the current single-feed cadence).
     const txnBy = new Map<string, { action: 'buy' | 'sell' | 'add' | 'hold'; note: string | null }>();

@@ -146,54 +146,115 @@ describe('buildLeagueActions — per-league waiver + stream (rendered in the car
     });
 });
 
-describe('buildActionCenter — DEF streaming (redraft only)', () => {
-    // My redraft team has a bad DEF (rank 25); a top DEF (rank 1) is available.
-    function redraftWithDef(myDefRank: number | null, opts: { availTopRank?: number } = {}): ActionCenterInput {
+describe('buildActionCenter — DEF streaming (gated on a DEF slot, any league type)', () => {
+    // My team has a bad DEF (rank 25); a top DEF (rank 1) is available. Roster
+    // has a DST slot so streaming applies. leagueType defaults to dynasty to
+    // prove it's NOT redraft-gated anymore.
+    function withDef(myDefRank: number | null, opts: { availTopRank?: number; rosterPositions?: string[] } = {}): ActionCenterInput {
         const myDef = myDefRank != null ? [P({ sleeper_id: 'DEF_NYG', position: 'DEF', is_starter: true })] : [];
         const my = team('1', 'Chino', [P({ sleeper_id: 'qb1', position: 'QB', is_starter: true }), ...myDef]);
         const opp = team('2', 'Rival', [P({ sleeper_id: 'DEF_DAL', position: 'DEF' })]); // Dallas rostered → unavailable
-        const lg = league({ teams: [my, opp], leagueType: 'redraft', rosterPositions: ['QB', 'DST', 'BN'] });
+        const lg = league({ teams: [my, opp], leagueType: 'dynasty', rosterPositions: opts.rosterPositions ?? ['QB', 'DST', 'BN'] });
         const dstRankings = [
             { sleeper_id: 'DEF_LAC', rank: opts.availTopRank ?? 1, tier: 1, spread: -10, opponent: 'ARI', name: 'Los Angeles Chargers' },
+            { sleeper_id: 'DEF_SEA', rank: 2, tier: 1, spread: -7, opponent: 'WAS', name: 'Seattle Seahawks' },
             { sleeper_id: 'DEF_DAL', rank: 12, tier: 3, spread: -3, opponent: 'NYG', name: 'Dallas Cowboys' },
             { sleeper_id: 'DEF_NYG', rank: myDefRank ?? 99, tier: 5, spread: 3, opponent: 'DAL', name: 'New York Giants' },
         ];
         return { league: lg, myRosterId: '1', dstRankings };
     }
 
+    // DEF streaming now surfaces in the cross-league Action Center (urgent),
+    // not the per-league card. Pull the stream group from byType.
+    function streamItemsOf(input: ActionCenterInput) {
+        const ac = buildActionCenter([input], { seasonMode: 'in-season', week: 3 });
+        return ac.byType?.find(g => g.kind === 'stream')?.items ?? [];
+    }
+
+    it('surfaces DEF streaming in the top-level Action Center (urgent)', () => {
+        const ac = buildActionCenter([withDef(25)], { seasonMode: 'in-season', week: 3 });
+        expect(ac.byType!.map(g => g.kind)).toContain('stream');
+        expect(ac.counts.stream).toBe(1);
+    });
+
     it('recommends the best available defense when it beats my starter', () => {
-        const items = buildLeagueActions(redraftWithDef(25));
-        const stream = items.find(i => i.kind === 'stream')!;
+        const stream = streamItemsOf(withDef(25))[0];
         expect(stream).toBeDefined();
         expect(stream.headline).toMatch(/Stream Los Angeles Chargers.*drop/);
         expect(stream.detail).toMatch(/vs ARI/);
     });
 
     it('recommends when I have no defense at all', () => {
-        const items = buildLeagueActions(redraftWithDef(null));
-        const stream = items.find(i => i.kind === 'stream')!;
+        const stream = streamItemsOf(withDef(null))[0];
         expect(stream.headline).toMatch(/^Stream Los Angeles Chargers \(DEF\)/);
     });
 
     it('does NOT recommend when my defense is already good', () => {
         // My DEF rank 2; best available rank 1 → not a >=3-spot upgrade.
-        const items = buildLeagueActions(redraftWithDef(2));
-        expect(items.some(i => i.kind === 'stream')).toBe(false);
+        expect(streamItemsOf(withDef(2))).toHaveLength(0);
     });
 
-    it('never recommends streaming in a dynasty league', () => {
-        const input = redraftWithDef(25);
+    it('recommends in a dynasty league (no longer redraft-only)', () => {
+        const input = withDef(25);
         input.league = { ...input.league, leagueType: 'dynasty' };
-        expect(buildLeagueActions(input).some(i => i.kind === 'stream')).toBe(false);
+        expect(streamItemsOf(input).length).toBeGreaterThan(0);
+    });
+
+    it('does NOT recommend when the league has no DEF slot', () => {
+        // Superflex-style roster with no DST slot → streaming gated off.
+        expect(streamItemsOf(withDef(25, { rosterPositions: ['QB', 'SUPER_FLEX', 'BN'] }))).toHaveLength(0);
+    });
+
+    // Game-time gating: a defense whose NFL game already kicked off can't help
+    // this week, and swapping out a defense that already played is a no-op.
+    function streamWithStarted(input: ActionCenterInput, started: string[]) {
+        input.startedTeams = new Set(started);
+        return streamItemsOf(input);
+    }
+
+    it('excludes an available defense whose game already started', () => {
+        // LAC (rank 1) already played → next-best available SEA (rank 2) is the pick.
+        const items = streamWithStarted(withDef(25), ['LAC']);
+        expect(items[0]).toBeDefined();
+        expect(items[0].headline).toMatch(/Seattle Seahawks/);
+        expect(items[0].headline).not.toMatch(/Chargers/);
+    });
+
+    it('does NOT surface a started defense among the alternatives', () => {
+        const items = streamWithStarted(withDef(25), ['LAC']);
+        const alts = items[0].meta?.alternatives as Array<{ name: string }>;
+        expect(alts.some(a => a.name.includes('Chargers'))).toBe(false);
+    });
+
+    it('suppresses the whole suggestion when MY defense already played', () => {
+        // My DEF is New York Giants (DEF_NYG); if NYG already kicked off, dropping
+        // it is pointless → no suggestion at all.
+        expect(streamWithStarted(withDef(25), ['NYG'])).toHaveLength(0);
+    });
+
+    it('still recommends when a started team is neither mine nor the best pickup', () => {
+        // DAL already played but DAL is rostered anyway; best available (LAC) is
+        // unaffected → normal recommendation stands.
+        const items = streamWithStarted(withDef(25), ['DAL']);
+        expect(items[0].headline).toMatch(/Los Angeles Chargers/);
+    });
+
+    it('surfaces the top alternatives (excluding the headline pickup) in subDetail', () => {
+        const stream = streamItemsOf(withDef(25))[0];
+        // Seattle (rank 2) is the next-best available after LAC (rank 1).
+        expect(stream.meta?.subDetail as string).toMatch(/Also available: Seattle Seahawks \(#2\)/);
+        const alts = stream.meta?.alternatives as Array<{ name: string; rank: number }>;
+        expect(alts[0].name).toBe('Los Angeles Chargers');
+        expect(alts.length).toBeGreaterThanOrEqual(2);
     });
 
     it('never recommends a defense already rostered in the league', () => {
-        const input = redraftWithDef(25);
+        const input = withDef(25);
         input.dstRankings = [
             { sleeper_id: 'DEF_DAL', rank: 1, tier: 1, spread: -10, opponent: 'NYG', name: 'Dallas Cowboys' },
             { sleeper_id: 'DEF_LAC', rank: 2, tier: 1, spread: -9, opponent: 'ARI', name: 'Los Angeles Chargers' },
         ];
-        const stream = buildLeagueActions(input).find(i => i.kind === 'stream')!;
+        const stream = streamItemsOf(input)[0];
         expect(stream.headline).toMatch(/Los Angeles Chargers/); // not Dallas
     });
 });

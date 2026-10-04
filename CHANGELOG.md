@@ -4,6 +4,44 @@ All notable changes to the Volatile Fantasy Football platform.
 
 ## [Unreleased]
 
+### Fixed - Defense Streaming Availability & Game-Time Gating (2026-09-27)
+
+- **Rostered Sleeper defenses are now detected as unavailable.** Sleeper returns
+  team defenses as a bare NFL abbr (e.g. `"SEA"`), but the players table keys them
+  as `DEF_SEA`. The portfolio league builder wasn't normalizing these, so every
+  rostered defense was dropped from team rosters — making the streaming engine
+  think all 32 defenses were free agents (it would recommend a top-ranked defense
+  already on someone's roster). `buildSleeper` now applies
+  `normalizeSleeperStarterId` to roster ids, players, and starters.
+  (`src/app/api/portfolio/league/route.ts`)
+- **Defenses/kickers whose NFL game already kicked off are no longer suggested.**
+  `streamItems`/`streamKickerItems` now consume `startedTeams` (already fetched by
+  the portfolio): an available defense/kicker whose game has started is excluded
+  from the pool and from the alternatives, and the suggestion is suppressed
+  entirely when YOUR current DEF/K has already played (swapping a locked-in score
+  is a no-op). Matches the existing weekly waiver-upgrade gating.
+  (`src/lib/action-center.ts`)
+
+### Changed - Defense Streaming Promoted to Action Center (2026-09-27)
+
+- **DEF streaming is now a top-level "Stream a defense" action** in the Portfolio
+  Action Center (⚡ Needs attention this week), instead of being buried inside
+  each league card. It's week-scoped and time-sensitive, so it sits alongside
+  lineup fixes and trades.
+- **No longer redraft-only.** Streaming suggestions now fire for any league that
+  *starts a defense* (has a DST/DEF lineup slot) — dynasty and keeper included —
+  matching the kicker-streaming gate. Leagues without a DEF slot are skipped.
+- **Surfaces the top 3 available streamers.** The headline names the single best
+  available defense (with opponent · tier · spread); a muted sub-line lists the
+  next-best options ("Also available: …"), and `meta.alternatives` carries the
+  full top-3 for the UI.
+- Upgrade threshold unchanged: recommend only when you have no DEF, your DEF is
+  unranked this week, or an available one is ≥3 rank spots better.
+- `src/lib/action-center.ts`: `streamItems` reworked (slot gate + alternatives);
+  `stream` added to `URGENT_KINDS`; removed from `buildLeagueActions` to avoid a
+  double-render. `src/components/portfolio/ActionCenter.tsx`: renders
+  `meta.subDetail`. Tests updated in `src/__tests__/lib/action-center.test.ts`.
+
 ### Added - Live Draft, AI Analysis, Visual Draft Board (2026-04-19)
 
 #### Live Draft Mode

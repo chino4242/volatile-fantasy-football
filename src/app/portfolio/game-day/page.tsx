@@ -313,9 +313,9 @@ function GameStatus({ game }: { game: RootingGame }) {
 }
 
 function GameCard({ game, bumpedIds }: { game: RootingGame; bumpedIds: Set<string> }) {
-    // Default to the per-league breakdown; the toggle collapses to the combined
-    // aggregate list on demand.
-    const [byLeague, setByLeague] = useState(true);
+    // Default to the combined aggregate list; the toggle expands to the
+    // per-league matchup breakdown on demand.
+    const [byLeague, setByLeague] = useState(false);
     const isUnknown = game.gameKey === 'UNKNOWN';
     // The per-league breakdown only makes sense for real games with actual
     // FOR/AGAINST starters. Bench-only games (no rooting interest) skip the
