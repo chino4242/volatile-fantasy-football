@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRootingGuide, gameKeyFor, type LeagueMatchupInput, type PlayerGameInfo } from '@/lib/rooting-guide';
+import { buildRootingGuide, filterGuideByLeagues, gameKeyFor, type LeagueMatchupInput, type PlayerGameInfo } from '@/lib/rooting-guide';
 
 const info = (full_name: string, position: string, nflTeam: string, nflOpponent: string): PlayerGameInfo =>
     ({ full_name, position, nflTeam, nflOpponent });
@@ -249,5 +249,85 @@ describe('buildRootingGuide — central livePoints precedence', () => {
         const g = buildRootingGuide(leagues, gi, 1, new Map()); // empty central map
         const cmc = g.games.flatMap(x => x.players).find(p => p.sleeper_id === 'cmc')!;
         expect(cmc.points).toBe(8.0);
+    });
+});
+
+
+describe('filterGuideByLeagues', () => {
+    const gameInfo = new Map<string, PlayerGameInfo>([
+        ['gibbs', info('Jahmyr Gibbs', 'RB', 'DET', 'GB')],
+        ['love', info('Jordan Love', 'QB', 'GB', 'DET')],
+        ['chase', info("Ja'Marr Chase", 'WR', 'CIN', 'CLE')],
+    ]);
+
+    // League A: start Gibbs (DET@GB), start Chase (CIN@CLE); opp starts Love.
+    // League B: start Chase only (CIN@CLE).
+    function guide() {
+        const leagues: LeagueMatchupInput[] = [
+            { leagueId: 'a', leagueName: 'League A', platform: 'sleeper', myStarterIds: ['gibbs', 'chase'], oppStarterIds: ['love'], pointsById: { gibbs: 10, chase: 20, love: 5 } },
+            { leagueId: 'b', leagueName: 'League B', platform: 'sleeper', myStarterIds: ['chase'], oppStarterIds: [], pointsById: { chase: 20 } },
+        ];
+        return buildRootingGuide(leagues, gameInfo, 1);
+    }
+
+    it('returns the guide unchanged when selected is null (no filter)', () => {
+        const g = guide();
+        expect(filterGuideByLeagues(g, null)).toBe(g);
+    });
+
+    it('keeps only players with a stake in the selected leagues', () => {
+        // Select League B only → only Chase (CIN@CLE) survives; DET@GB drops.
+        const g = filterGuideByLeagues(guide(), new Set(['League B']));
+        expect(g.games.map(x => x.gameKey).sort()).toEqual(['CIN@CLE']);
+        const chase = g.games[0].players.find(p => p.sleeper_id === 'chase')!;
+        expect(chase.forLeagues).toEqual(['League B']);
+        expect(chase.side).toBe('for');
+        // Gibbs/Love's game is gone entirely.
+        expect(g.games.find(x => x.gameKey === 'DET@GB')).toBeUndefined();
+    });
+
+    it('recomputes per-game FOR/AGAINST counts + points from survivors', () => {
+        // Select League A only → DET@GB (gibbs FOR, love AGAINST) + CIN@CLE (chase FOR).
+        const g = filterGuideByLeagues(guide(), new Set(['League A']));
+        const det = g.games.find(x => x.gameKey === 'DET@GB')!;
+        expect(det.forCount).toBe(1);
+        expect(det.againstCount).toBe(1);
+        expect(det.forPoints).toBeCloseTo(10);  // gibbs
+        expect(det.againstPoints).toBeCloseTo(5); // love
+        const chase = g.games.find(x => x.gameKey === 'CIN@CLE')!.players.find(p => p.sleeper_id === 'chase')!;
+        expect(chase.forLeagues).toEqual(['League A']); // League B dropped
+    });
+
+    it('narrows a multi-league player to just the selected leagues', () => {
+        // Chase is FOR in both A and B; selecting A narrows him to A.
+        const g = filterGuideByLeagues(guide(), new Set(['League A']));
+        const chase = g.games.find(x => x.gameKey === 'CIN@CLE')!.players.find(p => p.sleeper_id === 'chase')!;
+        expect(chase.forLeagues).toEqual(['League A']);
+    });
+
+    it('empties the board when nothing is selected', () => {
+        const g = filterGuideByLeagues(guide(), new Set());
+        expect(g.games).toHaveLength(0);
+        // sources are preserved so the filter UI can still list every league.
+        expect(g.sources.length).toBeGreaterThan(0);
+    });
+
+    it('does not mutate the input guide', () => {
+        const g = guide();
+        const beforeGames = g.games.length;
+        const beforeChaseLeagues = g.games.flatMap(x => x.players).find(p => p.sleeper_id === 'chase')!.forLeagues.slice();
+        filterGuideByLeagues(g, new Set(['League A']));
+        expect(g.games.length).toBe(beforeGames);
+        expect(g.games.flatMap(x => x.players).find(p => p.sleeper_id === 'chase')!.forLeagues).toEqual(beforeChaseLeagues);
+    });
+
+    it('preserves bench-only players when their bench league is selected', () => {
+        const leagues: LeagueMatchupInput[] = [
+            { leagueId: 'a', leagueName: 'League A', platform: 'sleeper', myStarterIds: ['gibbs'], oppStarterIds: [], myBenchIds: ['chase'] },
+        ];
+        const g = filterGuideByLeagues(buildRootingGuide(leagues, gameInfo, 1), new Set(['League A']));
+        const chase = g.games.flatMap(x => x.players).find(p => p.sleeper_id === 'chase')!;
+        expect(chase.side).toBe('bench');
+        expect(chase.benchLeagues).toEqual(['League A']);
     });
 });

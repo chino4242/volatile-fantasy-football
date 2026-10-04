@@ -120,6 +120,60 @@ export interface RootingGuide {
 
 const UNKNOWN_GAME = 'UNKNOWN';
 
+/**
+ * Filter a built rooting guide down to a chosen set of league NAMES (as they
+ * appear in RootingSource.leagueName / player.forLeagues etc). Pure — returns a
+ * NEW guide; the input is untouched.
+ *
+ * For each player we keep only the selected leagues in forLeagues/againstLeagues/
+ * benchLeagues, recompute the player's `side`, and drop players with no remaining
+ * stake. Each game's counts/points are recomputed from the surviving players, and
+ * games left with no players are dropped. `sources` is preserved in full so the
+ * filter UI can still list every league (including deselected ones). The UNKNOWN
+ * bucket is treated like any other game.
+ *
+ * `selected == null` (no filter) returns the guide unchanged.
+ */
+export function filterGuideByLeagues(guide: RootingGuide, selected: Set<string> | null): RootingGuide {
+    if (!selected) return guide;
+
+    const keep = (names: string[]) => names.filter(n => selected.has(n));
+    const sideFor = (forL: string[], againstL: string[], benchL: string[]): RootingSide | null => {
+        const f = forL.length > 0, a = againstL.length > 0;
+        if (f && a) return 'both';
+        if (f) return 'for';
+        if (a) return 'against';
+        if (benchL.length > 0) return 'bench';
+        return null; // no remaining stake in the selected leagues → drop
+    };
+
+    const games: RootingGame[] = [];
+    for (const g of guide.games) {
+        const players: RootingPlayer[] = [];
+        for (const p of g.players) {
+            const forLeagues = keep(p.forLeagues);
+            const againstLeagues = keep(p.againstLeagues);
+            const benchLeagues = keep(p.benchLeagues);
+            const side = sideFor(forLeagues, againstLeagues, benchLeagues);
+            if (!side) continue;
+            players.push({ ...p, forLeagues, againstLeagues, benchLeagues, side });
+        }
+        if (players.length === 0) continue;
+
+        // Recompute counts/points from the surviving starters (bench excluded,
+        // mirroring how the original guide builds these totals).
+        let forCount = 0, againstCount = 0, forPoints = 0, againstPoints = 0;
+        for (const p of players) {
+            if (p.side === 'bench') continue;
+            if (p.forLeagues.length > 0) { forCount++; forPoints += p.points ?? 0; }
+            if (p.againstLeagues.length > 0) { againstCount++; againstPoints += p.points ?? 0; }
+        }
+        games.push({ ...g, players, forCount, againstCount, forPoints, againstPoints });
+    }
+
+    return { ...guide, games };
+}
+
 /** Unordered NFL-game key from a team + its opponent. */
 export function gameKeyFor(team: string | null, opponent: string | null): string {
     if (!team && !opponent) return UNKNOWN_GAME;

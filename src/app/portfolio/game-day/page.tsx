@@ -1,13 +1,34 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Loader2, ThumbsUp, ThumbsDown, Clock, Users, List, ChevronDown, ChevronRight } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { Loader2, ThumbsUp, ThumbsDown, Clock, Users, List, ChevronDown, ChevronRight, Filter } from 'lucide-react';
 import { useAuth } from '@/hooks/useUser';
 import { useMyTeams } from '@/hooks/useMyTeams';
+import { filterGuideByLeagues } from '@/lib/rooting-guide';
 import type { RootingGuide, RootingPlayer, RootingGame, RootingSource } from '@/lib/rooting-guide';
 
 const CURRENT_YEAR = new Date().getFullYear();
+
+// Persist which leagues are HIDDEN (deselected) on the For & Against board, so a
+// new league defaults to visible. localStorage-backed, mirroring useSeasonMode.
+const HIDDEN_LEAGUES_KEY = 'vff_gameday_hidden_leagues';
+function readHiddenLeagues(): Set<string> {
+    try {
+        const raw = localStorage.getItem(HIDDEN_LEAGUES_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return new Set(Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : []);
+    } catch {
+        return new Set();
+    }
+}
+function writeHiddenLeagues(hidden: Set<string>): void {
+    try {
+        localStorage.setItem(HIDDEN_LEAGUES_KEY, JSON.stringify([...hidden]));
+    } catch {
+        /* ignore quota/availability errors */
+    }
+}
 
 interface Ref { platform: string; leagueId: string; leagueName?: string; myRosterId?: string | null; }
 
@@ -23,6 +44,25 @@ export default function GameDayPage() {
     const [bumpedIds, setBumpedIds] = useState<Set<string>>(new Set());
     // Previous poll's points per sleeper_id, for diffing.
     const prevPointsRef = useRef<Map<string, number>>(new Map());
+
+    // Which leagues are hidden on the board (persisted). Loaded once on mount.
+    const [hiddenLeagues, setHiddenLeagues] = useState<Set<string>>(new Set());
+    useEffect(() => { setHiddenLeagues(readHiddenLeagues()); }, []);
+    const setLeagueHidden = useCallback((leagueName: string, hidden: boolean) => {
+        setHiddenLeagues(prev => {
+            const next = new Set(prev);
+            if (hidden) next.add(leagueName); else next.delete(leagueName);
+            writeHiddenLeagues(next);
+            return next;
+        });
+    }, []);
+    const setAllHidden = useCallback((names: string[], hidden: boolean) => {
+        setHiddenLeagues(() => {
+            const next = hidden ? new Set(names) : new Set<string>();
+            writeHiddenLeagues(next);
+            return next;
+        });
+    }, []);
 
     // Assemble refs + fetch the guide. `isPoll` skips the full-page spinner so a
     // background refresh doesn't flash the loading state.
@@ -106,6 +146,23 @@ export default function GameDayPage() {
         return () => { signal.cancelled = true; clearInterval(id); };
     }, [guide, load]);
 
+    // All league names present in the guide (for the filter bar), stable-sorted.
+    const allLeagueNames = useMemo(
+        () => (guide?.sources ?? []).map(s => s.leagueName).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+        [guide],
+    );
+    // The guide filtered to the SELECTED (not-hidden) leagues. When nothing is
+    // hidden we pass null (no-op) so the common case does zero extra work.
+    const selectedLeagues = useMemo(() => {
+        if (hiddenLeagues.size === 0) return null;
+        return new Set(allLeagueNames.filter(n => !hiddenLeagues.has(n)));
+    }, [allLeagueNames, hiddenLeagues]);
+    const viewGuide = useMemo(
+        () => (guide ? filterGuideByLeagues(guide, selectedLeagues) : null),
+        [guide, selectedLeagues],
+    );
+    const hiddenCount = allLeagueNames.filter(n => hiddenLeagues.has(n)).length;
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
             <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -124,6 +181,16 @@ export default function GameDayPage() {
 
                 {!loading && guide?.sources && guide.sources.length > 0 && <FreshnessLine sources={guide.sources} lastUpdated={lastUpdated} live={!!guide.games.some(g => g.live?.state === 'in')} />}
 
+                {!loading && guide && guide.week != null && allLeagueNames.length > 1 && (
+                    <LeagueFilterBar
+                        leagueNames={allLeagueNames}
+                        hiddenLeagues={hiddenLeagues}
+                        hiddenCount={hiddenCount}
+                        onToggle={setLeagueHidden}
+                        onSetAll={setAllHidden}
+                    />
+                )}
+
                 {loading && <div className="flex items-center gap-2 text-zinc-500 mt-4"><Loader2 className="h-4 w-4 animate-spin" /> Building your board…</div>}
                 {error && <div className="text-sm text-red-500">Failed to load ({error}).</div>}
 
@@ -139,12 +206,18 @@ export default function GameDayPage() {
                     </div>
                 )}
 
-                {!loading && guide && (() => {
+                {!loading && guide && guide.week != null && guide.games.length > 0 && viewGuide && viewGuide.games.length === 0 && (
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 ring-1 ring-zinc-900/5 text-zinc-600 dark:text-zinc-400">
+                        No games match the selected leagues. <button type="button" onClick={() => setAllHidden(allLeagueNames, false)} className="text-indigo-600 hover:underline">Show all leagues</button>.
+                    </div>
+                )}
+
+                {!loading && viewGuide && viewGuide.games.length > 0 && (() => {
                     // Split finished (Final) games out so they don't clog the top of
                     // the board — collapsed away at the bottom by default.
                     const isFinished = (g: RootingGame) => g.live?.state === 'post';
-                    const activeGames = guide.games.filter(g => !isFinished(g));
-                    const finishedGames = guide.games.filter(isFinished);
+                    const activeGames = viewGuide.games.filter(g => !isFinished(g));
+                    const finishedGames = viewGuide.games.filter(isFinished);
                     return (
                         <>
                             {activeGames.length > 0 && (
@@ -179,6 +252,70 @@ export default function GameDayPage() {
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+/**
+ * League filter bar — toggle chips to show/hide each league's rooting interests
+ * on the board. Collapsed by default to a single summary row ("All leagues" or
+ * "N of M leagues"); tap to expand the chips. Selection persists via localStorage
+ * (the page stores the HIDDEN set, so new leagues default to visible).
+ */
+function LeagueFilterBar({
+    leagueNames, hiddenLeagues, hiddenCount, onToggle, onSetAll,
+}: {
+    leagueNames: string[];
+    hiddenLeagues: Set<string>;
+    hiddenCount: number;
+    onToggle: (leagueName: string, hidden: boolean) => void;
+    onSetAll: (names: string[], hidden: boolean) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const total = leagueNames.length;
+    const shown = total - hiddenCount;
+    const summary = hiddenCount === 0 ? `All ${total} leagues` : `${shown} of ${total} leagues`;
+
+    return (
+        <div className="mb-6 rounded-xl bg-white dark:bg-zinc-900 ring-1 ring-zinc-900/5 shadow-sm">
+            <button
+                type="button"
+                onClick={() => setOpen(v => !v)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-600 dark:text-zinc-300"
+                aria-expanded={open}
+            >
+                <Filter className="h-3.5 w-3.5 text-zinc-400" />
+                <span className="font-medium">Leagues</span>
+                <span className={`text-xs ${hiddenCount > 0 ? 'text-indigo-600 dark:text-indigo-400 font-medium' : 'text-zinc-400'}`}>{summary}</span>
+                <span className="ml-auto">{open ? <ChevronDown className="h-4 w-4 text-zinc-400" /> : <ChevronRight className="h-4 w-4 text-zinc-400" />}</span>
+            </button>
+            {open && (
+                <div className="px-3 pb-3 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                    <div className="flex items-center gap-3 mb-2">
+                        <button type="button" onClick={() => onSetAll(leagueNames, false)} className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline">Select all</button>
+                        <button type="button" onClick={() => onSetAll(leagueNames, true)} className="text-[11px] font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:underline">Clear all</button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {leagueNames.map(name => {
+                            const active = !hiddenLeagues.has(name);
+                            return (
+                                <button
+                                    key={name}
+                                    type="button"
+                                    onClick={() => onToggle(name, active)}
+                                    aria-pressed={active}
+                                    className={`text-xs rounded-full px-2.5 py-1 ring-1 transition-colors ${active
+                                        ? 'bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 ring-indigo-200 dark:ring-indigo-800'
+                                        : 'bg-zinc-50 dark:bg-zinc-800/50 text-zinc-400 dark:text-zinc-500 ring-zinc-200 dark:ring-zinc-700 line-through'}`}
+                                    title={active ? `Hide ${name}` : `Show ${name}`}
+                                >
+                                    {name}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
