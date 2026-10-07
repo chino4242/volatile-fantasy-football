@@ -235,11 +235,17 @@ export async function getDbLeagueData(platform: DbPlatform, leagueId: string): P
     });
 
     const rosteredSet = new Set(rosteredIds);
-    const freeAgents = allPlayers
-        .filter(p => !rosteredSet.has(p.sleeper_id))
-        .map(p => enrich(p))
+    const availablePool = allPlayers.filter(p => !rosteredSet.has(p.sleeper_id)).map(p => enrich(p));
+    // Skill players: top 300 by dynasty value. Defenses (and other valueless
+    // positions) have no FC value, so sorting by value drops them past the cap —
+    // keep them in a separate bucket that isn't value-capped, then merge. This is
+    // what lets the free-agent DEF tab actually show available defenses.
+    const valued = availablePool
+        .filter(p => p.position !== 'DEF')
         .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0))
         .slice(0, 300);
+    const defenses = availablePool.filter(p => p.position === 'DEF');
+    const freeAgents = [...valued, ...defenses];
 
     return {
         platform,
