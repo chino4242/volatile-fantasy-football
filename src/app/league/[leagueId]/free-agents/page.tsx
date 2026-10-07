@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { players, playerValues, leagues, prospectData, prospectWriteups } from "@/db/schema";
-import { getLeagueData, getSleeperRosterPositions } from "@/lib/sleeper";
+import { getLeagueData, getSleeperRosterPositions, normalizeSleeperStarterId } from "@/lib/sleeper";
 import { desc, eq, notInArray, and, not, like, inArray, sql } from "drizzle-orm";
 import { FreeAgentTable } from "@/components/FreeAgentTable";
 import Link from "next/link";
@@ -63,8 +63,10 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
         // 1. Live Sleeper data: rosters (players are sleeper_ids) + users for team names.
         const { rosters, users } = await getLeagueData(leagueId);
 
-        // 2. Rostered player IDs (for FA exclusion).
-        const allSleeperIds = rosters.flatMap((r) => r.players || []);
+        // 2. Rostered player IDs (for FA exclusion). Sleeper stores defenses as a
+        //    bare NFL abbr (e.g. "SEA"); normalize to DEF_{ABBR} so rostered
+        //    defenses are excluded from the available pool.
+        const allSleeperIds = rosters.flatMap((r) => (r.players || []).map(normalizeSleeperStarterId));
         if (allSleeperIds.length === 0) allSleeperIds.push('dummy');
 
         // 3. Top-200 free agents (not rostered, skill positions).
@@ -81,6 +83,21 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
             )
             .orderBy(desc(format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb))
             .limit(200);
+
+        // 3b. Available defenses (fetched SEPARATELY so the value-capped top-200
+        //     above never drops them — defenses have no FantasyCalc value). All
+        //     32 DEF rows, minus any rostered in this league.
+        const availableDefenses = await db
+            .select(valueColumns(format))
+            .from(players)
+            .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
+            .where(
+                and(
+                    notInArray(players.sleeper_id, allSleeperIds),
+                    eq(players.position, 'DEF')
+                )
+            );
+        freeAgents.push(...availableDefenses);
 
         // Merge prospect writeups + ZAP data.
         const currentYear = new Date().getFullYear();

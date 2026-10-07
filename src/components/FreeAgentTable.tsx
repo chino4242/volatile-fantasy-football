@@ -120,6 +120,23 @@ export function FreeAgentTable({ players, rankingsVintage, weeklyWeek, myRosterF
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
     const [filterPosition, setFilterPosition] = useState<string>('ALL');
 
+    // Switch the DEFAULT sort when the active tab changes: defenses have no
+    // dynasty value, so the DEF tab defaults to this week's DST rank (ascending =
+    // best first); other tabs default to dynasty value. A manual column click
+    // after switching still overrides until the tab changes again.
+    const prevFilterRef = React.useRef(filterPosition);
+    React.useEffect(() => {
+        if (prevFilterRef.current === filterPosition) return;
+        prevFilterRef.current = filterPosition;
+        if (filterPosition === 'DEF') {
+            setSortColumn('weekly_rank');
+            setSortDirection('asc');
+        } else {
+            setSortColumn('fc_value');
+            setSortDirection('desc');
+        }
+    }, [filterPosition]);
+
     const vffLabel = rankingsVintage ? `VFF Rankings (${rankingsVintage})` : 'VFF Rankings';
     const COLUMN_GROUPS = [
         { id: 'weekly', label: 'This Week' },
@@ -268,7 +285,7 @@ export function FreeAgentTable({ players, rankingsVintage, weeklyWeek, myRosterF
         <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden">
             <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-4">
                 <div className="flex gap-2 overflow-x-auto">
-                    {['ALL', 'QB', 'RB', 'WR', 'TE', 'ROOKIES'].map(pos => (
+                    {['ALL', 'QB', 'RB', 'WR', 'TE', 'DEF', 'ROOKIES'].map(pos => (
                         <button key={pos} onClick={() => setFilterPosition(pos)}
                             className={`px-3 py-1 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${filterPosition === pos ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'}`}>
                             {pos}

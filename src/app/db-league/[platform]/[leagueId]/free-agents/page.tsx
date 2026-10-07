@@ -60,7 +60,7 @@ export default async function DbFreeAgentsPage({ params, searchParams }: PagePro
     });
 
     const players: FreeAgentData[] = data.freeAgents
-        .filter(p => ["QB", "RB", "WR", "TE"].includes(p.position || ""))
+        .filter(p => ["QB", "RB", "WR", "TE", "DEF"].includes(p.position || ""))
         .map(toFreeAgentData);
 
     // Stamp this week's rank onto each free agent.

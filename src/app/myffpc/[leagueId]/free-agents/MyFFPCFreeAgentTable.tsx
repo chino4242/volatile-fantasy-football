@@ -12,6 +12,7 @@ interface FreeAgent {
     rank_1qb_overall: number | null;
     rank_1qb_tier: number | null;
     redraft_auction_value: number | null;
+    weekly_rank?: number | null;
     analyst_tag?: 'buy' | 'sell' | 'add' | null;
     analyst_note?: string | null;
     analyst_week?: number | null;
@@ -31,7 +32,7 @@ function AnalystPickup({ player }: { player: FreeAgent }) {
     );
 }
 
-const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE'] as const;
+const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DEF'] as const;
 type PositionFilter = typeof POSITIONS[number];
 
 function getPositionBadgeColor(position: string | null): string {
@@ -61,6 +62,13 @@ export function MyFFPCFreeAgentTable({ players }: { players: FreeAgent[] }) {
         ? players
         : players.filter(p => p.position === filter);
 
+    // Defenses have no dynasty value, so the DEF tab sorts by this week's DST
+    // rank (best first); unranked defenses sort last. Other tabs keep the query's
+    // dynasty-value order.
+    const displayed = filter === 'DEF'
+        ? [...filtered].sort((a, b) => (a.weekly_rank ?? Infinity) - (b.weekly_rank ?? Infinity))
+        : filtered;
+
     return (
         <div>
             {/* Position Filters */}
@@ -79,7 +87,7 @@ export function MyFFPCFreeAgentTable({ players }: { players: FreeAgent[] }) {
                     </button>
                 ))}
                 <span className="ml-auto text-sm text-zinc-500 self-center">
-                    {filtered.length} players
+                    {displayed.length} players
                 </span>
             </div>
 
@@ -87,7 +95,7 @@ export function MyFFPCFreeAgentTable({ players }: { players: FreeAgent[] }) {
             <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden">
                 {/* Mobile Layout */}
                 <div className="sm:hidden divide-y divide-zinc-100 dark:divide-zinc-800">
-                    {filtered.slice(0, 100).map((player, idx) => (
+                    {displayed.slice(0, 100).map((player, idx) => (
                         <div
                             key={player.sleeper_id}
                             className={`flex items-center justify-between px-4 py-3 border-l-4 ${getPositionBorderColor(player.position)}`}
@@ -109,6 +117,9 @@ export function MyFFPCFreeAgentTable({ players }: { players: FreeAgent[] }) {
                                 <div className="text-sm font-mono font-bold text-green-600 dark:text-green-400">
                                     {player.fc_value_1qb?.toLocaleString() || '—'}
                                 </div>
+                                {player.weekly_rank != null && (
+                                    <div className="text-[11px] font-mono text-sky-600 dark:text-sky-400">Wk #{player.weekly_rank}</div>
+                                )}
                             </div>
                         </div>
                     ))}
@@ -124,13 +135,14 @@ export function MyFFPCFreeAgentTable({ players }: { players: FreeAgent[] }) {
                                 <th className="text-left px-4 py-3 font-medium text-zinc-500 dark:text-zinc-400">Pos</th>
                                 <th className="text-left px-4 py-3 font-medium text-zinc-500 dark:text-zinc-400">Team</th>
                                 <th className="text-right px-4 py-3 font-medium text-zinc-500 dark:text-zinc-400">Dynasty Value</th>
+                                <th className="text-right px-4 py-3 font-medium text-zinc-500 dark:text-zinc-400">Wk Rank</th>
                                 <th className="text-right px-4 py-3 font-medium text-zinc-500 dark:text-zinc-400">Auction $</th>
                                 <th className="text-right px-4 py-3 font-medium text-zinc-500 dark:text-zinc-400">FC Rank</th>
                                 <th className="text-right px-4 py-3 font-medium text-zinc-500 dark:text-zinc-400">Tier</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                            {filtered.slice(0, 100).map((player, idx) => (
+                            {displayed.slice(0, 100).map((player, idx) => (
                                 <tr
                                     key={player.sleeper_id}
                                     className={`border-l-4 ${getPositionBorderColor(player.position)} hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors`}
@@ -149,6 +161,9 @@ export function MyFFPCFreeAgentTable({ players }: { players: FreeAgent[] }) {
                                     </td>
                                     <td className="px-4 py-3 text-right font-mono font-bold text-green-600 dark:text-green-400">
                                         {player.fc_value_1qb?.toLocaleString() || '—'}
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-mono text-sky-600 dark:text-sky-400">
+                                        {player.weekly_rank != null ? `#${player.weekly_rank}` : '—'}
                                     </td>
                                     <td className="px-4 py-3 text-right font-mono text-zinc-600 dark:text-zinc-400">
                                         {player.redraft_auction_value != null ? `$${player.redraft_auction_value}` : '—'}

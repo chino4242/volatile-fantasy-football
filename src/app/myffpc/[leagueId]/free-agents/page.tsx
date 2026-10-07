@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { MyFFPCFreeAgentTable } from "./MyFFPCFreeAgentTable";
 import { getAnalystSignals } from "@/lib/analyst-signals";
+import { getWeeklyRanks, rankForPosition } from "@/lib/weekly-rankings";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,9 @@ export default async function MyFFPCFreeAgentsPage({
         .map(rp => rp.sleeper_id)
         .filter(Boolean) as string[];
 
-    // Fetch all players with value NOT on any roster
+    // Fetch all players with value NOT on any roster. Defenses have no FC value,
+    // so they're fetched separately below (the fc_value_1qb>0 filter would drop
+    // them) and merged in.
     const freeAgents = await db
         .select({
             sleeper_id: players.sleeper_id,
@@ -64,7 +67,7 @@ export default async function MyFFPCFreeAgentsPage({
             and(
                 gt(playerValues.fc_value_1qb, 0),
                 // Exclude draft picks (position='PICK') — only real players
-                inArray(players.position, ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']),
+                inArray(players.position, ['QB', 'RB', 'WR', 'TE', 'K']),
                 rosteredIds.length > 0
                     ? notInArray(players.sleeper_id, rosteredIds)
                     : undefined
@@ -73,12 +76,38 @@ export default async function MyFFPCFreeAgentsPage({
         .orderBy(desc(playerValues.fc_value_1qb))
         .limit(300);
 
-    // Stamp the analyst signal (Buy/Sell board) so trusted pickups stand out.
+    // Available defenses (no FC value → fetched separately, left-joined). Rostered
+    // defenses are stored as DEF_{ABBR} on MyFFPC rosters, so the id exclusion works.
+    const defenseRows = await db
+        .select({
+            sleeper_id: players.sleeper_id,
+            full_name: players.full_name,
+            position: players.position,
+            team: players.team,
+            fc_value_1qb: playerValues.fc_value_1qb,
+            fc_rank_1qb: playerValues.fc_rank_1qb,
+            rank_1qb_overall: playerValues.rank_1qb_overall,
+            rank_1qb_tier: playerValues.rank_1qb_tier,
+            redraft_auction_value: playerValues.redraft_auction_value,
+        })
+        .from(players)
+        .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
+        .where(
+            and(
+                eq(players.position, 'DEF'),
+                rosteredIds.length > 0 ? notInArray(players.sleeper_id, rosteredIds) : undefined
+            )
+        );
+    freeAgents.push(...defenseRows);
+
+    // Stamp this week's DST/flex/qb rank + the analyst signal (Buy/Sell board).
+    const { week: weeklyWeek, byId: weeklyById } = await getWeeklyRanks(freeAgents.map(p => p.sleeper_id));
     const analystSignals = await getAnalystSignals();
     const freeAgentsWithSignals = freeAgents.map(p => {
         const sig = analystSignals.get(p.sleeper_id);
         return {
             ...p,
+            weekly_rank: rankForPosition(p.position, weeklyById.get(p.sleeper_id)).rank,
             analyst_tag: sig?.tag ?? null,
             analyst_note: sig?.note ?? null,
             analyst_week: sig?.week ?? null,

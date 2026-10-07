@@ -4,6 +4,25 @@ All notable changes to the Volatile Fantasy Football platform.
 
 ## [Unreleased]
 
+### Added - Defense (DST) Free-Agent Tab (2026-10-06)
+
+- **Every free-agent view now has a DEF tab** listing available team defenses,
+  defaulting to this week's DST rank (best first) since defenses carry no dynasty
+  value. Switching tabs away from DEF restores the dynasty-value sort; a manual
+  column sort still overrides until you change tabs.
+- Defenses tagged add/buy on the analyst Buy/Sell board get the same green star
+  as skill players.
+- Rostered defenses are correctly excluded per platform: Sleeper normalizes its
+  bare team-abbr ids (SEA → DEF_SEA); Fleaflicker resolves rostered defense team
+  names → DEF_{ABBR} via `resolveDefenseId`; Yahoo/MyFFPC already store DEF_{ABBR}.
+  Defenses are fetched separately from the value-capped top-200 so they're never
+  dropped for lacking an FC value.
+- Covers the shared `FreeAgentTable` (Sleeper, Fleaflicker, Yahoo/MyFFPC via
+  db-league) plus the standalone MyFFPC free-agents table (added a Wk Rank column
+  + DEF tab there too).
+- Verified against a real Sleeper league (week 5): 14 rostered defenses excluded,
+  18 available with weekly ranks, zero leaks.
+
 ### Changed - Kicker Rankings via CSV Upload (retire scrape) (2026-10-04)
 
 - **Weekly kicker rankings are now uploaded as a CSV** (Admin → Weekly Rankings →
