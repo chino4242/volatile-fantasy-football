@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { use, useEffect, useState } from 'react';
-import { Loader2, PlusCircle, ArrowRightLeft, TrendingUp, TrendingDown, Ban } from 'lucide-react';
+import { Loader2, PlusCircle, ArrowRightLeft, TrendingUp, TrendingDown, Ban, ChevronUp, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/hooks/useUser';
 import { useMyTeams } from '@/hooks/useMyTeams';
+import PlayerProfileCard from '@/components/PlayerProfileCard';
+import { buildRosterConfig } from '@/lib/transaction-suggestions';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -20,10 +22,23 @@ interface TargetedTrade {
     rosConsidered: boolean;
     positionalImpact: PositionalImpact[] | null;
 }
+interface WaiverPlayerLite {
+    sleeper_id: string; full_name: string; position: string | null; team: string | null;
+    fc_value: number | null; rosRank: number | null; rosPosRank: number | null;
+    rosPpg: number | null; rosSos: number | null; byeWeek: number | null; weeklyRank: number | null;
+}
+interface MoveContext {
+    addPlayer: WaiverPlayerLite;
+    myRoster: WaiverPlayerLite[];
+    rosterPositions: string[] | null;
+    actualCoreCount: number;
+    myTeamName: string;
+}
 interface LeagueSituation {
     league: string; platform: string; leagueName?: string; myTeamKnown?: boolean;
     status: 'mine' | 'opponent' | 'available' | 'not-in-league' | 'error';
     ownerName?: string; trade?: TargetedTrade | null;
+    moveContext?: MoveContext | null;
 }
 interface Situation {
     player: { sleeper_id: string; full_name: string; position: string | null; team: string | null; age: number | null };
@@ -123,7 +138,7 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ sleeper
                             {sit.perLeague.filter(l => l.status !== 'not-in-league' && l.status !== 'error').length === 0 && (
                                 <div className="text-sm text-zinc-400">Not found on any of your rosters, opponents, or waivers this week.</div>
                             )}
-                            {sit.perLeague.map((lg, i) => <LeagueCard key={i} lg={lg} tag={sit.tag} />)}
+                            {sit.perLeague.map((lg, i) => <LeagueCard key={i} lg={lg} tag={sit.tag} player={sit.player} />)}
                         </div>
 
                         <p className="text-[11px] text-zinc-400 mt-4">
@@ -136,7 +151,8 @@ export default function PlayerDetailPage({ params }: { params: Promise<{ sleeper
     );
 }
 
-function LeagueCard({ lg, tag }: { lg: LeagueSituation; tag: 'buy' | 'sell' | 'add' | null }) {
+function LeagueCard({ lg, tag, player }: { lg: LeagueSituation; tag: 'buy' | 'sell' | 'add' | null; player: Situation['player'] }) {
+    const [moveOpen, setMoveOpen] = useState(false);
     if (lg.status === 'not-in-league' || lg.status === 'error') return null;
     const PLATFORM: Record<string, string> = { sleeper: 'Sleeper', fleaflicker: 'Fleaflicker', yahoo: 'Yahoo', myffpc: 'MyFFPC' };
 
@@ -148,8 +164,39 @@ function LeagueCard({ lg, tag }: { lg: LeagueSituation; tag: 'buy' | 'sell' | 'a
             </div>
 
             {lg.status === 'available' && (
-                <div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400 font-medium">
-                    <PlusCircle className="h-4 w-4" /> Available — add off waivers.
+                <div>
+                    <div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400 font-medium">
+                        <PlusCircle className="h-4 w-4" /> Available — add off waivers.
+                    </div>
+                    {!lg.myTeamKnown && (
+                        <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">Pick your team for this league on the Portfolio page to plan a move.</div>
+                    )}
+                    {lg.myTeamKnown && lg.moveContext && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => setMoveOpen(true)}
+                                className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 transition-colors"
+                            >
+                                <ArrowRightLeft className="h-3.5 w-3.5" /> Plan a move
+                            </button>
+                            {moveOpen && (
+                                <PlayerProfileCard
+                                    playerName={player.full_name}
+                                    position={player.position || 'N/A'}
+                                    team={player.team}
+                                    sleeperId={player.sleeper_id}
+                                    onClose={() => setMoveOpen(false)}
+                                    dynastyValue={lg.moveContext.addPlayer.fc_value ?? undefined}
+                                    addPlayer={lg.moveContext.addPlayer}
+                                    myRoster={lg.moveContext.myRoster}
+                                    rosterConfig={buildRosterConfig(lg.moveContext.rosterPositions)}
+                                    actualCoreCount={lg.moveContext.actualCoreCount}
+                                    myTeamName={lg.moveContext.myTeamName}
+                                />
+                            )}
+                        </>
+                    )}
                 </div>
             )}
 
@@ -181,32 +228,53 @@ const VERDICT_STYLE: Record<string, { cls: string; icon: React.ReactNode }> = {
 };
 
 function TradeBlock({ trade }: { trade: TargetedTrade }) {
+    const [open, setOpen] = useState(false);
     if (!trade.proposal) {
         return <div className="text-sm text-zinc-500 mt-2 flex items-start gap-1.5"><Ban className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" /> {trade.reason}</div>;
     }
     const v = trade.advisor?.verdict || 'even';
     const style = VERDICT_STYLE[v] || VERDICT_STYLE.even;
+    const hasDetail = !!(trade.reason || (trade.positionalImpact && trade.positionalImpact.length > 0) || trade.advisor?.pitch);
     return (
         <div className="mt-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-3">
-            <div className="flex items-center gap-2 text-sm">
-                <ArrowRightLeft className="h-4 w-4 text-indigo-500 flex-shrink-0" />
-                <span className="text-zinc-800 dark:text-zinc-200">
-                    Send <span className="font-medium">{trade.proposal.iSend.full_name}</span> ({trade.proposal.iSend.position})
-                    {' '}→ get <span className="font-medium">{trade.proposal.iReceive.full_name}</span> ({trade.proposal.iReceive.position})
+            {/* Headline — always visible: the move + verdict + value gap. */}
+            <button
+                type="button"
+                onClick={() => hasDetail && setOpen(o => !o)}
+                aria-expanded={open}
+                className={`w-full flex items-start gap-2 text-left ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}
+            >
+                <ArrowRightLeft className="h-4 w-4 text-indigo-500 flex-shrink-0 mt-0.5" />
+                <span className="flex-1 min-w-0">
+                    <span className="text-sm text-zinc-800 dark:text-zinc-200">
+                        Send <span className="font-medium">{trade.proposal.iSend.full_name}</span> ({trade.proposal.iSend.position})
+                        {' '}→ get <span className="font-medium">{trade.proposal.iReceive.full_name}</span> ({trade.proposal.iReceive.position})
+                    </span>
+                    {trade.advisor && (
+                        <span className={`flex items-center gap-1 text-xs font-semibold mt-1 ${style.cls}`}>
+                            {style.icon} {v.replace('-', ' ')}{typeof trade.valueGapPct === 'number' ? ` · ${trade.valueGapPct > 0 ? '+' : ''}${trade.valueGapPct}% value` : ''}
+                        </span>
+                    )}
                 </span>
-            </div>
-            {trade.advisor && (
-                <div className={`flex items-center gap-1 text-xs font-semibold mt-1.5 ${style.cls}`}>
-                    {style.icon} {v.replace('-', ' ')}{typeof trade.valueGapPct === 'number' ? ` · ${trade.valueGapPct > 0 ? '+' : ''}${trade.valueGapPct}% value` : ''}
+                {hasDetail && (
+                    <span className="text-zinc-400 flex-shrink-0 mt-0.5">
+                        {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </span>
+                )}
+            </button>
+
+            {/* Detail — collapsed by default: reason, room impact, pitch. */}
+            {open && hasDetail && (
+                <div className="mt-2 pl-6">
+                    {trade.reason && <div className="text-xs text-zinc-500 dark:text-zinc-400">{trade.reason}</div>}
+                    {trade.positionalImpact && trade.positionalImpact.length > 0 && (
+                        <div className="mt-2 space-y-0.5">
+                            {trade.positionalImpact.map((pi) => <RoomImpactLine key={pi.position} pi={pi} />)}
+                        </div>
+                    )}
+                    {trade.advisor?.pitch && <div className="text-[11px] text-zinc-400 mt-1 italic">Pitch: {trade.advisor.pitch}</div>}
                 </div>
             )}
-            <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{trade.reason}</div>
-            {trade.positionalImpact && trade.positionalImpact.length > 0 && (
-                <div className="mt-2 space-y-0.5">
-                    {trade.positionalImpact.map((pi) => <RoomImpactLine key={pi.position} pi={pi} />)}
-                </div>
-            )}
-            {trade.advisor?.pitch && <div className="text-[11px] text-zinc-400 mt-1 italic">Pitch: {trade.advisor.pitch}</div>}
         </div>
     );
 }

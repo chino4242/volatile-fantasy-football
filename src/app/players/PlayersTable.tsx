@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import Link from 'next/link';
+import { TrendingUp, TrendingDown, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ColumnPicker, useColumnState } from '@/components/ColumnPicker';
 import type { ColumnDef } from '@/components/ColumnPicker';
+import { useAuth } from '@/hooks/useUser';
 
 interface PlayerData {
     sleeper_id: string;
@@ -23,13 +25,27 @@ interface PlayerData {
     redraft_rank_overall?: number | null;
     redraft_rank_pos?: number | null;
     redraft_rank_tier?: number | null;
+    // Rest-of-season (forward-looking) + this week's start/sit rank.
+    rank_ros_overall?: number | null;
+    rank_ros_pos?: number | null;
+    rank_ros_tier?: number | null;
+    rank_ros_ppg?: number | null;
+    ros_sos?: number | null;
+    bye_week?: number | null;
+    weekly_rank?: number | null;
 }
 
 interface PlayersTableProps {
     players: PlayerData[];
     format: '1qb' | 'sf';
     rankingsVintage?: string | null;
+    weeklyWeek?: number | null;
+    /** Precise date the ROS ranks were last uploaded (e.g. "Oct 8, 2026"). */
+    rosUpdatedLabel?: string | null;
 }
+
+type SortColumn = 'rank_ros_overall' | 'weekly_rank' | 'fc_value' | 'fc_rank' | 'rank_overall' | 'full_name';
+type SortDirection = 'asc' | 'desc';
 
 type SignalFilter = 'ALL' | 'STRONG BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG SELL';
 
@@ -43,6 +59,10 @@ const SIGNAL_FILTERS: { label: SignalFilter; activeColor: string }[] = [
 ];
 
 const COLUMNS: ColumnDef[] = [
+    { key: 'ros_rank', label: 'ROS Rank', defaultOn: true, group: 'ros' },
+    { key: 'ros_pos', label: 'ROS Pos', defaultOn: false, group: 'ros' },
+    { key: 'ros_ppg', label: 'ROS PPG', defaultOn: false, group: 'ros' },
+    { key: 'weekly_rank', label: 'Week Rank', defaultOn: true, group: 'weekly' },
     { key: 'market_value', label: 'Market Value', defaultOn: true, group: 'core' },
     { key: 'fc_rank', label: 'FC Overall', defaultOn: false, group: 'fc' },
     { key: 'fc_pos_rank', label: 'FC Pos Rank', defaultOn: false, group: 'fc' },
@@ -71,9 +91,21 @@ const getValueGapLabel = (gap: number | null) => {
     return { label: 'HOLD', color: 'bg-zinc-400 text-white' };
 };
 
-export function PlayersTable({ players, format, rankingsVintage }: PlayersTableProps) {
-    const [activePositions, setActivePositions] = useState<Set<string>>(new Set(['QB', 'RB', 'WR', 'TE']));
+export function PlayersTable({ players, format, rankingsVintage, weeklyWeek, rosUpdatedLabel }: PlayersTableProps) {
+    const [activePositions, setActivePositions] = useState<Set<string>>(new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DEF']));
     const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
+    const [search, setSearch] = useState('');
+    // Default sort = rest-of-season rank (how a player will SCORE this year is the
+    // primary lens; dynasty value is secondary). Rank columns are lower-is-better
+    // → ascending.
+    const [sortColumn, setSortColumn] = useState<SortColumn>('rank_ros_overall');
+    const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
+    // "Logged in" = has a Sleeper user id OR at least one connected league
+    // (Fleaflicker/Yahoo/MyFFPC). Only then can we show per-player status across
+    // their leagues, so only then do we link player names to the situation view.
+    const { sleeperUserId, fleaflickerLeagueIds, isLoading: authLoading } = useAuth();
+    const isLoggedIn = !!sleeperUserId || (fleaflickerLeagueIds?.length ?? 0) > 0;
 
     const getPositionBorderClass = (pos: string | null) => {
         switch (pos) {
@@ -97,11 +129,15 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
 
     const vffLabel = rankingsVintage ? `VFF Rankings (${rankingsVintage})` : 'VFF Rankings';
     const COLUMN_GROUPS = [
+        { id: 'ros', label: 'Rest of Season' },
+        { id: 'weekly', label: 'This Week' },
         { id: 'core', label: 'Core' },
         { id: 'fc', label: 'FantasyCalc' },
         { id: 'internal', label: vffLabel },
     ];
-    const { visibleCols, columnOrder, toggle: toggleCol, reorder, show, orderedVisible } = useColumnState(COLUMNS, 'vff_players_columns');
+    // v2 storage key: new ROS/weekly columns were added, so returning users get
+    // the refreshed default visibility instead of a stale saved set.
+    const { visibleCols, columnOrder, toggle: toggleCol, reorder, show, orderedVisible } = useColumnState(COLUMNS, 'vff_players_columns_v2');
 
     const togglePosition = (pos: string) => {
         setActivePositions(prev => {
@@ -111,8 +147,27 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
         });
     };
 
-    const filteredPlayers = players.filter(p => {
+    const handleSort = (column: SortColumn) => {
+        if (sortColumn === column) {
+            setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+        } else {
+            setSortColumn(column);
+            // Rank-style + name columns are lower/alpha-first → ascending; value desc.
+            const ascByDefault: SortColumn[] = ['rank_ros_overall', 'weekly_rank', 'fc_rank', 'rank_overall', 'full_name'];
+            setSortDirection(ascByDefault.includes(column) ? 'asc' : 'desc');
+        }
+    };
+
+    const SortIcon = ({ column }: { column: SortColumn }) => {
+        if (sortColumn !== column) return <ArrowUpDown className="ml-1 h-3 w-3 inline-block opacity-40 group-hover:opacity-100" />;
+        return sortDirection === 'desc'
+            ? <ArrowDown className="ml-1 h-3 w-3 inline-block text-indigo-500" />
+            : <ArrowUp className="ml-1 h-3 w-3 inline-block text-indigo-500" />;
+    };
+
+    const filtered = players.filter(p => {
         if (!activePositions.has(p.position || '')) return false;
+        if (search.trim() && !(p.full_name || '').toLowerCase().includes(search.trim().toLowerCase())) return false;
         if (signalFilter === 'ALL') return true;
         if (p.position === 'PICK') return false;
         const gap = getValueGap(p);
@@ -120,14 +175,33 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
         return lbl?.label === signalFilter;
     });
 
-    const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'PICK'];
+    const filteredPlayers = [...filtered].sort((a, b) => {
+        let valA: any = (a as any)[sortColumn];
+        let valB: any = (b as any)[sortColumn];
+        // Nulls always sort last regardless of direction (unranked ≠ "best").
+        if (valA == null && valB == null) return 0;
+        if (valA == null) return 1;
+        if (valB == null) return -1;
+        if (typeof valA === 'string' && typeof valB === 'string') {
+            return sortDirection === 'desc' ? valB.localeCompare(valA) : valA.localeCompare(valB);
+        }
+        return sortDirection === 'desc' ? (valB as number) - (valA as number) : (valA as number) - (valB as number);
+    });
+
+    const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'PICK'];
 
     const vintageTitle = rankingsVintage ? `VFF Rankings from ${rankingsVintage}` : undefined;
     const signalTitle = rankingsVintage ? `Signal based on ${rankingsVintage} VFF ranks vs. current FC market ranks` : undefined;
 
     const renderHeader = (key: string) => {
+        const rosBg = 'bg-emerald-50/30 dark:bg-emerald-950/15';
+        const weekBg = 'bg-sky-50/30 dark:bg-sky-950/15';
         const h: Record<string, React.ReactNode> = {
-            market_value: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Value</th>,
+            ros_rank: <th key={key} className={`px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase ${rosBg} cursor-pointer group hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30 transition-colors`} title="Rest-of-season overall rank (how he'll score the rest of this year)" onClick={() => handleSort('rank_ros_overall')}>ROS Rank <SortIcon column="rank_ros_overall" /></th>,
+            ros_pos: <th key={key} className={`px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase ${rosBg}`} title="Rest-of-season position rank">ROS Pos</th>,
+            ros_ppg: <th key={key} className={`px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase ${rosBg}`} title="Projected rest-of-season points per game">ROS PPG</th>,
+            weekly_rank: <th key={key} className={`px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase ${weekBg} cursor-pointer group hover:bg-sky-100/50 dark:hover:bg-sky-900/30 transition-colors`} title={weeklyWeek != null ? `This week's start/sit rank (week ${weeklyWeek})` : "This week's start/sit rank"} onClick={() => handleSort('weekly_rank')}>Week Rank <SortIcon column="weekly_rank" /></th>,
+            market_value: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase cursor-pointer group hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" onClick={() => handleSort('fc_value')}>Value <SortIcon column="fc_value" /></th>,
             fc_rank: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">FC Rank</th>,
             fc_pos_rank: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">FC Pos</th>,
             combined_value: <th key={key} className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Combined</th>,
@@ -145,8 +219,14 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
         const gap = getValueGap(player);
         const gapLabel = getValueGapLabel(gap);
         const trend = player.fc_trend_30_day;
+        const rosBg = 'bg-emerald-50/30 dark:bg-emerald-950/15';
+        const weekBg = 'bg-sky-50/30 dark:bg-sky-950/15';
 
         const c: Record<string, React.ReactNode> = {
+            ros_rank: <td key={key} className={`px-6 py-4 whitespace-nowrap text-right text-sm font-mono font-medium text-emerald-700 dark:text-emerald-300 ${rosBg}`}>{player.rank_ros_overall ?? '–'}</td>,
+            ros_pos: <td key={key} className={`px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-emerald-700 dark:text-emerald-300 ${rosBg}`}>{player.rank_ros_pos ? `${player.position}${player.rank_ros_pos}` : '–'}</td>,
+            ros_ppg: <td key={key} className={`px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300 ${rosBg}`}>{player.rank_ros_ppg != null ? Number(player.rank_ros_ppg).toFixed(1) : '–'}</td>,
+            weekly_rank: <td key={key} className={`px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-sky-700 dark:text-sky-300 ${weekBg}`}>{player.weekly_rank != null ? `#${player.weekly_rank}` : '–'}</td>,
             market_value: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-900 dark:text-zinc-100">{player.fc_value?.toLocaleString() || '–'}</td>,
             fc_rank: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.fc_rank || '–'}</td>,
             fc_pos_rank: <td key={key} className="px-6 py-4 whitespace-nowrap text-right text-sm font-mono text-zinc-700 dark:text-zinc-300">{player.fc_position_rank ? `${player.position}${player.fc_position_rank}` : '–'}</td>,
@@ -165,6 +245,38 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
         <div>
             {/* Filters */}
             <div className="mb-6 space-y-4">
+                {/* Search */}
+                <div>
+                    <div className="relative max-w-sm">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
+                        <input
+                            type="text"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            placeholder="Search players…"
+                            aria-label="Search players by name"
+                            className="w-full pl-9 pr-8 py-2 rounded-lg text-sm bg-white dark:bg-zinc-900 ring-1 ring-zinc-200 dark:ring-zinc-700 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        {search && (
+                            <button
+                                type="button"
+                                onClick={() => setSearch('')}
+                                aria-label="Clear search"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-sm"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
+                    {!authLoading && isLoggedIn ? (
+                        <p className="text-xs text-zinc-400 mt-1.5">Click a player to see their status across all your leagues.</p>
+                    ) : !authLoading ? (
+                        <p className="text-xs text-zinc-400 mt-1.5">
+                            <Link href="/" className="text-indigo-600 dark:text-indigo-400 hover:underline">Log in</Link> to click a player and see their status across your leagues.
+                        </p>
+                    ) : null}
+                </div>
+
                 {/* Position Filters */}
                 <div>
                     <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">Position</h3>
@@ -174,6 +286,7 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
                             const colors: Record<string, string> = {
                                 QB: 'bg-[#9de89f] text-zinc-900', RB: 'bg-[#ffadad] text-zinc-900',
                                 WR: 'bg-[#9bf6ff] text-zinc-900', TE: 'bg-[#ffd6a5] text-zinc-900',
+                                K: 'bg-[#c9b6ff] text-zinc-900', DEF: 'bg-[#bdb2ff] text-zinc-900',
                                 PICK: 'bg-[#6fffe9] text-zinc-900',
                             };
                             return (
@@ -203,9 +316,19 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
                 <ColumnPicker columns={COLUMNS} visibleCols={visibleCols} columnOrder={columnOrder} onToggle={toggleCol} onReorder={reorder} groups={COLUMN_GROUPS} />
             </div>
 
-            {/* Results count */}
-            <div className="mb-4 text-sm text-zinc-500">
-                Showing {filteredPlayers.length} players
+            {/* Results count + data freshness */}
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500">
+                <span>Showing {filteredPlayers.length} players</span>
+                {(rosUpdatedLabel || weeklyWeek != null) && (
+                    <>
+                        <span className="text-zinc-300 dark:text-zinc-600">·</span>
+                        <span className="text-xs text-zinc-400">
+                            {rosUpdatedLabel && <>ROS ranks updated {rosUpdatedLabel}</>}
+                            {rosUpdatedLabel && weeklyWeek != null && <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>}
+                            {weeklyWeek != null && <>Week ranks: Week {weeklyWeek}</>}
+                        </span>
+                    </>
+                )}
             </div>
 
             {/* Table */}
@@ -225,7 +348,19 @@ export function PlayersTable({ players, format, rankingsVintage }: PlayersTableP
                             {filteredPlayers.map((player, index) => (
                                 <tr key={player.sleeper_id} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${getPositionBorderClass(player.position)} ${getTierBgClass(player.rank_tier)}`}>
                                     <td className="px-3 py-4 whitespace-nowrap text-sm text-zinc-400 dark:text-zinc-500 font-mono">{index + 1}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-zinc-900 dark:text-zinc-100">{player.full_name}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                                        {isLoggedIn && player.position !== 'PICK' ? (
+                                            <Link
+                                                href={`/portfolio/player/${player.sleeper_id}`}
+                                                className="hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline"
+                                                title="See status across your leagues"
+                                            >
+                                                {player.full_name}
+                                            </Link>
+                                        ) : (
+                                            player.full_name
+                                        )}
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400">{player.position}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500 dark:text-zinc-400">{player.team || 'FA'}</td>
                                     {orderedVisible.map(key => renderCell(key, player))}

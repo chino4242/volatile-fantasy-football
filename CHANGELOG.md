@@ -4,6 +4,51 @@ All notable changes to the Volatile Fantasy Football platform.
 
 ## [Unreleased]
 
+### Added - "Plan a Move" on Player Status View (2026-10-12)
+
+- On the cross-league player view (`/portfolio/player/[sleeperId]`), **leagues
+  where the player is available now have a "Plan a move" button** that opens the
+  existing player card's **Move tab** — the same add/drop comparison the
+  free-agent pages use: a suggested guarded drop (⚠️/⛔ keep-value tiers) plus an
+  interactive drop picker and an **Add / Drop / Δ** table comparing ROS Rank,
+  ROS PPG, This Week, and Dynasty Value. Reuses the shared `PlayerProfileCard` +
+  `suggestDropForAdd` engine — no new recommendation logic. The player-situation
+  API returns per-league move context (add player + my roster + slot config);
+  leagues where your team isn't set show a "pick your team" hint instead.
+
+### Changed - All Players: ROS + Weekly Ranks, Kickers & Defenses (2026-10-12)
+
+- **The All Players page (`/players`) now leads with rest-of-season value.**
+  Added sortable **ROS Rank** and **Week Rank** columns, and the list now
+  **defaults to ROS rank** (how a player will score the rest of this year) rather
+  than dynasty value — value still shows and is sortable, but it's secondary.
+  ROS Pos and ROS PPG are available in the column picker.
+- **Kickers and Defenses now appear** on the page (previously excluded for having
+  no FantasyCalc value) — fetched separately so the value filter doesn't drop
+  them, with K/DEF added to the position filters. Defenses/kickers carry their
+  current-week DST/K rank for sorting.
+- The table gained client-side sorting (ROS / Week / Value headers); unranked
+  players always sort last. Column visibility storage key bumped to v2 so the new
+  ROS/Week columns show by default for returning users.
+- **Data-freshness label**: a line under the filters shows when the ROS ranks
+  were last uploaded (precise date) and which week the Week ranks are for.
+
+### Added - Player Search + Cross-League Status from All Players (2026-10-12)
+
+- **The All Players page (`/players`) now has a search box** — filter the list by
+  name instantly (e.g. type "germie" to find Germie Bernard).
+- **Logged-in users can click any player** to jump to their cross-league status
+  view (`/portfolio/player/[sleeperId]`): is he available on waivers, or rostered
+  — and by which team — in each of your Sleeper / Fleaflicker / Yahoo / MyFFPC
+  leagues. The intended flow: spot a buy/sell opportunity, click through, see
+  what's up with him everywhere. Logged-out visitors see plain names with a
+  prompt to log in (the view needs your leagues).
+- **Trade proposals/pitches on the player page are now minimized** — each shows a
+  one-line headline (Send → Get + verdict + value %) that expands on click to
+  reveal the reasoning, position-room impact, and pitch. Keeps the page focused
+  on the primary signal (available vs rostered-by-whom) while the detail stays a
+  click away.
+
 ### Added - Defense (DST) Free-Agent Tab (2026-10-06)
 
 - **Every free-agent view now has a DEF tab** listing available team defenses,

@@ -4,6 +4,7 @@ import { players, playerTransactions } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import type { PortfolioLeague, PortfolioPlayer } from "@/lib/portfolio";
 import { proposeAcquire, proposeShed, type TradePlayer, type TargetedTradeResult } from "@/lib/targeted-trade";
+import { type WaiverValuePlayer } from "@/lib/waiver-value";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,17 @@ function toTradePlayer(p: PortfolioPlayer): TradePlayer {
     };
 }
 
+/** Map a PortfolioPlayer → the WaiverValuePlayer shape the drop engine reads. */
+function toWaiverValuePlayer(p: PortfolioPlayer): WaiverValuePlayer {
+    return {
+        sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team,
+        fc_value: p.marketValue,
+        rosRank: p.rosRank ?? null, rosPosRank: p.rosPosRank ?? null, rosPpg: p.rosPpg ?? null,
+        rosSos: p.rosSos ?? null, byeWeek: p.byeWeek ?? null,
+        weeklyRank: p.weeklyRank ?? null,
+    };
+}
+
 function analyzeLeague(
     league: PortfolioLeague,
     ref: { myRosterId?: string | null },
@@ -82,9 +94,30 @@ function analyzeLeague(
 
     const base = { league: label, platform: league.platform, leagueName: league.name, myTeamKnown: !!myTeam };
 
-    // Available → highlight to add (for buys especially).
+    // Available → highlight to add. When my team is known, return the move
+    // context (add player + my roster as WaiverValuePlayers + slot config) so the
+    // client can open the shared PlayerProfileCard "Move" tab — the exact
+    // add/drop comparison table the free-agent pages use (ROS / this week /
+    // dynasty value, with a suggested guarded drop and an interactive picker).
     if (isFreeAgent) {
-        return { ...base, status: 'available' as LeagueStatus };
+        let moveContext: {
+            addPlayer: WaiverValuePlayer;
+            myRoster: WaiverValuePlayer[];
+            rosterPositions: string[] | null;
+            actualCoreCount: number;
+            myTeamName: string;
+        } | null = null;
+        if (myTeam) {
+            const target = league.freeAgents.find(p => p.sleeper_id === sleeperId)!;
+            moveContext = {
+                addPlayer: toWaiverValuePlayer(target),
+                myRoster: myTeam.players.map(toWaiverValuePlayer),
+                rosterPositions: league.rosterPositions ?? null,
+                actualCoreCount: myTeam.players.length,
+                myTeamName: myTeam.ownerName,
+            };
+        }
+        return { ...base, status: 'available' as LeagueStatus, moveContext };
     }
     if (!owningTeam) {
         return { ...base, status: 'not-in-league' as LeagueStatus };
