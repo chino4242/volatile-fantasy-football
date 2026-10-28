@@ -99,6 +99,23 @@ export default async function SleeperFreeAgentsPage({ params, searchParams }: Pa
             );
         freeAgents.push(...availableDefenses);
 
+        // 3c. Available kickers (fetched SEPARATELY, same rationale as defenses:
+        //     kickers carry little/no FantasyCalc value, so the value-capped
+        //     top-200 would drop them). Rostered kickers use normal sleeper_ids,
+        //     so the id exclusion handles them. They surface in the K tab, sorted
+        //     by this week's kicker rank.
+        const availableKickers = await db
+            .select(valueColumns(format))
+            .from(players)
+            .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
+            .where(
+                and(
+                    notInArray(players.sleeper_id, allSleeperIds),
+                    eq(players.position, 'K')
+                )
+            );
+        freeAgents.push(...availableKickers);
+
         // Merge prospect writeups + ZAP data.
         const currentYear = new Date().getFullYear();
         const prospects = await db.select({ full_name: prospectData.full_name, nfl_team: prospectData.nfl_team, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);

@@ -128,7 +128,7 @@ export function FreeAgentTable({ players, rankingsVintage, weeklyWeek, myRosterF
     React.useEffect(() => {
         if (prevFilterRef.current === filterPosition) return;
         prevFilterRef.current = filterPosition;
-        if (filterPosition === 'DEF') {
+        if (filterPosition === 'DEF' || filterPosition === 'K') {
             setSortColumn('weekly_rank');
             setSortDirection('asc');
         } else {
@@ -285,7 +285,7 @@ export function FreeAgentTable({ players, rankingsVintage, weeklyWeek, myRosterF
         <div className="bg-white dark:bg-zinc-900 shadow-sm ring-1 ring-zinc-900/5 rounded-xl overflow-hidden">
             <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-4">
                 <div className="flex gap-2 overflow-x-auto">
-                    {['ALL', 'QB', 'RB', 'WR', 'TE', 'DEF', 'ROOKIES'].map(pos => (
+                    {['ALL', 'QB', 'RB', 'WR', 'TE', 'DEF', 'K', 'ROOKIES'].map(pos => (
                         <button key={pos} onClick={() => setFilterPosition(pos)}
                             className={`px-3 py-1 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${filterPosition === pos ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'}`}>
                             {pos}

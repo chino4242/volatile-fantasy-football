@@ -136,6 +136,46 @@ export default async function FleaflickerFreeAgentsPage({ params, searchParams }
             if (!rosteredDefIds.has(d.sleeper_id)) freeAgents.push(d);
         }
 
+        // 4c. Available kickers. Like defenses, kickers carry little/no FantasyCalc
+        //     value, so the value-capped top-200 would drop them — fetch them
+        //     separately. Unlike defenses (rostered by team NAME → DEF_{ABBR}),
+        //     Fleaflicker rosters kickers as regular players, so exclude rostered
+        //     ones by cleansed name (same path the skill-player branch uses).
+        const kickerRows = await db
+            .select({
+                sleeper_id: players.sleeper_id,
+                full_name: players.full_name,
+                position: players.position,
+                team: players.team,
+                years_exp: players.years_exp,
+                fc_value: format === 'sf' ? playerValues.fc_value_sf : playerValues.fc_value_1qb,
+                fc_rank: format === 'sf' ? playerValues.fc_rank_sf : playerValues.fc_rank_1qb,
+                fc_position_rank: format === 'sf' ? playerValues.fc_position_rank_sf : playerValues.fc_position_rank_1qb,
+                fc_combined_value: playerValues.fc_combined_value,
+                fc_trend_30_day: playerValues.fc_trend_30_day,
+                fc_trade_frequency: playerValues.fc_trade_frequency,
+                rank_overall: format === 'sf' ? playerValues.rank_sf_overall : playerValues.rank_1qb_overall,
+                rank_pos: format === 'sf' ? playerValues.rank_sf_pos : playerValues.rank_1qb_pos,
+                rank_tier: format === 'sf' ? playerValues.rank_sf_tier : playerValues.rank_1qb_tier,
+                redraft_rank_overall: playerValues.redraft_rank_overall,
+                redraft_rank_pos: playerValues.redraft_rank_pos,
+                redraft_rank_tier: playerValues.redraft_rank_tier,
+                redraft_auction_value: playerValues.redraft_auction_value,
+                rank_ros_overall: playerValues.rank_ros_overall,
+                rank_ros_pos: playerValues.rank_ros_pos,
+                rank_ros_tier: playerValues.rank_ros_tier,
+                rank_ros_ppg: playerValues.rank_ros_ppg,
+                ros_sos: playerValues.ros_sos,
+                ros_next4_sos: playerValues.ros_next4_sos,
+                bye_week: playerValues.bye_week,
+            })
+            .from(players)
+            .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
+            .where(eq(players.position, 'K'));
+        for (const k of kickerRows) {
+            if (!allPlayerNames.has(cleanseName(k.full_name || ''))) freeAgents.push(k);
+        }
+
         // Merge prospect writeups and ZAP data
         const currentYear = new Date().getFullYear();
         const prospects = await db.select({ full_name: prospectData.full_name, nfl_team: prospectData.nfl_team, zap_score: prospectData.zap_score, zap_category: prospectData.zap_category, statistical_comparables: prospectData.statistical_comparables, analysis_text: prospectData.analysis_text }).from(prospectData).where(sql`${prospectData.draft_year} >= ${currentYear - 1}`);

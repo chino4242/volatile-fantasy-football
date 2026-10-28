@@ -32,7 +32,7 @@ function AnalystPickup({ player }: { player: FreeAgent }) {
     );
 }
 
-const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DEF'] as const;
+const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DEF', 'K'] as const;
 type PositionFilter = typeof POSITIONS[number];
 
 function getPositionBadgeColor(position: string | null): string {
@@ -62,10 +62,10 @@ export function MyFFPCFreeAgentTable({ players }: { players: FreeAgent[] }) {
         ? players
         : players.filter(p => p.position === filter);
 
-    // Defenses have no dynasty value, so the DEF tab sorts by this week's DST
-    // rank (best first); unranked defenses sort last. Other tabs keep the query's
-    // dynasty-value order.
-    const displayed = filter === 'DEF'
+    // Defenses and kickers have no dynasty value, so those tabs sort by this
+    // week's streaming rank (best first); unranked ones sort last. Other tabs
+    // keep the query's dynasty-value order.
+    const displayed = filter === 'DEF' || filter === 'K'
         ? [...filtered].sort((a, b) => (a.weekly_rank ?? Infinity) - (b.weekly_rank ?? Infinity))
         : filtered;
 

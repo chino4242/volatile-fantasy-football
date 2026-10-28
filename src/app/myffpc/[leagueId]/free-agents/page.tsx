@@ -67,7 +67,7 @@ export default async function MyFFPCFreeAgentsPage({
             and(
                 gt(playerValues.fc_value_1qb, 0),
                 // Exclude draft picks (position='PICK') — only real players
-                inArray(players.position, ['QB', 'RB', 'WR', 'TE', 'K']),
+                inArray(players.position, ['QB', 'RB', 'WR', 'TE']),
                 rosteredIds.length > 0
                     ? notInArray(players.sleeper_id, rosteredIds)
                     : undefined
@@ -99,6 +99,32 @@ export default async function MyFFPCFreeAgentsPage({
             )
         );
     freeAgents.push(...defenseRows);
+
+    // Available kickers (no/low FC value → fetched separately via leftJoin so the
+    // value-gated main query above doesn't drop them). Rostered kickers use normal
+    // sleeper_ids on MyFFPC, so notInArray(rosteredIds) excludes them. Mirrors the
+    // defense pattern; surfaces in the K tab sorted by weekly kicker rank.
+    const kickerRows = await db
+        .select({
+            sleeper_id: players.sleeper_id,
+            full_name: players.full_name,
+            position: players.position,
+            team: players.team,
+            fc_value_1qb: playerValues.fc_value_1qb,
+            fc_rank_1qb: playerValues.fc_rank_1qb,
+            rank_1qb_overall: playerValues.rank_1qb_overall,
+            rank_1qb_tier: playerValues.rank_1qb_tier,
+            redraft_auction_value: playerValues.redraft_auction_value,
+        })
+        .from(players)
+        .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
+        .where(
+            and(
+                eq(players.position, 'K'),
+                rosteredIds.length > 0 ? notInArray(players.sleeper_id, rosteredIds) : undefined
+            )
+        );
+    freeAgents.push(...kickerRows);
 
     // Stamp this week's DST/flex/qb rank + the analyst signal (Buy/Sell board).
     const { week: weeklyWeek, byId: weeklyById } = await getWeeklyRanks(freeAgents.map(p => p.sleeper_id));

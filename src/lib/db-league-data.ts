@@ -241,11 +241,12 @@ export async function getDbLeagueData(platform: DbPlatform, leagueId: string): P
     // keep them in a separate bucket that isn't value-capped, then merge. This is
     // what lets the free-agent DEF tab actually show available defenses.
     const valued = availablePool
-        .filter(p => p.position !== 'DEF')
+        .filter(p => p.position !== 'DEF' && p.position !== 'K')
         .sort((a, b) => (b.fc_value || 0) - (a.fc_value || 0))
         .slice(0, 300);
     const defenses = availablePool.filter(p => p.position === 'DEF');
-    const freeAgents = [...valued, ...defenses];
+    const kickers = availablePool.filter(p => p.position === 'K');
+    const freeAgents = [...valued, ...defenses, ...kickers];
 
     return {
         platform,
