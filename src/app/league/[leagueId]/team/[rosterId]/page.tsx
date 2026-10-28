@@ -66,7 +66,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
     const rosterPlayerIds = roster.players || [];
     const allLeaguePlayerIds = rosters.flatMap(r => r.players || []);
 
-    const dbPlayers = rosterPlayerIds.length > 0 || pickIds.length > 0 ? await db
+    const dbPlayersRaw = rosterPlayerIds.length > 0 || pickIds.length > 0 ? await db
         .select({
             sleeper_id: players.sleeper_id,
             full_name: players.full_name,
@@ -92,10 +92,23 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
             redraft_rank_pos: playerValues.redraft_rank_pos,
             redraft_rank_tier: playerValues.redraft_rank_tier,
             redraft_auction_value: playerValues.redraft_auction_value,
+            rank_ros_overall: playerValues.rank_ros_overall,
+            rank_ros_pos: playerValues.rank_ros_pos,
+            rank_ros_tier: playerValues.rank_ros_tier,
+            rank_ros_ppg: playerValues.rank_ros_ppg,
+            ros_sos: playerValues.ros_sos,
+            ros_next4_sos: playerValues.ros_next4_sos,
         })
         .from(players)
         .leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id))
         .where(inArray(players.sleeper_id, [...rosterPlayerIds, ...pickIds])) : [];
+
+    // rank_ros_ppg is a DB decimal (returned as string); coerce to number so the
+    // table's `rank_ros_ppg?: number | null` type holds and .toFixed works.
+    const dbPlayers = dbPlayersRaw.map(p => ({
+        ...p,
+        rank_ros_ppg: p.rank_ros_ppg != null ? Number(p.rank_ros_ppg) : null,
+    }));
 
     // Fetch all league players for trade targets
     const allLeaguePlayers = allLeaguePlayerIds.length > 0 ? await db

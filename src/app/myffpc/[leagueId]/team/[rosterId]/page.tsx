@@ -68,6 +68,12 @@ export default async function MyFFPCTeamPage({
             redraft_rank_pos: playerValues.redraft_rank_pos,
             redraft_rank_tier: playerValues.redraft_rank_tier,
             redraft_auction_value: playerValues.redraft_auction_value,
+            rank_ros_overall: playerValues.rank_ros_overall,
+            rank_ros_pos: playerValues.rank_ros_pos,
+            rank_ros_tier: playerValues.rank_ros_tier,
+            rank_ros_ppg: playerValues.rank_ros_ppg,
+            ros_sos: playerValues.ros_sos,
+            ros_next4_sos: playerValues.ros_next4_sos,
         }).from(players).leftJoin(playerValues, eq(players.sleeper_id, playerValues.sleeper_id)).where(inArray(players.sleeper_id, allLeagueSleeperIds))
         : [];
 
@@ -111,6 +117,12 @@ export default async function MyFFPCTeamPage({
         redraft_rank_pos: p.redraft_rank_pos,
         redraft_rank_tier: p.redraft_rank_tier,
         redraft_auction_value: p.redraft_auction_value,
+        rank_ros_overall: p.rank_ros_overall,
+        rank_ros_pos: p.rank_ros_pos,
+        rank_ros_tier: p.rank_ros_tier,
+        rank_ros_ppg: p.rank_ros_ppg != null ? Number(p.rank_ros_ppg) : null,
+        ros_sos: p.ros_sos ?? null,
+        ros_next4_sos: p.ros_next4_sos ?? null,
     });
 
     // My team's players

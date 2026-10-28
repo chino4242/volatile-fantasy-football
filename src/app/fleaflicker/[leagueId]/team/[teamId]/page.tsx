@@ -139,6 +139,12 @@ export default async function FleaflickerTeamPage({
                 redraft_rank_pos: valueData?.redraft_rank_pos || null,
                 redraft_rank_tier: valueData?.redraft_rank_tier || null,
                 redraft_auction_value: valueData?.redraft_auction_value || null,
+                rank_ros_overall: valueData?.rank_ros_overall || null,
+                rank_ros_pos: valueData?.rank_ros_pos || null,
+                rank_ros_tier: valueData?.rank_ros_tier || null,
+                rank_ros_ppg: valueData?.rank_ros_ppg != null ? Number(valueData.rank_ros_ppg) : null,
+                ros_sos: valueData?.ros_sos ?? null,
+                ros_next4_sos: valueData?.ros_next4_sos ?? null,
             };
         })
         .filter((p): p is NonNullable<typeof p> => p !== null);
