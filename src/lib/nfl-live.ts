@@ -79,6 +79,34 @@ export async function getLiveGameStates(): Promise<Map<string, LiveGameState>> {
     return out;
 }
 
+/**
+ * NFL team abbrs (our convention) whose game this week has already kicked off
+ * (ESPN state != 'pre'). Pure mapper over the scoreboard states.
+ */
+export function startedTeamsFromStates(states: Map<string, LiveGameState>): Set<string> {
+    const started = new Set<string>();
+    for (const gs of states.values()) {
+        if (gs.state !== 'pre') {
+            started.add(gs.home);
+            started.add(gs.away);
+        }
+    }
+    return started;
+}
+
+/**
+ * Server-side "which teams have already played/started" lookup. Fails OPEN: on any
+ * failure it returns an empty set (no gating) — better to show a stale suggestion
+ * than hide everything. Shared by /api/nfl/started-teams and the team pages.
+ */
+export async function getStartedTeams(): Promise<Set<string>> {
+    try {
+        return startedTeamsFromStates(await getLiveGameStates());
+    } catch {
+        return new Set<string>();
+    }
+}
+
 function numOrNull(v: unknown): number | null {
     if (v == null || v === '') return null;
     const n = typeof v === 'number' ? v : parseInt(String(v), 10);

@@ -32,7 +32,7 @@ export interface UpgradeSourcePlayer {
 
 /** Stamp weekly rank onto a player → PortfolioPlayer (the fields the waiver-
  *  upgrade engine reads, plus the ROS signal for the blended drop guardrail). */
-function toPortfolioPlayer(
+export function toPortfolioPlayer(
     p: UpgradeSourcePlayer,
     byId: Awaited<ReturnType<typeof getWeeklyRanks>>['byId'],
 ): PortfolioPlayer {

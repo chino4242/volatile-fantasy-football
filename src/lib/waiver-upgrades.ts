@@ -123,7 +123,7 @@ function wr(p: { weeklyRank?: number | null }): number {
  * so weekly ranks are only comparable WITHIN a pool. QB→QB, RB/WR/TE→flex,
  * K/PK→k. Others (DEF) have no weekly-upgrade pool here (handled by streaming).
  */
-function poolOf(position: string | null | undefined): 'qb' | 'flex' | 'k' | null {
+export function poolOf(position: string | null | undefined): 'qb' | 'flex' | 'k' | null {
     if (!position) return null;
     const p = position.toUpperCase();
     if (p === 'QB') return 'qb';
@@ -133,7 +133,7 @@ function poolOf(position: string | null | undefined): 'qb' | 'flex' | 'k' | null
 }
 
 /** PortfolioPlayer → OptimizerPlayer (the lineup engine's shape). */
-function toOptimizer(p: PortfolioPlayer, isStarter: boolean, locked = false): OptimizerPlayer {
+export function toOptimizer(p: PortfolioPlayer, isStarter: boolean, locked = false): OptimizerPlayer {
     return {
         sleeper_id: p.sleeper_id,
         full_name: p.full_name,

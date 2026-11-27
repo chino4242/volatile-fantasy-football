@@ -6,6 +6,10 @@ import { optimizeTeam } from "@/lib/weekly-rankings";
 import { LineupOptimizerCard } from "@/components/LineupOptimizerCard";
 import { getTeamWaiverUpgrades } from "@/lib/team-waiver-upgrades";
 import { WaiverUpgradesCard } from "@/components/WaiverUpgradesCard";
+import { getTeamSlotGaps } from "@/lib/team-slot-gaps";
+import { getStartedTeams } from "@/lib/nfl-live";
+import { deepLinkFor } from "@/lib/action-center";
+import { RosterGapsCard } from "@/components/RosterGapsCard";
 import { db } from "@/db";
 import { players, playerValues, leagues, prospectData, prospectWriteups, playerAdvancedStats } from "@/db/schema";
 import { inArray, eq, sql, desc, and } from "drizzle-orm";
@@ -426,6 +430,17 @@ export default async function FleaflickerTeamPage({
         { coreCapacity: rosterConfig?.coreCapacity, rosteredInLeague: rosteredIdSetFF },
     );
 
+    // Roster Gaps: my player vs best available at each starting slot (weekly + ROS).
+    const starterIdsFF = new Set(optimizerRoster.filter(p => p.is_starter).map(p => p.sleeper_id));
+    const startedTeamsFF = await getStartedTeams();
+    const slotGaps = await getTeamSlotGaps(
+        myPlayersForTxn.map(p => ({ ...p, is_starter: starterIdsFF.has(p.sleeper_id) })),
+        freeAgentsForTxn,
+        ffLineup?.rosterPositions ?? null,
+        leagueTypeFF,
+        { coreCapacity: rosterConfig?.coreCapacity, startedTeams: startedTeamsFF, rosteredInLeague: rosteredIdSetFF },
+    );
+
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 p-4 md:p-8">
             <div className="mx-auto max-w-7xl">
@@ -487,6 +502,18 @@ export default async function FleaflickerTeamPage({
                 <div className="mt-4">
                     <LineupOptimizerCard opt={lineupOpt} />
                 </div>
+
+                {slotGaps.gaps.length > 0 && (
+                    <div className="mt-4">
+                        <RosterGapsCard
+                            gaps={slotGaps.gaps}
+                            week={slotGaps.week}
+                            hasWeeklyData={slotGaps.hasWeeklyData}
+                            deepLink={deepLinkFor('fleaflicker', leagueId, teamId)}
+                            linkLabel="Fleaflicker"
+                        />
+                    </div>
+                )}
 
                 <div className="mt-4">
                     <WaiverUpgradesCard upgrades={waiverUpgrades} />

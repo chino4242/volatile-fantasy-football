@@ -9,6 +9,13 @@ import { getWeeklyRanks, rankForPosition } from "@/lib/weekly-rankings";
 import { LineupOptimizerCard } from "@/components/LineupOptimizerCard";
 import { recommendWaiverValue, type WaiverValuePlayer } from "@/lib/waiver-value";
 import { WaiverValueCard } from "@/components/WaiverValueCard";
+import { db } from "@/db";
+import { leagues } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { getTeamSlotGaps } from "@/lib/team-slot-gaps";
+import { getStartedTeams } from "@/lib/nfl-live";
+import { deepLinkFor } from "@/lib/action-center";
+import { RosterGapsCard } from "@/components/RosterGapsCard";
 import TeamRosterView from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterView";
 import { TeamRosterComposition } from "@/app/league/[leagueId]/team/[rosterId]/TeamRosterComposition";
 import TradeEvaluator from "@/components/TradeEvaluator";
@@ -86,6 +93,28 @@ export default async function DbTeamPage({ params }: PageProps) {
         .map(p => ({ ...toWvp(p), weeklyRank: rankForPosition(p.position, faWeeklyById.get(p.sleeper_id)).rank }));
     const waiverRecs = recommendWaiverValue(myWvp, faWvp, rosterConfig, { actualCoreCount: myPlayers.length, limit: 15 });
 
+    // Roster Gaps: my player vs best available at each starting slot (weekly + ROS).
+    // data.freeAgents already includes defenses and kickers for these platforms.
+    const [leagueRow] = await db.select({ league_type: leagues.league_type }).from(leagues).where(eq(leagues.league_id, leagueId)).limit(1);
+    const leagueTypeVal = (leagueRow?.league_type as "dynasty" | "keeper" | "redraft") || "dynasty";
+    const toSource = (p: (typeof myPlayers)[number]) => ({
+        sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team,
+        fc_value: p.fc_value, is_starter: p.is_starter,
+        rank_ros_overall: p.rank_ros_overall, rank_ros_pos: p.rank_ros_pos, rank_ros_ppg: p.rank_ros_ppg,
+        ros_sos: p.ros_sos, ros_next4_sos: p.ros_next4_sos, bye_week: p.bye_week,
+    });
+    const slotGaps = await getTeamSlotGaps(
+        myPlayers.map(toSource),
+        data.freeAgents.map(toSource),
+        data.rosterPositions,
+        leagueTypeVal,
+        {
+            coreCapacity: rosterConfig?.coreCapacity,
+            startedTeams: await getStartedTeams(),
+            rosteredInLeague: new Set(allLeaguePlayers.map(p => p.sleeper_id)),
+        },
+    );
+
     const label = platform === "yahoo" ? "Yahoo" : "MyFFPC";
 
     return (
@@ -136,6 +165,18 @@ export default async function DbTeamPage({ params }: PageProps) {
                 <div className="mt-4">
                     <LineupOptimizerCard opt={lineupOpt} />
                 </div>
+
+                {slotGaps.gaps.length > 0 && (
+                    <div className="mt-4">
+                        <RosterGapsCard
+                            gaps={slotGaps.gaps}
+                            week={slotGaps.week}
+                            hasWeeklyData={slotGaps.hasWeeklyData}
+                            deepLink={deepLinkFor(platform as "yahoo" | "myffpc", leagueId, String(numericId))}
+                            linkLabel={label}
+                        />
+                    </div>
+                )}
 
                 {waiverRecs.length > 0 && (
                     <div className="mt-4">

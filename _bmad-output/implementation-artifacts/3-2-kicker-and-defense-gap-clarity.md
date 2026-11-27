@@ -1,0 +1,155 @@
+# Story 3.2: Kicker and Defense Gap Clarity
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As Chino, who streams kickers and defenses every week,
+I want to see where my kicker and defense rank among all NFL kickers and defenses, how the best available compares, and a clear warning whenever that comparison is unreliable,
+so that I can trust "no action needed" and never miss a better streamer because of missing data.
+
+## Context & Intent
+
+Kickers and defenses are the hardest positions to judge. They have no dynasty value, they depend on weekly CSV uploads, and today the app goes silent when data is missing or when my current K/DEF is unranked. Story 3.1 renders slot gaps for QB/RB/WR/TE/K through the shared engine. This story:
+
+1. Adds **DEF** to the engine and card (3.1 deliberately excludes it).
+2. Adds K/DEF-specific clarity: pool size ("#5 of 32"), unranked wording, and an upload-freshness warning.
+3. Fixes the identity bugs that would make K/DEF "no action" untrustworthy.
+
+Target output: `K · Aubrey · wk #5 of 32 · best available #12 · no action`.
+
+**Depends on Story 3.1** (engine, card, `getStartedTeams`, `getTeamSlotGaps`).
+
+Epic: `_bmad-output/implementation-artifacts/epic-3-roster-gap-visibility.md`
+
+## Acceptance Criteria
+
+1. **DEF in the engine.** `computeSlotGaps` supports slots whose eligible set is `DEF` (see the DEF-slot test used in `action-center.ts`: `eligible.size === 1 && eligible.has('DEF')`). The weekly pool for DEF is `dst`, using `GAP_THRESHOLDS.weekly.dst = 5` (add this key). DEF has no ROS horizon (not rendered, per 3.1 AC 11).
+2. **DEF candidates.** `getTeamSlotGaps` adds unrostered defenses from `getWeeklyDstRankings()` as candidates (same shape as the kicker injection: `sleeper_id = DEF_{ABBR}`, `position = 'DEF'`, `team` = the NFL abbr). A defense is available only if its id is not in `rosteredInLeague` **after platform normalization (AC 5)**.
+3. **Pool size.** K and DEF rows show rank and pool size, for example `#5 of 32`, where the pool size is the number of ranked rows in that week's uploaded list for that kind. `HorizonGap` gains an optional `poolSize`.
+4. **Unranked mine.** If my K or DEF is not in this week's list, the row reads "Your K isn't in this week's ranking" (or DEF), is `unranked-mine`, opens by default, and still shows the best available. It must never be treated as "no action".
+5. **Platform identity must be correct for defenses**, otherwise a rostered defense is offered as "available" and "no action" cannot be trusted:
+   - **Sleeper:** the team page's `allLeaguePlayerIds` is built from raw `r.players`, where Sleeper returns defenses as bare abbreviations (`"SEA"`). Our `players` table keys them as `DEF_SEA`. Normalize roster ids with `normalizeSleeperStarterId` (`src/lib/sleeper.ts`) before building `rosteredIdSet`, the enriched roster, and the starters set, as `src/app/league/[leagueId]/free-agents/page.tsx` and the portfolio route (`buildSleeper`) already do. Verify that my own defense now appears in my roster and in the optimizer.
+   - **Fleaflicker:** rostered defenses are matched by name. Resolve defense team names to `DEF_{ABBR}` with `resolveDefenseId` (`src/lib/nameUtils.ts`) the way the Fleaflicker free-agents page does.
+   - **Yahoo / MyFFPC:** ids are already `DEF_{ABBR}` in the DB; confirm and add a test.
+6. **Freshness and missing uploads.** New helper `getWeeklyKindStatus()` in `src/lib/weekly-rankings.ts` returns, for each kind (`flex`, `qb`, `k`, `dst`): `{ latestWeek: number | null, rowsAtOverallLatest: number }`, plus `overallLatestWeek` (the existing `getLatestWeek()` semantics). Derive status without needing the NFL calendar:
+   - `missing`: no rows for the kind at all.
+   - `stale`: the kind's latest week is earlier than `overallLatestWeek`.
+   - `ok`: the kind has rows at `overallLatestWeek`.
+   When a kind the league actually starts (a K or DEF slot exists) is `missing` or `stale`, the card shows one muted line naming the kind and weeks ("No Week 6 kicker ranking uploaded. Last upload: Week 5"), linking to `/admin`. In that state the K/DEF row **must not** say "no action"; it says "can't compare, no current ranking".
+7. **Game-time gating** for K and DEF matches the Action Center: exclude available K/DEF whose NFL team is in `startedTeams` (weekly horizon). A K/DEF of mine whose game has started is shown as "locked (game started)" with no gap. DEF team abbr comes from the id (`DEF_{ABBR}`); K team comes from the ranking row's `team`.
+8. **No K/DEF row** for leagues without a K or DEF starting slot.
+9. **Agreement with the Action Center.** For the same inputs, the gap card's best-available K and DEF, and their ranks, equal what `streamKickerItems`/`streamItems` (in `src/lib/action-center.ts`) choose. A shared fixture-based test asserts this. The two features keep **separate thresholds** (Action Center fires at 3 rank spots; this card uses 5 for display). Document that difference in a code comment in `GAP_THRESHOLDS`; do not change Action Center behavior.
+10. **Tests** (`slot-gaps.test.ts` additions plus a new `weekly-kind-status.test.ts` for the pure part of the status helper, and an identity-normalization test file):
+    - DEF slot and K slot compare within `dst` and `k` pools; pool size appears in the returned data.
+    - Unranked mine for K and DEF; locked own K/DEF; started-game exclusion for both.
+    - Kind status: `ok`, `stale`, `missing`; card text expectations for each via the data returned (no DOM test needed beyond a simple render test if you add one).
+    - Rostered-DEF exclusion for each platform data shape: Sleeper bare `"SEA"` normalized to `DEF_SEA`; Fleaflicker team name resolved to `DEF_{ABBR}`; Yahoo/MyFFPC `DEF_{ABBR}`.
+    - Agreement test against `streamItems`/`streamKickerItems` using one shared league fixture.
+
+## Tasks / Subtasks
+
+- [ ] **Task 1: Engine DEF + pool size** (AC: 1, 3, 4, 7, 8, 10)
+  - [ ] Add `dst` to `GAP_THRESHOLDS.weekly`; add `poolSize` to `HorizonGap`; DEF slot handling and unranked/locked states in `slot-gaps.ts`.
+- [ ] **Task 2: Kind status helper** (AC: 6, 10)
+  - [ ] `getWeeklyKindStatus()` in `src/lib/weekly-rankings.ts` (one grouped query: `SELECT kind, MAX(week), COUNT(*) FILTER (WHERE week = overallLatest)`). Keep the status classification as a pure function so it can be unit tested without the DB.
+- [ ] **Task 3: DEF candidates + platform identity** (AC: 2, 5, 10)
+  - [ ] DEF injection in `team-slot-gaps.ts`.
+  - [ ] Sleeper team page: normalize roster and starter ids.
+  - [ ] Fleaflicker team page: resolve defense names to ids.
+  - [ ] Confirm Yahoo/MyFFPC.
+  - [ ] Regression tests.
+- [ ] **Task 4: Card states** (AC: 3, 4, 6)
+  - [ ] "#N of M" labels, unranked wording, stale/missing line with `/admin` link, "locked (game started)".
+- [ ] **Task 5: Agreement test** (AC: 9)
+  - [ ] One league fixture drives both `computeSlotGaps` and `buildActionCenter`'s stream items; assert the same best available and ranks.
+- [ ] **Task 6: Verify** (AC: all)
+  - [ ] `npm run test`, `npx tsc --noEmit`; manual check on a real Sleeper league during an in-season week (the Sleeper defense identity fix is the riskiest part: confirm my defense shows in my lineup and the optimizer).
+  - [ ] Add a CHANGELOG entry.
+
+## Dev Notes
+
+### Known pitfalls this story exists to prevent
+
+1. **Value-capped free-agent lists drop K and DEF.** Neither has a FantasyCalc value, so `fc_value > 0` queries omit them (see CHANGELOG 2026-09-27 and 2026-10-06; commit `69f39c4`). Candidates must come from the weekly ranking lists, not the page's value list.
+2. **Sleeper team-page defenses are not normalized.** `src/app/league/[leagueId]/team/[rosterId]/page.tsx` line ~67 sets `allLeaguePlayerIds = rosters.flatMap(r => r.players || [])` with raw Sleeper ids. A rostered `"SEA"` never matches the `DEF_SEA` key. Effects: my defense is missing from `enrichedPlayers` (so the optimizer never sees it), and the league-wide rostered set does not exclude rostered defenses. Fix by mapping ids through `normalizeSleeperStarterId` right where `allLeaguePlayerIds` and `roster.starters` are consumed. Be careful about other uses of `allLeaguePlayerIds` on that page (trade evaluator, ownership maps): normalizing at the source is correct for all of them because the `players` table only has `DEF_*` keys, but run the page before and after and compare.
+3. **`getLatestWeek()` returns the newest week across all kinds.** If flex rankings for week 6 are uploaded but kickers were not, `getWeeklyKickerRankings()` (which defaults to that week) returns an empty list. That silent empty list is the "no kicker suggestion, no explanation" experience. The kind-status helper exists to turn it into an explicit message.
+4. **Fleaflicker defenses have no stable sleeper id on the roster.** They are matched by team name (CHANGELOG 2026-10-06: `resolveDefenseId`). The Fleaflicker team page builds its player list via `nameToPlayerMap`; verify defenses resolve through it (the `normalizeName` path may or may not handle "Seattle Seahawks"). If they do not, add the `resolveDefenseId` step.
+
+### Existing code to reuse
+
+- `src/lib/weekly-rankings.ts`: `getWeeklyDstRankings(week?)`, `getWeeklyKickerRankings(week?)`, `getLatestWeek()`, `getWeeklyRanks`, `rankForPosition` (already routes `DEF`/`DST` to the `dst` kind and `K`/`PK` to `k`).
+- `src/lib/action-center.ts#streamItems`/`#streamKickerItems`: the behavioral reference for gating, rostered exclusion, and "unranked mine".
+- `src/lib/nameUtils.ts#resolveDefenseId`, `fixTeamAbbr`, `kickerMatchKey`.
+- `src/lib/sleeper.ts#normalizeSleeperStarterId`.
+- DB-league data already includes defenses and kickers in `data.freeAgents` (`db-league-data.ts`, `[...valued, ...defenses, ...kickers]`), so Yahoo/MyFFPC need no extra candidate query.
+
+### Architecture compliance
+
+- Same rules as Story 3.1: reuse `src/lib/`, `sleeper_id` canonical, read-only, no new tables.
+- Only one new query (`getWeeklyKindStatus`); put it in `weekly-rankings.ts` next to its siblings, not in a page.
+
+### Technical requirements
+
+- DEF ids are `DEF_{ABBR}` with ABBR in our abbreviation convention (JAX, LAR, etc.). Use `fixTeamAbbr` when comparing against `startedTeams`.
+- Keep `computeSlotGaps` pure. The kind status is computed by the server helper and passed in as plain data (`kindStatus` input).
+
+### Library / framework requirements
+
+- No new dependencies. No web research needed.
+
+### File structure requirements
+
+| Action | Path |
+|---|---|
+| Edit | `src/lib/slot-gaps.ts` |
+| Edit | `src/lib/team-slot-gaps.ts` |
+| Edit | `src/lib/weekly-rankings.ts` (add `getWeeklyKindStatus`) |
+| Edit | `src/components/RosterGapsCard.tsx` |
+| Edit | `src/app/league/[leagueId]/team/[rosterId]/page.tsx` (normalize defense ids) |
+| Edit | `src/app/fleaflicker/[leagueId]/team/[teamId]/page.tsx` (resolve defense names) |
+| Edit | `src/__tests__/lib/slot-gaps.test.ts` |
+| New | `src/__tests__/lib/weekly-kind-status.test.ts` |
+| New | `src/__tests__/lib/defense-identity.test.ts` |
+
+### Testing requirements
+
+- Same conventions as Story 3.1. The agreement test imports `buildActionCenter` (see `src/__tests__/lib/action-center.test.ts` for how it builds `PortfolioLeague` and `ActionCenterInput` fixtures) and `computeSlotGaps`, then compares outputs.
+- Identity tests should be pure: test the normalization/resolution functions with Sleeper/Fleaflicker/Yahoo/MyFFPC-shaped inputs, not the pages.
+
+### Previous story intelligence (Story 3.1)
+
+- 3.1 defines `SlotGap`/`HorizonGap`, `GAP_THRESHOLDS`, `getTeamSlotGaps`, `RosterGapsCard`, and `getStartedTeams`. This story extends them; keep the 3.1 public shapes backward compatible (add optional fields only).
+- 3.1 renders unranked/unavailable states generically. 3.2 supplies K/DEF-specific wording and the freshness line.
+
+### Git intelligence
+
+- `7840f10`, `4493118`, `69f39c4`: K and DEF were added to free-agent screens with separate fetches because of the value cap. Mirror that approach rather than relying on the value list.
+- `8c83ccb`, `91ef8fb` (weekly kicker rankings moved from scrape to CSV): upload-based data is the established model, which is why freshness matters.
+
+### Project Structure Notes
+
+- Same as 3.1. Definition of Done applies: tests, `tsc`, CHANGELOG/README update, local confirmation before pushing.
+
+### References
+
+- [Source: _bmad-output/implementation-artifacts/epic-3-roster-gap-visibility.md]
+- [Source: _bmad-output/implementation-artifacts/3-1-slot-gap-engine-and-team-gap-view.md]
+- [Source: src/lib/action-center.ts#streamItems, #streamKickerItems]
+- [Source: src/lib/weekly-rankings.ts]
+- [Source: src/lib/sleeper.ts#normalizeSleeperStarterId]
+- [Source: src/lib/nameUtils.ts#resolveDefenseId]
+- [Source: src/app/league/[leagueId]/free-agents/page.tsx (defense/kicker handling pattern)]
+- [Source: CHANGELOG.md: 2026-09-27, 2026-10-04, 2026-10-06]
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List

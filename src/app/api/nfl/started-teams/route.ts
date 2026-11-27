@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLiveGameStates } from "@/lib/nfl-live";
+import { getStartedTeams } from "@/lib/nfl-live";
 
 export const dynamic = "force-dynamic";
 
@@ -13,19 +13,7 @@ export const dynamic = "force-dynamic";
  * (Vercel-safe); the underlying scoreboard fetch is cached with a LIVE TTL.
  */
 export async function GET() {
-    try {
-        const states = await getLiveGameStates();
-        const started = new Set<string>();
-        for (const gs of states.values()) {
-            if (gs.state !== "pre") {
-                started.add(gs.home);
-                started.add(gs.away);
-            }
-        }
-        return NextResponse.json({ startedTeams: [...started] });
-    } catch {
-        // On any failure, return empty → no gating (fail open; better to show a
-        // stale suggestion than to hide everything).
-        return NextResponse.json({ startedTeams: [] });
-    }
+    // getStartedTeams fails open (empty set → no gating).
+    const started = await getStartedTeams();
+    return NextResponse.json({ startedTeams: [...started] });
 }
