@@ -1,394 +1,263 @@
-# Volatile Fantasy Football
+# Volatile Fantasy Football (VFF)
 
-A high-performance dynasty fantasy football analytics platform built with **Next.js 16**, **Drizzle ORM**, and **PostgreSQL**.
+A personal fantasy football analytics platform built with **Next.js 16**, **Drizzle ORM** and **PostgreSQL (Supabase)**. It started as a dynasty valuation dashboard and now works as a cross-league portfolio manager. It connects **Sleeper, Fleaflicker, Yahoo and MyFFPC** leagues, and covers dynasty, keeper and redraft formats.
+
+- **Current status:** single-user tool with a "soft login" (a username stored in localStorage). Supabase auth and the multi-tenant tables exist but are not enforced yet. See [Known Limitations](#known-limitations).
+- **Where to read next:** [ARCHITECTURE.md](ARCHITECTURE.md) for development rules, [CHANGELOG.md](CHANGELOG.md) for a dated feature history, [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) for the change workflow.
 
 ## Features
 
-- **League Dashboard** — View all teams in a Sleeper or Fleaflicker league ranked by total dynasty value (players + draft picks)
-- **Keeper League Support** — Designate leagues as Dynasty, Keeper, or Redraft. For keeper leagues, set the number of keepers and see a visual "keeper line" on team rosters showing which players would be kept. League dashboard shows "Value Dropped" column indicating total value of players that would need to be dropped per team
-- **Team Rosters** — Drill into any team to see their full roster with per-player valuations and a configurable column picker. For keeper leagues, displays "Value Dropped" stat showing the total value of players beyond the keeper limit
-- **Draft Capital** — All draft picks (next 3 years) are displayed with FantasyCalc values and integrated into team valuations
-- **Specific Pick Values** — Individual pick slots (e.g., 1.02 vs 1.09) are valued using real FantasyCalc pick data, not generic round averages
-- **Position Filters** — Interactive position filters on team pages to toggle between viewing players and draft picks
-- **Configurable Columns** — Users can toggle which data columns are visible on team roster and free agent tables, grouped into Core, FantasyCalc, and VFF Rankings sections. Includes: Market Value, FC Overall Rank, FC Position Rank, Combined Value, 30-Day Trend, Trade Frequency, VFF Rank, VFF Position, Tier, and Signal
-- **Scoring Format per League** — Each league on the dashboard can be independently set to 1QB or Superflex (SF). The format is stored in localStorage and passed through all league, team, and free agent pages
-- **Market Value Gap Analysis** — BUY/SELL/HOLD indicators comparing FantasyCalc market rankings vs. proprietary analysis rankings for both 1QB and Superflex formats
-- **Trade Target Finder** — Click any draft pick to see trade targets from other teams within 5% value range, with value gap indicators and expandable results
-- **Free Agent View** — See available waiver wire players ranked by dynasty value for the selected scoring format (1QB or SF), with position and rookie filters. Position value summary cards show total available value by position (QB, RB, WR, TE)
-- **Position Value Analytics** — All Players page and Free Agent pages display summary cards showing total value by position, making it easy to identify position scarcity and opportunity
-- **Rookie Filter** — On the Free Agent page, filter specifically by rookies (identified by `years_exp === 0` from FantasyCalc)
-- **Column Sorting** — All table columns are sortable on League and Free Agent pages
-- **Mock Draft Simulator** — Full snake/linear draft simulation with intelligent CPU auto-pick logic, manual user picks, real-time roster tracking, position filters, column picker (9+ columns), CSV export, and visual draft board grid. Supports both Sleeper and Fleaflicker leagues with accurate draft order including traded picks. Features:
-  - **Cross-Season Draft Resolution (Sleeper)** — Automatically resolves the current season's draft across Sleeper's league chain (each season creates a new league ID). Falls back to manual setup only when no API draft exists
-  - **Smart CPU Logic** — 92% value weight + 8% positional need, selecting from top 3 candidates with weighted random (squared scores). ZAP category modifier (+15% Elite to -10% Dart Throw) and AI confidence modifier (±8%) influence scoring
-  - **Positional Need Calculation** — Factors in lineup-derived target allocation (from Fleaflicker roster requirements API), depth vs starting slots, waiver wire scarcity, and players drafted during the mock
-  - **Pick Reasoning** — Shows score breakdown below each CPU pick (rank, value, need %, composite score)
-  - **User Recommendations** — When on the clock, displays top 3 recommended picks; click to open player detail modal with full scouting data before drafting
-  - **Player Detail Modal** — Full scouting view with FC/VFF rankings, 30-day trend, ZAP data, AI analysis (confidence, summary, comps, bull/bear case), and writeups from all sources. Draft button inside modal
-  - **In-Draft Trading** — Full trade evaluator with player search, side-by-side asset builder (your picks/players vs their picks/players), live value comparison, and 10% fair-value auto-acceptance. Pick values estimated from best-available-player projections, not static startup values
-  - **Suggest Trade (Live Draft)** — When another team is on the clock, propose a package from your assets to acquire their pick
-  - **Watch List** — Star/pin players of interest; persisted to localStorage per league. Filter available players to show only watched players
-  - **Search** — Filter available players by name in real-time
-  - **Undo Last Pick** — Reverts the most recent pick, restoring the player to the available pool
-  - **On-Deck Indicator** — Shows your next pick and how many picks away (e.g., "Your next pick: 2.05 (7 picks away)")
-  - **Last Pick Display** — Shows who was just drafted in the on-the-clock banner
-  - **Recent Picks Log** — Scrollable strip showing last 12 picks with team, player, and position
-  - **Visual Draft Board** — Grid layout (columns = draft slots, rows = rounds) with position color coding, traded pick indicators, and current pick highlight
-  - **Draft Grades** — Post-draft league-wide grades based on starter impact (drafted players that crack the starting lineup weighted 3x over bench depth). Progressive roster simulation for accurate STARTER/BENCH classification. Per-team position group snapshots (pre-draft → post-draft values)
-  - **Draft History** — Completed drafts auto-saved to database. Collapsible "Past Drafts" section with expandable pick details, grades, and team info. Persists across devices via user login
-- **Live Draft Mode** — Separate mode for tracking real drafts in real-time. Same UI as mock draft but with manual pick entry for all teams, no CPU auto-pick, unrestricted trades (no value check), projected picks for every team, and "Suggest Trade" button. Available at `/league/{id}/live-draft` and `/fleaflicker/{id}/live-draft`
-- **AI Scouting Analysis** — Prospect writeups and Late Round data analyzed by Claude (Anthropic) at ingestion time. Extracts confidence score (1-10), one-line summary, bull/bear cases, and NFL player comparisons. Displayed in player detail modal, writeup tabs, and keeper selection cards. AI confidence feeds into draft recommendation scoring
-- **Prospect Writeups (Multi-Source)** — Ingest scouting writeups from multiple sources (e.g., Reception Perception) as `.txt` files. Matched to players by name, stored in `prospect_writeups` table with source tagging. Displayed across mock draft, live draft, free agent, and team roster pages as tabbed expandable rows
-- **Prospect Guide Integration** — Late Round Fantasy Football prospect data (ZAP scores, categories, breakout scores, draft capital delta, statistical comparables) ingested from PDF and stored in the database. Features:
-  - **Prospect Guide Page** (`/prospects`) — Sortable table with rookie/Year 2 tabs, position filters, color-coded ZAP categories, expandable analysis text per player
-  - **Mock Draft Integration** — ZAP / Yr 2 score, Pos Rank, and Tier columns in the available players table. Year 2 scores take priority; stale ZAP shown dimmed italic. Click any prospect name to expand inline profile with comps and analysis
-  - **Smart Ingestion** — Python script dynamically scans PDF pages (no hardcoded ranges), handles both rookie and Year 2 profiles, supports 1QB rookie rankings
-- **Player Stats Modal** — Click any player on team roster pages to view weekly stats (targets, receptions, yards, TDs, carries, passing stats, fantasy points). Season selector (2020-2025). Stats sourced from Sleeper API and nfl_data_py
-- **Soft Login / Dashboard** — Enter your Sleeper username to get a personalized dashboard showing all your leagues. Supports Fleaflicker accounts too
-- **Player Rankings** — Browse the top 50 dynasty players by FantasyCalc value
-- **Live Sleeper Integration** — Roster data is fetched in real-time from the [Sleeper API](https://docs.sleeper.com/)
-- **FantasyCalc Valuations** — Player trade values sourced from [FantasyCalc](https://fantasycalc.com/)
-- **Mobile-Responsive** — Optimized table layouts for phones and tablets
-- **Smart Caching** — In-memory cache with 10-minute TTL for external API calls, with manual refresh option for instant updates
-- **Generic Rookie Mock Draft** — Standalone mock draft at `/mock-draft` with configurable league size (8-14), draft format (snake/linear), rounds, roster slots, and draft position. No league required.
-- **Admin Dashboard** — Upload VFF rankings (1QB/SF/Redraft) via Excel, upload custom rankings from external sources, paste prospect writeups
-- **Position Scarcity Chart** — Visual stacked bar chart showing available talent by position, colored by dynasty tier, ZAP category, or redraft tier. Collapsible with Dynasty/ZAP/Redraft toggle
-- **Roster Composition** — Same scarcity chart on team roster pages showing your team's composition
-- **Trade Evaluator (Team Page)** — Standalone trade evaluator on team roster pages with player search, deal builder, and dynasty/redraft value blend slider
-- **Redraft Rankings** — Upload and display redraft rankings alongside dynasty rankings. Side-by-side display with delta indicators (Win Now / Long Term)
-- **Custom Rankings** — Import rankings from external sources (e.g., RP) with signal indicators (Super Buy/Buy/Hold/Sell/Super Sell)
-- **PWA Support** — Installable as a Progressive Web App with offline support and install prompts
-- **Nickname Aliasing** — Automatic player name matching for common nicknames (Nick→Nicholas, Hollywood Brown→Marquise Brown)
-- **Draft Plan Page** — Pre-draft planning tool at `/league/{id}/draft-plan` and `/fleaflicker/{id}/draft-plan`. Features:
-  - Interactive keeper selection with dynasty/redraft value blend slider
-  - Draft Board with simulated pool depletion and pick-by-pick strategy
-  - Position-grouped candidates with NEED/VALUE/UPSIDE/SAFE tags per pick
-  - Strategic insights (tier scarcity, safe-to-wait indicators)
-  - Player search with availability % calculation per pick
-  - Watchlist shared with mock draft (star players to track across picks)
-  - Position Scarcity Chart showing draft pool talent
-  - Projected Roster (full team composition: keepers + planned picks)
-  - Evaluate button with post-draft grade analysis
-  - Multiple saved plans per league (create/edit/delete/switch)
-  - Plan comparison via Results tab (average grades across mock drafts)
-  - Connected to Mock Draft (plan auto-loads keepers, shows 'Your Plan' when on the clock)
-- **Advanced NFL Statistics (nflreadpy)** — Full advanced stats pipeline:
-  - Season-level stats, Next Gen Stats (passing/receiving/rushing), PFR advanced, snap counts
-  - 2023/2024/2025 seasons ingested (600+ players per season)
-  - Breakout detection (YoY improvement flagging with score 0-100)
-  - Regression flags (TD dependency, low separation, volume inefficiency)
-  - Scoring boost (0.85-1.20x multiplier in draft plan based on efficiency metrics)
-  - Player comparison tool (side-by-side advanced metrics)
-  - Inline stats on team roster tables (target share, RYOE, CPOE, separation)
-- **Player Profile Card** — Mobile-optimized tabbed player view (replaces old modal):
-  - Profile tab: grade badges (A+ through F), percentile bars, season totals, scouting take
-  - Trends tab: weekly fantasy points chart, boom/bust ratio, recent form, consistency score
-  - Scouting tab: ZAP writeups, AI analysis, bull/bear cases, multi-source writeups
-  - Info tooltips explaining each metric in plain English
-  - Calibrated from real 2025 NFL distributions
-- **Trade Inbox (Fleaflicker)** — Authenticated pending trade evaluation:
-  - Cookie-based Fleaflicker auth (stored in DB for cross-device access)
-  - Pending trades with You Send / You Receive evaluation
-  - Dynasty + auction value comparison per trade
-  - ACCEPT/DECLINE/EVEN recommendation (10% threshold)
-  - Counter suggestions (picks for small gaps, players for large gaps)
-  - Reframed deal alternatives ('they want X, here are fair packages')
-  - Other team's full assets visible (players + draft picks)
-- **Trade Evaluator Enhancements** — Now includes:
-  - Auction value comparison (Send $X → Get $Y)
-  - Position group before/after impact (RB: 11,379 → 14,023 +23%)
-  - Roster Fit preview (where incoming players slot into your depth chart)
-  - Enriched verdict ('Win-now upgrade but costs dynasty value. Sends 1 keeper.')
-- **Sleeper Trade History** — Recent completed trades displayed on team pages with value evaluation
-- **Value Movers** — Shows dynasty value changes since last snapshot. Filters by My Roster (across all Sleeper + Fleaflicker leagues) or All Players
-- **Team Switcher** — Team name in breadcrumb is now clickable dropdown for switching teams
+### Portfolio hub (`/portfolio`)
+
+The main in-season surface. It loads every connected league across all four platforms into one format-resolved contract (`src/lib/portfolio.ts`).
+
+- **Action Center** (`src/lib/action-center.ts`, a pure aggregation engine). It produces prioritized, season-adaptive recommendations and deep-links each one to the real platform:
+  - In-season, items group by action type: lineup fixes, pending trades, waiver upgrades, sells, defense streaming and kicker streaming.
+  - Off-season, items group by team, each with its strengthen-moves.
+  - Lineup flags can be acknowledged "on purpose" for the current week (`lineup-acks.ts`, stored locally).
+- **Season mode toggle** switches the app between in-season and off-season views.
+- **Lineup optimizer** (`lineup-optimizer.ts`). It computes the optimal legal lineup from weekly ranks, with kickoff locks and bench and close-call detail.
+- **Waiver finders:**
+  - `waiver-upgrades.ts` finds free agents who improve this week's lineup.
+  - `waiver-value.ts` finds value-based pickups for deep leagues where weekly ranks are empty.
+  - `transaction-suggestions.ts` suggests pickups and drops by dynasty value.
+- **Streaming:** weekly defense (DST) and kicker streaming, gated by NFL game start times.
+- **Player status page** (`/portfolio/player/[sleeperId]`). It shows whether a player is available or rostered, and by whom, in each of your leagues. It includes a "Plan a move" flow with a guarded suggested drop and an Add / Drop / Δ comparison table (ROS rank, ROS PPG, this week, dynasty value).
+- **Player tags** (`player_tags`), including the analyst Buy/Sell board. Add and buy tags show as indicators on free-agent screens.
+- **Game-Day Rooting Guide / For & Against board** (`/portfolio/game-day`). For each NFL game it lists who you are rooting for and against across leagues. It shows live scores from ESPN box scores, with per-league filters.
+- **Trade tools:** a cross-league trade finder and a targeted one-player trade generator (`targeted-trade.ts`). Pending-trade evaluation currently covers Fleaflicker.
+
+### League pages
+
+- **League dashboards** rank every team by total dynasty value (players plus draft picks). Pages exist for Sleeper (`/league/[id]`), Fleaflicker (`/fleaflicker/[id]`) and Yahoo and MyFFPC (`/db-league/[platform]/[id]`, with `/myffpc` for setup).
+- **Per-league settings:** Dynasty, Keeper or Redraft, 1QB or Superflex, and keeper count. A keeper line and a "Value Dropped" column appear for keeper leagues.
+- **Roster Gaps card** on team pages: for each starting slot, your player's rank vs the best available free agent, this week and rest-of-season, with collapsed "no action" rows and a recommended move only where a gap is worth acting on (`slot-gaps.ts`).
+- **Team rosters** with a configurable column picker (market value, FC and VFF ranks, tier, signal, trend, ROS and weekly ranks, advanced stats), position filters, and a roster composition chart.
+- **Free agents.** Each league has a free-agent view with QB/RB/WR/TE/K/DEF tabs, ranked by dynasty value (DEF by this week's rank). It supports position and rookie filters, analyst pickup indicators, and a team-specific suggested drop.
+- **Trade evaluator** with player and pick search, a dynasty/redraft blend slider, auction value, position-group before/after impact, and roster fit.
+- **Trade history** for Sleeper.
+- **Value movers**, showing value changes since the last weekly snapshot. It can filter to your rostered players across leagues.
+- **Draft capital:** picks for the next three years, valued with FantasyCalc pick data and adjusted for traded picks.
+
+### Drafting
+
+- **Mock draft** for Sleeper and Fleaflicker leagues (`/league/[id]/mock-draft`, `/fleaflicker/[id]/mock-draft`).
+  - CPU picks use a value and positional-need model with ZAP and AI-confidence modifiers.
+  - Also included: trades, a watch list, undo, a draft board grid, CSV export, and post-draft grades.
+  - Completed drafts are saved to `draft_history`.
+- **Generic rookie mock draft** (`/mock-draft`) needs no league.
+- **Live draft mode** (`/live-draft`) tracks real drafts with manual pick entry and unrestricted trades.
+- **Draft plan** (`/draft-plan`) provides keeper selection, a pool-depletion draft board, availability percentages, and a Monte Carlo EV optimizer (`draft-monte-carlo.ts`). It supports multiple saved plans per league (`draft_plans`).
+- **Cheat sheet** (`/cheat-sheet`) is a league-free ranking sheet.
+
+### Players and research
+
+- **All Players** (`/players`) is searchable and sorts by ROS rank by default, with weekly rank, value, and K/DEF included.
+- **Player profile card** with tabs for profile, trends, scouting and move.
+- **Prospect Guide** (`/prospects`) holds Late Round Fantasy Football data (ZAP scores, categories, comps, analysis text) ingested from PDF.
+- **Multi-source writeups** and **AI scouting analysis** (Claude): confidence, summary, bull/bear cases and comps.
+- **Advanced NFL stats** (nflreadpy): NGS, PFR, snap counts, breakout and regression flags, and a player comparison tool.
+- **Stats leaderboard** (`/stats`) is an NFL-wide opportunity and production table, by single week or cumulative.
+- **DFS** (`/dfs`) has a DraftKings Classic lineup optimizer and a value finder. It uses DK salary CSVs and rank-based synthetic projections.
+- **Podcast claims** (`pod-claims.ts`). Fantasy-podcast transcripts are turned into structured player-claim atoms and aggregated for review in the Admin page.
+- **My Rankings** (`/my-rankings`) is the early multi-user feature: upload your own rankings and generate BUY/SELL/HOLD signals (`user_*` tables, requires Supabase auth).
+
+### Admin (`/admin`)
+
+- Upload VFF rankings (1QB, SF, redraft, ROS) from Excel.
+- Upload custom ranking sources (for example RP) with signals.
+- Upload **weekly rankings** as CSV: flex, QB, DST and K.
+- Paste the analyst transactions feed.
+- Upload prospect writeups and podcast transcripts.
+- Review podcast claims.
+
+### Platform
+
+- Installable **PWA**.
+- In-memory cache with a 10-minute TTL for external API calls, plus a manual refresh button.
+- Player-name matching with nickname aliasing (`nameUtils.ts`).
 
 ## Tech Stack
 
-| Layer      | Technology                                                       |
-| ---------- | ---------------------------------------------------------------- |
-| Framework  | [Next.js 16](https://nextjs.org/) (App Router, Server Components)|
-| Database   | PostgreSQL (via [Supabase](https://supabase.com/))              |
-| ORM        | [Drizzle ORM](https://orm.drizzle.team/)                        |
-| Styling    | [Tailwind CSS v4](https://tailwindcss.com/)                      |
-| Icons      | [Lucide React](https://lucide.dev/)                              |
-| Font       | [Inter](https://fonts.google.com/specimen/Inter) (via next/font) |
-| Hosting    | [Vercel](https://vercel.com/)                                    |
+| Layer | Technology |
+| --- | --- |
+| Framework | Next.js 16 (App Router, Server Components), React 19 |
+| Database | PostgreSQL on Supabase, accessed with Drizzle ORM and `postgres` |
+| Auth | Soft login (localStorage). Supabase SSR auth is wired up but disabled in `src/middleware.ts` |
+| Styling | Tailwind CSS v4, lucide-react |
+| AI | Anthropic SDK (Claude) for scouting analysis and transcript extraction |
+| Data scraping | cheerio, Playwright (Yahoo and MyFFPC sessions) |
+| NFL data | `@camfleety/nfl-data-js` (schedules), Python `nflreadpy` (stats ingestion) |
+| Testing | Vitest and Testing Library (unit), Playwright (e2e) |
+| Hosting | Vercel (one daily cron) plus local launchd for Python and browser jobs |
 
 ## Getting Started
 
 ### Prerequisites
 
-- **Node.js** ≥ 18
-- **npm** (comes with Node)
-- A **PostgreSQL** database (we use [Supabase](https://supabase.com/) for managed Postgres)
+- Node.js 18 or later and npm
+- A PostgreSQL database (Supabase)
+- Python 3.8 or later with `pip install -r requirements.txt` (for stats ingestion)
+- `npx playwright install chromium` (only for Yahoo and MyFFPC syncing)
 
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/<your-org>/volatile-fantasy-football.git
-cd volatile-fantasy-football
-```
-
-### 2. Install Dependencies
+### Setup
 
 ```bash
+git clone <repo-url> && cd volatile-fantasy-football
 npm install
 ```
 
-### 3. Configure Environment Variables
+Create `.env.local`:
 
-Create a `.env.local` file in the project root:
+| Variable | Used for |
+| --- | --- |
+| `DATABASE_URL` | Postgres connection string (required) |
+| `CRON_SECRET` | Bearer token the Vercel cron sends to `/api/cron/*` |
+| `ANTHROPIC_API_KEY` | AI analysis scripts and transcript or rankings extraction |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase auth (optional while auth is disabled) |
+| `YAHOO_COOKIE`, `YAHOO_LEAGUE_IDS` | Yahoo sync (the cookie is written by `npm run leagues:refresh`) |
+| `MYFFPC_LEAGUES` | MyFFPC league list |
 
-```env
-DATABASE_URL=postgresql://<user>:<password>@<host>/<database>?sslmode=require
-```
-
-> **Note:** The `DATABASE_URL` must point to a PostgreSQL database. If you're using Supabase, copy the connection string from your Supabase project settings under Database > Connection string > URI.
-
-### 4. Set Up the Database
-
-Push the Drizzle schema to your database:
-
-```bash
-npx drizzle-kit push
-```
-
-Then seed the database with player data from FantasyCalc:
+Then:
 
 ```bash
-npx tsx scripts/ingest-players.ts
+npx drizzle-kit push              # create tables
+npx tsx scripts/ingest-players.ts # seed players + FantasyCalc values
+npm run dev                       # http://localhost:3000
 ```
 
-### 5. Run the Dev Server
+The `user_settings` table is created by `scripts/` SQL rather than the Drizzle schema. The multi-user tables are also defined in `migrations/001_multi_user_tables.sql`.
 
-```bash
-npm run dev
-```
+## Data Sources and Refresh
 
-Open [http://localhost:3000](http://localhost:3000) to see the app.
+| Source | How it gets in | Cadence |
+| --- | --- | --- |
+| FantasyCalc (values, pick values) | `scripts/ingest-players.ts` via `/api/cron/ingest-players` (the only job in `vercel.json`, which also takes the weekly `value_snapshots`) | Daily, 06:00 UTC |
+| Sleeper and Fleaflicker rosters | Fetched live at request time (`sleeper.ts`, `fleaflicker.ts`) | Per request, cached 10 min |
+| Yahoo and MyFFPC rosters | Synced into `leagues`, `rosters` and `roster_players` (`npm run yahoo:sync`, `npm run myffpc:sync`) | Local, on demand or launchd |
+| NFL weekly and advanced stats | `ingest-weekly-stats-year.py`, `ingest-advanced-stats.py` | `npm run refresh:data`, weekly |
+| ESPN scoreboard and box scores | Fetched live (`nfl-live.ts`, `nfl-live-stats.ts`) | Per request |
+| VFF, ROS and custom rankings | Admin uploads | Manual |
+| Weekly flex, QB, DST and K rankings | Admin CSV upload (`weekly_rankings`) | Weekly |
+| Late Round Prospect Guide | `scripts/ingest-prospects.py <pdf> <year>` | Per guide release |
+| Writeups and AI analysis | `ingest-writeups.ts`, `analyze-writeups.ts`, `analyze-prospects.ts` | Per source |
+
+`npm run refresh:data` (`scripts/refresh-data.sh`) refreshes weekly stats, advanced stats, Yahoo and MyFFPC in one run. Each step is independent, and a stale Yahoo cookie or MyFFPC login fails without stopping the others. To run it weekly on your Mac, see [scripts/launchd/README.md](scripts/launchd/README.md). When a login goes stale, run `npm run leagues:refresh` to re-authenticate in a browser and sync.
 
 ## Project Structure
 
 ```
 volatile-fantasy-football/
-├── scripts/                    # Data ingestion & DB utility scripts
-│   ├── ingest-players.ts       # Fetches player + pick data from FantasyCalc API
-│   ├── ingest-prospects.py     # Ingests Late Round Prospect Guide PDF data
-│   ├── ingest-writeups.ts      # Ingests prospect writeups from .txt files (multi-source)
-│   ├── analyze-writeups.ts     # AI analysis of writeups via Claude (confidence, summary, comps)
-│   ├── analyze-prospects.ts    # AI analysis of Late Round prospect data via Claude
-│   ├── ingest-sleeper-stats.py # Ingests weekly player stats from Sleeper API
-│   ├── test-db.js              # Quick DB connection test
-│   └── verify-db.ts            # Verifies DB schema and data
 ├── src/
-│   ├── app/                    # Next.js App Router pages
-│   │   ├── layout.tsx          # Root layout (header, providers, fonts, metadata)
-│   │   ├── page.tsx            # Home page / personalized dashboard (login)
-│   │   ├── providers.tsx       # Client-side context providers (AuthProvider)
-│   │   ├── mock-draft/         # Generic mock draft (no league required)
-│   │   ├── admin/              # Admin dashboard (rankings upload, writeups)
-│   │   ├── players/
-│   │   │   └── page.tsx        # Top 50 players list
-│   │   ├── prospects/
-│   │   │   ├── page.tsx        # Prospect guide page (server component)
-│   │   │   └── ProspectsTable.tsx  # Prospect table (client, tabs/filters/sort)
-│   │   ├── league/
-│   │   │   └── [leagueId]/
-│   │   │       ├── page.tsx    # League dashboard (all teams ranked)
-│   │   │       ├── free-agents/
-│   │   │       │   └── page.tsx  # Free agent view (Sleeper)
-│   │   │       ├── draft-plan/   # Sleeper draft plan page
-│   │   │       ├── live-draft/   # Sleeper live draft
-│   │   │       └── team/
-│   │   │           └── [rosterId]/
-│   │   │               └── page.tsx  # Individual team roster
-│   │   ├── fleaflicker/
-│   │   │   └── [leagueId]/
-│   │   │       ├── page.tsx          # Fleaflicker league dashboard
-│   │   │       ├── mock-draft/
-│   │   │       │   ├── page.tsx      # Mock draft page (server component)
-│   │   │       │   └── DraftClient.tsx  # Mock draft simulator (client)
-│   │   │       ├── draft-plan/       # Fleaflicker draft plan page
-│   │   │       ├── live-draft/       # Fleaflicker live draft
-│   │   │       ├── trades/           # Fleaflicker trades page
-│   │   │       ├── free-agents/
-│   │   │       │   └── page.tsx      # Free agent view (Fleaflicker)
-│   │   │       └── team/
-│   │   │           └── [teamId]/
-│   │   │               └── page.tsx  # Fleaflicker team roster
-│   │   └── api/
-│   │       ├── draft-plans/          # Draft plans CRUD API
-│   │       ├── player-advanced-stats/ # Advanced stats API
-│   │       ├── fleaflicker/trades/   # Authenticated trades proxy
-│   │       └── user-settings/        # User settings (cookie storage)
-│   ├── types/
-│   │   └── player.ts           # Shared Player/BasePlayer types
-│   ├── components/
-│   │   ├── AppHeader.tsx       # Sticky navigation header (auth-aware)
-│   │   ├── FreeAgentTable.tsx  # Client component for Free Agent view (with filters & sorting)
-│   │   ├── LeagueTable.tsx     # League dashboard table (sortable)
-│   │   ├── RefreshButton.tsx   # Manual cache refresh button
-│   │   ├── ColumnPicker.tsx    # Configurable column visibility picker
-│   │   ├── PositionScarcityChart.tsx  # Stacked bar chart for position scarcity
-│   │   ├── TradeEvaluator.tsx  # Standalone trade evaluator component
-│   │   ├── PlayerStatsModal.tsx # Weekly player stats modal
-│   │   ├── DraftPlanClient.tsx  # Draft Plan page client component
-│   │   ├── PendingTrades.tsx    # Authenticated trade inbox (Fleaflicker)
-│   │   ├── PlayerProfileCard.tsx # Mobile-optimized tabbed player view
-│   │   ├── PlayerComparison.tsx # Side-by-side player stat comparison
-│   │   ├── SleeperTradeHistory.tsx # Sleeper trade history display
-│   │   ├── InstallBanner.tsx   # PWA install prompt banner
-│   │   └── CustomRankingsBadge.tsx  # Signal badge for custom rankings
-│   ├── db/
-│   │   ├── index.ts            # Database connection (Drizzle + postgres.js)
-│   │   └── schema.ts           # Drizzle schema (players, leagues, rosters, values, prospects)
-│   ├── hooks/
-│   │   └── useUser.tsx         # AuthProvider & useAuth hook (localStorage-backed login)
-│   └── lib/
-│       ├── sleeper.ts          # Sleeper API client (users, rosters, leagues)
-│       ├── fleaflicker.ts      # Fleaflicker API client
-│       ├── cache.ts            # In-memory cache with TTL support
-│       ├── draft-data.ts       # Shared draft data fetching helpers
-│       ├── draft-simulation.ts # Draft simulation utilities (styles, value blending)
-│       ├── advanced-stats.ts   # Breakout detection, regression, scoring boost
-│       ├── rankings-upload.ts  # VFF rankings Excel upload processing
-│       ├── rankings-vintage.ts # Rankings history and vintage tracking
-│       ├── custom-rankings.ts  # Custom rankings import/processing
-│       ├── nameUtils.ts        # Player name matching and nickname aliasing
-│       ├── positionColors.ts   # Shared position color utility
-│       └── nfl-data.ts         # NFL stats data utilities
-├── drizzle.config.ts           # Drizzle Kit configuration
-├── package.json
-└── tsconfig.json
+│   ├── app/                      # Next.js App Router
+│   │   ├── page.tsx              # Home: connect and list leagues (all 4 platforms)
+│   │   ├── portfolio/            # Hub, game-day (For & Against), player/[sleeperId]
+│   │   ├── league/[leagueId]/    # Sleeper: dashboard, team, free-agents, mock/live draft, draft-plan
+│   │   ├── fleaflicker/[leagueId]/  # Fleaflicker: same, plus trades
+│   │   ├── db-league/[platform]/[leagueId]/  # Yahoo and MyFFPC: dashboard, team, free-agents
+│   │   ├── myffpc/               # MyFFPC setup and legacy views
+│   │   ├── yahoo/                # Redirect into db-league
+│   │   ├── mock-draft/           # Generic rookie mock draft
+│   │   ├── players/  prospects/  stats/  cheat-sheet/  dfs/  my-rankings/
+│   │   ├── admin/                # Rankings, weekly CSV, transactions, transcripts, pod claims
+│   │   ├── login/  auth/callback/
+│   │   └── api/                  # ~55 route handlers (admin, cron, portfolio, dfs, rankings, signals, ...)
+│   ├── components/               # Shared UI (FreeAgentTable, PlayerProfileCard, TradeEvaluator, portfolio/ActionCenter, ...)
+│   ├── hooks/                    # useUser (soft login), useMyTeams, useSeasonMode, useLineupAcks
+│   ├── lib/                      # Domain logic and API clients (see below)
+│   ├── db/                       # schema.ts (Drizzle) and index.ts (connection)
+│   ├── types/player.ts
+│   ├── middleware.ts             # Currently a no-op
+│   └── __tests__/                # Vitest suites
+├── scripts/                      # Ingestion, sync, verification and refresh scripts (TS, Python, shell)
+│   └── launchd/                  # Weekly local refresh job
+├── migrations/                   # SQL for the multi-user tables
+├── e2e/                          # Playwright specs
+├── docs/                         # Definition of done, planning notes, draft decision tree
+├── _bmad-output/                 # BMAD planning artifacts (stories, UX specs)
+├── drizzle.config.ts  vitest.config.ts  playwright.config.ts  vercel.json
 ```
 
-## Database Schema
+### `src/lib/` map
 
-The app uses sixteen tables managed by Drizzle ORM:
+| Area | Modules |
+| --- | --- |
+| Platform clients | `sleeper.ts`, `fleaflicker.ts`, `yahoo.ts`, `myffpc-parser.ts`, `db-league-data.ts`, `db-matchups.ts` |
+| Portfolio and actions | `portfolio.ts`, `action-center.ts`, `lineup-optimizer.ts`, `lineup-acks.ts`, `waiver-upgrades.ts`, `waiver-value.ts`, `team-waiver-upgrades.ts`, `transaction-suggestions.ts`, `analyst-signals.ts` |
+| Trades | `trade-advisor.ts`, `targeted-trade.ts` |
+| Live game data | `nfl-live.ts`, `nfl-live-stats.ts`, `nfl-schedule.ts`, `rooting-guide.ts` |
+| Drafting | `draft-data.ts`, `draft-simulation.ts`, `draft-monte-carlo.ts`, `post-draft-analysis.ts`, `sleeper-adp.ts` |
+| Rankings | `rankings-upload.ts`, `rankings-vintage.ts`, `custom-rankings.ts`, `weekly-rankings.ts`, `transactions-parser.ts`, `pod-claims.ts` |
+| Stats | `advanced-stats.ts`, `stats-queries.ts`, `nfl-data.ts` |
+| DFS | `dk-optimizer.ts`, `dk-projection.ts`, `dk-salaries.ts` |
+| Utilities | `cache.ts`, `nameUtils.ts`, `positionColors.ts`, `supabase/{client,server}.ts` |
 
-| Table             | Description                                            |
-| ----------------- | ------------------------------------------------------ |
-| `players`         | Master player list (name, position, team, age, years_exp) |
-| `player_values`   | Dynasty/redraft trade values, FC metrics, VFF ranks    |
-| `player_advanced_stats` | Season-level advanced stats from nflreadpy (NGS, PFR, snap counts) |
-| `prospect_data`   | Late Round prospect guide data (ZAP, categories, NFL team) |
-| `prospect_writeups` | Multi-source scouting writeups                       |
-| `draft_history`   | Saved mock/live draft results                          |
-| `draft_plans`     | Saved draft plans with keepers, picks, roster targets, notes |
-| `leagues`         | League metadata (platform, scoring, roster settings)   |
-| `rosters`         | Team rosters within a league                           |
-| `roster_players`  | Join table linking rosters to players                  |
-| `rankings_history` | Archives VFF rankings per upload with timestamps      |
-| `ranking_sources` | External ranking source metadata                       |
-| `custom_rankings` | Custom rankings from external sources                  |
-| `weekly_player_stats` | Weekly player stats (targets, yards, TDs, fantasy points) |
-| `weekly_roster_snapshots` | Weekly roster composition snapshots              |
-| `user_settings`   | User preferences (Fleaflicker auth cookie for cross-device) |
+Check `src/lib/` before writing new fetch or utility code (see ARCHITECTURE.md).
 
-> **Rookie identification:** The `players.years_exp` column (sourced from FantasyCalc's `maybeYoe` field) is used to flag rookies. Players with `years_exp === 0` are considered rookies.
+## Database
 
-See [`src/db/schema.ts`](src/db/schema.ts) for the full schema definition.
+Drizzle schema in [`src/db/schema.ts`](src/db/schema.ts), 24 tables:
 
-## Key APIs & Data Sources
+| Group | Tables |
+| --- | --- |
+| Players and values | `players`, `player_values`, `value_snapshots`, `player_advanced_stats`, `weekly_player_stats` |
+| Leagues | `leagues`, `rosters`, `roster_players`, `weekly_roster_snapshots` |
+| Rankings | `rankings_history`, `ranking_sources`, `custom_rankings`, `weekly_rankings` |
+| Scouting | `prospect_data`, `prospect_writeups`, `player_tags`, `player_transactions`, `pod_claims` |
+| Drafts and trades | `draft_history`, `draft_plans`, `trade_scenarios` |
+| Per-user (RLS design) | `user_leagues`, `user_sources`, `user_rankings`, `user_signals` |
 
-### Sleeper API (Live)
-Roster and user data is fetched **at request time** from the Sleeper API. No Sleeper data is cached in the database.
+`players.sleeper_id` is the canonical player key across tables. Team defenses are stored as `DEF_{ABBR}`. Rookies are `years_exp === 0`.
 
-- **Endpoint:** `https://api.sleeper.app/v1/league/{leagueId}/users`
-- **Endpoint:** `https://api.sleeper.app/v1/league/{leagueId}/rosters`
-- **Endpoint:** `https://api.sleeper.app/v1/league/{leagueId}/traded_picks`
-- **Client:** [`src/lib/sleeper.ts`](src/lib/sleeper.ts)
+## Scripts
 
-**Draft Picks:** The app generates all draft picks for each team (next 3 years, 5 rounds per year) and applies trades from the Sleeper API to show complete draft capital ownership.
-
-### FantasyCalc API (Ingested & Auto-Updated)
-Player valuations are automatically refreshed **daily at 6 AM UTC** via Vercel Cron Job. Data is stored in PostgreSQL for fast lookups.
-
-- **Endpoint:** `https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=2&numTeams=12&ppr=0.5`
-- **Script:** [`scripts/ingest-players.ts`](scripts/ingest-players.ts)
-- **Automation:** See [AUTOMATED_INGESTION.md](AUTOMATED_INGESTION.md) for details
-- **Manual Trigger:** `curl -X POST https://volatile-fantasy-football.vercel.app/api/ingest`
-- **Local Run:** `npx tsx scripts/ingest-players.ts`
-
-**Draft Pick Values:** FantasyCalc provides values for draft picks (e.g., `FP_2026_1` for 2026 1st round) which are stored alongside player values and used for trade analysis.
-
-### Late Round Prospect Guide (Ingested)
-Prospect analysis data is ingested from Late Round Fantasy Football PDF guides and stored in PostgreSQL.
-
-- **Script:** [`scripts/ingest-prospects.py`](scripts/ingest-prospects.py)
-- **Run:** `python3 scripts/ingest-prospects.py <pdf_path> <draft_year>`
-- **Data:** ZAP scores, categories, breakout scores, draft capital delta, statistical comparables, analysis text
-
-See [`scripts/README-PROSPECTS.md`](scripts/README-PROSPECTS.md) for detailed ingestion instructions.
-
-## Available Scripts
-
-| Command                             | Description                                      |
-| ----------------------------------- | ------------------------------------------------ |
-| `npm run dev`                       | Start the Next.js development server             |
-| `npm run build`                     | Create a production build                        |
-| `npm run start`                     | Start the production server                      |
-| `npm run test`                      | Run the Vitest unit test suite                   |
-| `npm run test:e2e`                  | Run the Playwright E2E test suite                |
-| `npm run test:all`                  | Run both Unit and E2E test suites                |
-| `npm run lint`                      | Run ESLint                                       |
-| `npx drizzle-kit push`             | Push schema changes to the database              |
-| `npx drizzle-kit studio`           | Open Drizzle Studio (visual DB browser)          |
-| `npx tsx scripts/ingest-players.ts`| Ingest/update player data from FantasyCalc       |
-| `python3 scripts/ingest-prospects.py <pdf> <year>` | Ingest prospect data from PDF |
-| `npx tsx scripts/ingest-writeups.ts <dir> <year> <source>` | Ingest prospect writeups from .txt files |
-| `npx tsx scripts/analyze-writeups.ts`  | AI-analyze writeups via Claude (confidence, summary, comps) |
-| `npx tsx scripts/analyze-prospects.ts` | AI-analyze Late Round prospect data via Claude |
-| `python3 scripts/ingest-sleeper-stats.py [year]` | Ingest weekly player stats from Sleeper API |
-| `npx tsx scripts/verify-db.ts`     | Verify database connection and data              |
-| `npm run ingest:nfl`               | Ingest NFL stats via Python script               |
-| `python3 scripts/ingest-advanced-stats.py [season]` | Ingest advanced stats from nflreadpy |
-| `npx tsx scripts/ingest-defenses.ts` | Insert all 32 NFL team defenses                |
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` / `build` / `start` | Next.js dev server, production build, production server |
+| `npm run lint` | ESLint |
+| `npm run test` | Vitest (unit and component) |
+| `npm run test:e2e` | Playwright e2e |
+| `npm run test:all` | Both test suites |
+| `npm run refresh:data` | Weekly stats, advanced stats, Yahoo and MyFFPC sync |
+| `npm run ingest:2026` | Weekly and advanced NFL stats for 2026 |
+| `npm run ingest:nfl` | Legacy NFL stats ingestion |
+| `npm run yahoo:login` / `yahoo:refresh` / `yahoo:sync` | Yahoo auth and sync |
+| `npm run myffpc:refresh` / `myffpc:sync` / `myffpc:verify` | MyFFPC sync |
+| `npm run leagues:refresh` | One browser login, then Yahoo and MyFFPC sync |
+| `npx drizzle-kit push` / `studio` | Apply schema, browse DB |
+| `npx tsx scripts/ingest-players.ts` | FantasyCalc players and pick values |
+| `python3 scripts/ingest-prospects.py <pdf> <year>` | Prospect Guide ingestion ([details](scripts/README-PROSPECTS.md)) |
+| `npx tsx scripts/ingest-writeups.ts <dir> <year> <source>` | Writeup ingestion |
+| `npx tsx scripts/analyze-writeups.ts` / `analyze-prospects.ts` | Claude analysis |
+| `npx tsx scripts/ingest-defenses.ts` / `ingest-kickers.ts` | Seed DEF and K players |
+| `python3 scripts/repair-gsis-mapping.py` / `audit-gsis-mapping.py` | Fix or audit the GSIS to Sleeper ID mapping |
+| `npx tsx scripts/verify-db.ts` | Check DB connection and data |
 
 ## Testing
 
-We use a layered testing approach combining **Vitest** (Unit Tests) and **Playwright** (End-to-End Tests).
+- **Unit and component (Vitest, jsdom):** 20 files and 238 tests, about 2 seconds. They cover pure engines (action center, lineup optimizer, waiver upgrades, targeted trades, rooting guide, DK optimizer, advanced stats, post-draft analysis, name matching, cache, Sleeper client, live NFL data) plus the ingestion script and `AppHeader`.
+- **E2E (Playwright):** `e2e/navigation.spec.ts` covers the home to players to league to team journey on desktop and mobile.
+- **Type check:** `npx tsc --noEmit`. Test files currently report missing `expect` and `it` types, because tsconfig doesn't include the Vitest globals.
 
-To run all tests sequentially:
-```bash
-npm run test:all
-```
-
-You can also run them individually:
-- `npm run test` — Runs the Vitest unit/integration suite (63 tests across 8 files, ~1s).
-- `npm run test:e2e` — Runs the full Playwright E2E suite (verifies critical user journeys on both Desktop and Mobile viewports).
-
-### Test Strategy
-Our testing layers prioritize different areas:
-1. **Unit Tests (Vitest)** — API clients (`src/lib/sleeper.ts`), complex pure functions, and analytics logic.
-   - `cleanseName` (name normalization and nickname aliasing)
-   - `detectBreakout`, `detectRegression`, `getAdvancedStatsBoost` (advanced stats pipeline)
-   - `comparePlayerStats` (player comparison tool)
-   - `analyzeLeaguePostDraft` (draft grade analysis)
-2. **E2E Tests (Playwright)** — Critical user journeys (home -> players -> league -> team) and mobile responsiveness formatting.
-3. **Integration Tests (Vitest)** — Database ingestion scripts (`scripts/ingest-players.ts`) using Mocked Drizzle instances.
-4. **Component Tests (Vitest)** — React component rendering (AppHeader).
+Workflow per change: update or add tests for `lib/`, API and data-transform changes, run `npm run test` and `npx tsc --noEmit`, update docs, wait for local confirmation, then push. See [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md).
 
 ## Deployment
 
-The app is deployed on **Vercel** and automatically deploys on pushes to `main`.
+Pushes to `main` deploy automatically on Vercel. Set `DATABASE_URL` and `CRON_SECRET` (plus `ANTHROPIC_API_KEY` if you use AI routes) in the Vercel project. The only scheduled Vercel job is the daily FantasyCalc ingest in `vercel.json`. See [AUTOMATED_INGESTION.md](AUTOMATED_INGESTION.md) and [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md).
 
-- **Production URL:** Deployed on Vercel
-- **Vercel Root Directory:** `volatile-fantasy-football`
+## Known Limitations
 
-### Environment Variables on Vercel
+- **Most API routes are unauthenticated.** `src/middleware.ts` is a no-op, and only the cron routes and the Supabase-backed routes check credentials. That includes the admin upload routes, `/api/ingest` and `/api/cache/clear`. Don't expose the deployment publicly until these are protected.
+- **`x-user-id` is client-supplied.** `/api/user-settings` (which stores the Fleaflicker session cookie) and `/api/draft-plans` trust this header, so it is not real authentication.
+- **Baked-in analysis is unlicensed.** Prospect writeups, ZAP data and third-party rankings are in shared tables. This is fine for personal use and must change before the app opens to other users. See [docs/2026-09-12-platform-vision-party-mode.md](docs/2026-09-12-platform-vision-party-mode.md).
+- **Yahoo and MyFFPC depend on a logged-in browser session** and break when that session expires. Re-run `npm run leagues:refresh`.
 
-Make sure the following environment variable is set in your Vercel project settings:
+## Other Docs
 
-| Variable        | Description                          |
-| --------------- | ------------------------------------ |
-| `DATABASE_URL`  | PostgreSQL connection string         |
+Feature notes: [CUSTOM_RANKINGS.md](CUSTOM_RANKINGS.md), [QUICK_START_RANKINGS.md](QUICK_START_RANKINGS.md), [CACHING_IMPLEMENTATION.md](CACHING_IMPLEMENTATION.md), [PYTHON_SETUP.md](PYTHON_SETUP.md), [SKILLS.md](SKILLS.md). Some of these were written during earlier phases (for example `NFL_STATS_INTEGRATION.md` and `PLAYER_STATS_MODAL.md` describe the old `nfl_stats` table and a removed modal). Treat them as historical.
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
 ## License
 
-This project is private. Please contact the maintainer for licensing inquiries.
+Private. Contact the maintainer for licensing inquiries.

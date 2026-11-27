@@ -56,7 +56,7 @@ export default function AdminPage() {
                 throw new Error(data.error || 'Failed to upload rankings');
             }
 
-            setMessage(`Success! Match rate: ${data.matches}/${data.totalRows} (${data.matchRate}%). Updated ${data.updatedCount} records.${data.archivedCount ? ` Archived ${data.archivedCount} previous rankings.` : ''}${data.unmatchedNames?.length ? `\nUnmatched: ${data.unmatchedNames.join(', ')}` : ''}`);
+            setMessage(`Success! Match rate: ${data.matches}/${data.totalRows} (${data.matchRate}%). Updated ${data.updatedCount} records.${data.archivedCount ? ` Archived ${data.archivedCount} previous rankings.` : ''}${data.unmatchedNames?.length ? `\nUnmatched: ${data.unmatchedNames.join(', ')}` : ''}${data.clearedCount > 0 ? `\nCleared ${data.clearedCount} players no longer in the file: ${data.cleared.map((c: { name: string; position: string | null }) => `${c.name}${c.position ? ` (${c.position})` : ''}`).join(', ')}` : ''}${data.clearSkipped ? `\n${data.clearSkipped}` : ''}`);
             setFile(null);
             // Reset file input element if needed
             const fileInput = document.getElementById('file-upload') as HTMLInputElement;
@@ -202,7 +202,7 @@ export default function AdminPage() {
 
                 {message && (
                     <div className="mt-6 p-4 bg-green-900/40 border border-green-800 text-green-400 rounded-lg shadow-inner">
-                        <p className="font-medium text-green-300">✅ {message}</p>
+                        <p className="font-medium text-green-300 whitespace-pre-line">✅ {message}</p>
                     </div>
                 )}
 

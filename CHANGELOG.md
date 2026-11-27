@@ -4,6 +4,55 @@ All notable changes to the Volatile Fantasy Football platform.
 
 ## [Unreleased]
 
+### Changed - Rankings uploads replace the old ranking (2026-11-25)
+
+- **A VFF rankings upload (1QB, SF, Redraft, ROS) now replaces the previous
+  ranking.** Players who had a rank but are not in the new file are cleared
+  (rank, position rank, tier, plus PPG / SOS / bye for ROS, and auction value for
+  redraft). Before this, old ranks lingered forever: players with season-ending
+  injuries kept showing a stale ROS rank (for example Jaxson Dart, Terry
+  McLaurin) in the Roster Gaps card, free agents, All Players and the portfolio.
+- **Safe by default.** Clearing is skipped (updates still apply) when no rows
+  matched, when under 50% of rows matched a player, or when the file matches under
+  50% of the players previously ranked, which catches a wrong or partial file.
+  The previous ranks are still archived to `rankings_history` first.
+- The Admin upload result lists who was cleared (`Cleared 54 players no longer in
+  the file: ...`) alongside the unmatched names, so a name-matching problem is
+  visible. FantasyCalc values are never touched.
+- The 54 stale ROS rows that had piled up (22 WR, 12 RB, 10 QB, 10 TE, including
+  Dart, McLaurin, Achane, Maye, Nacua) were cleared once on 2026-11-25; a backup of
+  their values is saved in `_bmad-output/implementation-artifacts/`.
+- Roster Gaps: a starter with no ROS rank (for example an injured player) is now
+  quiet. It no longer counts as "worth a move"; a missing weekly rank still does.
+- Logic: `src/lib/rankings-clear.ts` (14 tests).
+
+### Added - Roster Gaps card on team pages (2026-11-25)
+
+- **New "Roster Gaps" card under the Lineup Optimizer** on every team page
+  (Sleeper, Fleaflicker, Yahoo, MyFFPC). For each starting slot it shows where
+  your player ranks next to the best available free agent, **this week** (within
+  the same weekly rank pool: QB, Flex, K) and **rest-of-season** (position rank,
+  same position). Example: `K · Aubrey · Wk K #5 vs #12 · no action`.
+- **Quiet by default.** Slots with no worthwhile gap are collapsed one-liners
+  ("no action" / "close"); only slots past the threshold open by default and show
+  the recommended add (with the existing safe / caution / core-asset drop
+  guardrail) plus a link to the platform. When nothing needs doing, one green line
+  says so. The card adds no badges or counts anywhere else.
+- **Sees more free agents than before.** Candidates now include unrostered
+  players ranked this week even when they have little dynasty value, and
+  unrostered kickers from the uploaded kicker ranking, instead of only the top
+  ~300 players by FantasyCalc value.
+- **Honest data states:** locked slots (game started), unranked starters, empty
+  slots, no ranked free agents, and missing weekly uploads are labelled instead of
+  silently hidden. Kickers have no ROS line.
+- Thresholds (rank spots) live in `GAP_THRESHOLDS` in `src/lib/slot-gaps.ts`:
+  weekly QB 4 / Flex 8 / K 5; ROS QB 4 / RB 6 / WR 6 / TE 4. Starting values to tune.
+- New `getStartedTeams()` in `src/lib/nfl-live.ts` (shared with
+  `/api/nfl/started-teams`, fails open). DEF slots arrive in Story 3.2.
+- Engine: `src/lib/slot-gaps.ts` (pure) + `src/lib/team-slot-gaps.ts` (server
+  helper) + `src/components/RosterGapsCard.tsx`. Tests: `slot-gaps.test.ts` (29),
+  `started-teams.test.ts` (3).
+
 ### Added - "Plan a Move" on Player Status View (2026-10-12)
 
 - On the cross-league player view (`/portfolio/player/[sleeperId]`), **leagues

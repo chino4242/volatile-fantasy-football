@@ -1,0 +1,80 @@
+# generated: 2026-11-25
+# last_updated: 2026-11-25
+# project: volatile-fantasy-football
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: {project-root}/_bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; sprint-status surfaces open ones
+#
+# PROJECT NOTES:
+# ==============
+# - Epic files live in implementation-artifacts (not planning-artifacts) in this project.
+# - Epic 1 has no epic file; it is inferred from story 1-1 only.
+# - Story 3-4 is intentionally parked in backlog (see epic-3 file); do not create it until
+#   Stories 3-1 to 3-3 have shipped and been reviewed.
+# - Suggested build order for Epic 3: 3-1 -> 3-2 -> 3-3 (each depends on the previous).
+
+generated: 2026-11-25
+last_updated: 2026-11-25
+project: volatile-fantasy-football
+project_key: NOKEY
+tracking_system: file-system
+story_location: "{project-root}/_bmad-output/implementation-artifacts"
+
+development_status:
+  epic-1: in-progress
+  1-1-game-day-rooting-guide: ready-for-dev
+  epic-1-retrospective: optional
+
+  epic-2: in-progress
+  2-1-action-center-aggregation-engine: review
+  2-2-action-center-ui-inseason: review
+  2-3-acknowledge-on-purpose-state: review
+  2-4-banded-tiered-dashboard: review
+  2-5-offseason-action-center-and-manual-trade: review
+  epic-2-retrospective: optional
+
+  epic-3: in-progress
+  3-1-slot-gap-engine-and-team-gap-view: review
+  3-2-kicker-and-defense-gap-clarity: ready-for-dev
+  3-3-roster-move-in-lineup-optimizer: ready-for-dev
+  3-4-cross-league-gap-summary: backlog
+  epic-3-retrospective: optional
+
+  epic-4: in-progress
+  4-1-rankings-replace-on-upload: review
+  epic-4-retrospective: optional

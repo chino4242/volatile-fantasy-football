@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { read, utils } from 'xlsx';
 import { db } from '@/db';
 import { players, playerValues, rankingsHistory } from '@/db/schema';
-import { eq, isNotNull } from 'drizzle-orm';
+import { eq, inArray, isNotNull } from 'drizzle-orm';
 import { cleanseName } from '@/lib/nameUtils';
+import { planClear, clearFieldsFor, type RankingsCategory } from '@/lib/rankings-clear';
 
 function parseCSVLine(line: string): string[] {
     const fields: string[] = [];
@@ -149,6 +150,7 @@ export async function POST(request: Request) {
         // ── Apply new rankings ──
         const now = new Date();
         let matchCount = 0;
+        const matchedIds = new Set<string>();
         const updatePromises = [];
         const unmatchedNames: string[] = [];
 
@@ -174,6 +176,7 @@ export async function POST(request: Request) {
                 continue;
             }
             matchCount++;
+            matchedIds.add(sleeperId);
 
             let posRank = null;
             if (positionalRankStr) {
@@ -236,6 +239,33 @@ export async function POST(request: Request) {
 
         await Promise.all(updatePromises);
 
+        // ── Replace-on-upload: players who had a rank but are NOT in this file are
+        // now unranked (injured / dropped). Their previous values were archived to
+        // rankings_history above. Guarded against wrong/partial files (rankings-clear).
+        let cleared: { name: string; position: string | null; team: string | null }[] = [];
+        let clearSkipped: string | null = null;
+        if (['1qb', 'sf', 'redraft', 'ros'].includes(category)) {
+            const plan = planClear({
+                previouslyRanked: existingRanks.map(r => r.sleeper_id),
+                matched: matchedIds,
+                totalRows: rawData.length,
+                matchedCount: matchCount,
+            });
+            clearSkipped = plan.skippedReason;
+            if (plan.toClear.length > 0) {
+                const fields = { ...clearFieldsFor(category as RankingsCategory), updated_at: now };
+                for (let i = 0; i < plan.toClear.length; i += 500) {
+                    const batch = plan.toClear.slice(i, i + 500);
+                    await db.update(playerValues).set(fields).where(inArray(playerValues.sleeper_id, batch));
+                }
+                const named = await db
+                    .select({ name: players.full_name, position: players.position, team: players.team })
+                    .from(players)
+                    .where(inArray(players.sleeper_id, plan.toClear));
+                cleared = named.sort((a, b) => (a.position ?? '').localeCompare(b.position ?? '') || a.name.localeCompare(b.name));
+            }
+        }
+
         return NextResponse.json({
             success: true,
             totalRows: rawData.length,
@@ -243,6 +273,9 @@ export async function POST(request: Request) {
             updatedCount: updatePromises.length,
             matchRate: rawData.length > 0 ? Math.round((matchCount / rawData.length) * 100) : 0,
             archivedCount: existingRanks.length,
+            clearedCount: cleared.length,
+            cleared,
+            clearSkipped,
             unmatchedNames,
         });
 
