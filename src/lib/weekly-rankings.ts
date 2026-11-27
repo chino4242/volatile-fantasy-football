@@ -9,7 +9,8 @@
 
 import { db } from '@/db';
 import { weeklyRankings } from '@/db/schema';
-import { and, eq, desc, inArray } from 'drizzle-orm';
+import { and, eq, desc, inArray, max, count } from 'drizzle-orm';
+import { classifyKinds, type WeeklyKindStatus } from './weekly-freshness';
 
 export interface WeeklyRankInfo {
     rank: number | null;
@@ -37,6 +38,31 @@ export async function getLatestWeek(): Promise<number | null> {
         .orderBy(desc(weeklyRankings.week))
         .limit(1);
     return row[0]?.week ?? null;
+}
+
+/**
+ * Upload freshness per weekly kind (flex / qb / k / dst), judged against the newest
+ * week uploaded for ANY kind. Turns "the kicker list came back empty" into an
+ * explicit ok / stale / missing, plus each list's ranked pool size. Two small
+ * grouped queries; the classification itself is pure (`classifyKinds`).
+ */
+export async function getWeeklyKindStatus(): Promise<WeeklyKindStatus> {
+    const overall = await getLatestWeek();
+    const latest = await db
+        .select({ kind: weeklyRankings.kind, latestWeek: max(weeklyRankings.week) })
+        .from(weeklyRankings)
+        .groupBy(weeklyRankings.kind);
+    const counts = overall == null ? [] : await db
+        .select({ kind: weeklyRankings.kind, ranked: count(weeklyRankings.rank) })
+        .from(weeklyRankings)
+        .where(eq(weeklyRankings.week, overall))
+        .groupBy(weeklyRankings.kind);
+    const rows = latest.map(r => ({
+        kind: r.kind,
+        latestWeek: r.latestWeek ?? null,
+        rankedAtOverallLatest: Number(counts.find(c => c.kind === r.kind)?.ranked ?? 0),
+    }));
+    return classifyKinds(rows, overall);
 }
 
 function toNum(v: unknown): number | null {

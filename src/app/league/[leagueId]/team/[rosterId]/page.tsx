@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { players, playerValues, leagues, prospectData, prospectWriteups, playerAdvancedStats } from "@/db/schema";
-import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks, getSleeperTransactions } from "@/lib/sleeper";
+import { getLeagueData, getPickFantasyCalcId, getAllDraftPicks, getSleeperTransactions, normalizeSleeperStarterId } from "@/lib/sleeper";
 import { getCustomRankings, buildCustomRankingsMap, getActiveSources } from "@/lib/custom-rankings";
 import { getRankingsVintage, formatVintage } from "@/lib/rankings-vintage";
 import { cleanseName } from "@/lib/nameUtils";
@@ -67,8 +67,11 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
     );
 
     // 5. Fetch players from DB
-    const rosterPlayerIds = roster.players || [];
-    const allLeaguePlayerIds = rosters.flatMap(r => r.players || []);
+    // Sleeper returns a team defense as the bare NFL abbr ("SEA"); our players table keys
+    // it DEF_SEA. Normalize every roster id up front so defenses resolve (otherwise a
+    // rostered defense silently drops out: no lineup slot, no value, looks available).
+    const rosterPlayerIds = (roster.players || []).map(normalizeSleeperStarterId);
+    const allLeaguePlayerIds = rosters.flatMap(r => (r.players || []).map(normalizeSleeperStarterId));
 
     const dbPlayersRaw = rosterPlayerIds.length > 0 || pickIds.length > 0 ? await db
         .select({
@@ -149,7 +152,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
     const playerOwnershipMap = new Map<string, number>();
     rosters.forEach(r => {
         r.players?.forEach(pid => {
-            playerOwnershipMap.set(pid, r.roster_id);
+            playerOwnershipMap.set(normalizeSleeperStarterId(pid), r.roster_id);
         });
     });
 
@@ -422,7 +425,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
 
     // Lineup optimizer (latest uploaded week). Roster players only (exclude PICKs);
     // starters from the Sleeper roster.starters list.
-    const starterSet = new Set(roster.starters || []);
+    const starterSet = new Set((roster.starters || []).map(normalizeSleeperStarterId));
     const startedTeams = await getStartedTeams(); // games already kicked off → players are locked
     const lineupOpt = await optimizeTeam(
         enrichedPlayers
@@ -515,7 +518,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                         return {
                             rosterId: r.roster_id,
                             ownerName: u?.display_name || `Team ${r.roster_id}`,
-                            players: (r.players || []).map(pid => leaguePlayerMap.get(pid)).filter(Boolean) as any[],
+                            players: (r.players || []).map(pid => leaguePlayerMap.get(normalizeSleeperStarterId(pid))).filter(Boolean) as any[],
                         };
                     })}
                     format={format}
@@ -531,6 +534,7 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
                             gaps={slotGaps.gaps}
                             week={slotGaps.week}
                             hasWeeklyData={slotGaps.hasWeeklyData}
+                            notices={slotGaps.kindNotices}
                             deepLink={deepLinkFor('sleeper', leagueId, String(rosterId))}
                             linkLabel="Sleeper"
                         />

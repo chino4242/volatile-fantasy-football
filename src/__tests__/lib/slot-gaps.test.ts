@@ -34,9 +34,9 @@ describe('computeSlotGaps: weekly horizon', () => {
         expect(gaps.map(g => g.slot)).toEqual(['QB', 'RB', 'WR', 'TE', 'FLEX', 'K']);
     });
 
-    it('skips DEF-only slots (Story 3.2)', () => {
+    it('includes DEF slots (Story 3.2)', () => {
         const gaps = computeSlotGaps({ roster: [], freeAgents: [], rosterPositions: ['QB', 'DEF', 'BN'] });
-        expect(gaps.map(g => g.slot)).toEqual(['QB']);
+        expect(gaps.map(g => g.slot)).toEqual(['QB', 'DEF']);
     });
 
     it('compares a kicker to the best available kicker in the k pool', () => {
@@ -359,5 +359,126 @@ describe('dedupeById', () => {
             { sleeper_id: 'a', src: 'weekly' },
         ]);
         expect(out).toEqual([{ sleeper_id: 'a', src: 'page' }, { sleeper_id: 'b', src: 'page' }]);
+    });
+});
+
+describe('computeSlotGaps: DEF (dst pool)', () => {
+    const POS = ['DEF', 'BN'];
+    const D = (id: string, rank: number | null, team?: string, extra: Partial<PortfolioPlayer> = {}) =>
+        P({ ...extra, sleeper_id: id, position: 'DEF', team: team ?? id.replace('DEF_', ''), weeklyRank: rank });
+
+    it('compares my defense to the best available defense within the dst pool', () => {
+        const roster = [D('DEF_NYG', 25, undefined, { is_starter: true })];
+        const fas = [D('DEF_LAC', 1), D('DEF_SEA', 2)];
+        const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: POS })[0];
+        expect(g.weekly.pool).toBe('dst');
+        expect(g.weekly.best?.player.sleeper_id).toBe('DEF_LAC');
+        expect(g.weekly.gap).toBe(24);
+        expect(g.weekly.status).toBe('actionable');
+        expect(g.ros.status).toBe('unavailable'); // no ROS horizon for DEF
+    });
+
+    it('threshold boundary: dst gap equal to threshold is minor, threshold + 1 is actionable', () => {
+        const t = GAP_THRESHOLDS.weekly.dst;
+        expect(t).toBe(5);
+        const roster = [D('DEF_NYG', 10, undefined, { is_starter: true })];
+        const eq = computeSlotGaps({ roster, freeAgents: [D('DEF_LAC', 10 - t)], rosterPositions: POS })[0];
+        const over = computeSlotGaps({ roster, freeAgents: [D('DEF_LAC', 10 - t - 1)], rosterPositions: POS })[0];
+        expect(eq.weekly.status).toBe('minor');
+        expect(over.weekly.status).toBe('actionable');
+    });
+
+    it('"no action": my defense beats everything available', () => {
+        const roster = [D('DEF_NYG', 3, undefined, { is_starter: true })];
+        const g = computeSlotGaps({ roster, freeAgents: [D('DEF_LAC', 9)], rosterPositions: POS })[0];
+        expect(g.weekly.status).toBe('none');
+        expect(g.status).toBe('none');
+    });
+
+    it('a defense not in this week\'s list is unranked-mine (and still shows the best available)', () => {
+        const roster = [D('DEF_NYG', null, undefined, { is_starter: true })];
+        const g = computeSlotGaps({ roster, freeAgents: [D('DEF_LAC', 4)], rosterPositions: POS })[0];
+        expect(g.weekly.status).toBe('unranked-mine');
+        expect(g.weekly.best?.rank).toBe(4);
+        expect(g.status).toBe('unranked-mine');
+    });
+
+    it('my defense already played: locked, no gap this week', () => {
+        const roster = [D('DEF_NYG', 25, 'NYG', { is_starter: true })];
+        const g = computeSlotGaps({
+            roster, freeAgents: [D('DEF_LAC', 1)], rosterPositions: POS, startedTeams: new Set(['NYG']),
+        })[0];
+        expect(g.weekly.locked).toBe(true);
+        expect(g.weekly.status).toBe('unavailable');
+    });
+
+    it('a free-agent defense whose game already started is excluded', () => {
+        const roster = [D('DEF_NYG', 25, undefined, { is_starter: true })];
+        const fas = [D('DEF_LAC', 1), D('DEF_SEA', 2)];
+        const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: POS, startedTeams: new Set(['LAC']) })[0];
+        expect(g.weekly.best?.player.sleeper_id).toBe('DEF_SEA');
+    });
+
+    it('DEF recommendation is a one-for-one swap that drops my current defense', () => {
+        const roster = [D('DEF_NYG', 25, undefined, { is_starter: true })];
+        const g = computeSlotGaps({ roster, freeAgents: [D('DEF_LAC', 1)], rosterPositions: POS })[0];
+        expect(g.move?.add.sleeper_id).toBe('DEF_LAC');
+        expect(g.move?.drop?.sleeper_id).toBe('DEF_NYG');
+        expect(g.move?.type).toBe('swap');
+        expect(g.move?.source).toBe('stream');
+        expect(g.move?.informational).toBe(false);
+    });
+
+    it('an empty DEF slot recommends a pure add of the best defense', () => {
+        const g = computeSlotGaps({ roster: [], freeAgents: [D('DEF_LAC', 1)], rosterPositions: POS })[0];
+        expect(g.myPlayer).toBeNull();
+        expect(g.weekly.pool).toBe('dst');
+        expect(g.move?.type).toBe('add');
+        expect(g.move?.drop).toBeNull();
+    });
+
+    it('a defense is never compared to a flex or k rank', () => {
+        const roster = [D('DEF_NYG', 25, undefined, { is_starter: true })];
+        const fas = [P({ sleeper_id: 'rb', position: 'RB', weeklyRank: 1 }), P({ sleeper_id: 'k', position: 'K', weeklyRank: 1 })];
+        const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: POS })[0];
+        expect(g.weekly.best).toBeNull();
+    });
+});
+
+describe('computeSlotGaps: pool size and stale rankings', () => {
+    it('stamps the pool size on the weekly horizon for the slot pool', () => {
+        const roster = [P({ sleeper_id: 'myk', position: 'K', weeklyRank: 5 })];
+        const fas = [P({ sleeper_id: 'k1', position: 'K', weeklyRank: 12 })];
+        const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: ['K'], poolSizes: { k: 32, dst: 24 } })[0];
+        expect(g.weekly.poolSize).toBe(32);
+    });
+
+    it('omits poolSize when it is not supplied', () => {
+        const roster = [P({ sleeper_id: 'myk', position: 'K', weeklyRank: 5 })];
+        const g = computeSlotGaps({ roster, freeAgents: [], rosterPositions: ['K'] })[0];
+        expect(g.weekly.poolSize).toBeUndefined();
+    });
+
+    it('a stale/missing ranking pool is flagged noRanking and never reads as "no action"', () => {
+        const roster = [P({ sleeper_id: 'myk', position: 'K', weeklyRank: null })];
+        const g = computeSlotGaps({ roster, freeAgents: [], rosterPositions: ['K'], staleKinds: new Set(['k'] as const) })[0];
+        expect(g.weekly.noRanking).toBe(true);
+        expect(g.weekly.status).toBe('unavailable');
+        expect(g.status).toBe('unavailable');
+        expect(gapSummary([g]).fine).toBe(0);
+    });
+
+    it('stale flag applies to an empty single-position slot too', () => {
+        const g = computeSlotGaps({ roster: [], freeAgents: [], rosterPositions: ['DEF'], staleKinds: new Set(['dst'] as const) })[0];
+        expect(g.weekly.noRanking).toBe(true);
+        expect(g.weekly.pool).toBe('dst');
+    });
+
+    it('stale kinds do not affect other pools', () => {
+        const roster = [P({ sleeper_id: 'qb1', position: 'QB', weeklyRank: 3 })];
+        const fas = [P({ sleeper_id: 'qb2', position: 'QB', weeklyRank: 20 })];
+        const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: ['QB'], staleKinds: new Set(['k', 'dst'] as const) })[0];
+        expect(g.weekly.noRanking).toBeUndefined();
+        expect(g.weekly.status).toBe('none');
     });
 });

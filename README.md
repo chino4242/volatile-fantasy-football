@@ -235,7 +235,7 @@ Drizzle schema in [`src/db/schema.ts`](src/db/schema.ts), 24 tables:
 
 ## Testing
 
-- **Unit and component (Vitest, jsdom):** 20 files and 238 tests, about 2 seconds. They cover pure engines (action center, lineup optimizer, waiver upgrades, targeted trades, rooting guide, DK optimizer, advanced stats, post-draft analysis, name matching, cache, Sleeper client, live NFL data) plus the ingestion script and `AppHeader`.
+- **Unit and component (Vitest, jsdom):** 23 files and 292 tests, about 2 seconds. They cover pure engines (action center, lineup optimizer, waiver upgrades, targeted trades, rooting guide, DK optimizer, advanced stats, post-draft analysis, name matching, cache, Sleeper client, live NFL data) plus the ingestion script and `AppHeader`.
 - **E2E (Playwright):** `e2e/navigation.spec.ts` covers the home to players to league to team journey on desktop and mobile.
 - **Type check:** `npx tsc --noEmit`. Test files currently report missing `expect` and `it` types, because tsconfig doesn't include the Vitest globals.
 

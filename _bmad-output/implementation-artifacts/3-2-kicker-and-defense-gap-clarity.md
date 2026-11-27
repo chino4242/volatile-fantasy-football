@@ -1,6 +1,10 @@
+---
+baseline_commit: 84618500b25ef5a2581e01620a59681a6f990845
+---
+
 # Story 3.2: Kicker and Defense Gap Clarity
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -51,23 +55,23 @@ Epic: `_bmad-output/implementation-artifacts/epic-3-roster-gap-visibility.md`
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1: Engine DEF + pool size** (AC: 1, 3, 4, 7, 8, 10)
-  - [ ] Add `dst` to `GAP_THRESHOLDS.weekly`; add `poolSize` to `HorizonGap`; DEF slot handling and unranked/locked states in `slot-gaps.ts`.
-- [ ] **Task 2: Kind status helper** (AC: 6, 10)
-  - [ ] `getWeeklyKindStatus()` in `src/lib/weekly-rankings.ts` (one grouped query: `SELECT kind, MAX(week), COUNT(*) FILTER (WHERE week = overallLatest)`). Keep the status classification as a pure function so it can be unit tested without the DB.
-- [ ] **Task 3: DEF candidates + platform identity** (AC: 2, 5, 10)
-  - [ ] DEF injection in `team-slot-gaps.ts`.
-  - [ ] Sleeper team page: normalize roster and starter ids.
-  - [ ] Fleaflicker team page: resolve defense names to ids.
-  - [ ] Confirm Yahoo/MyFFPC.
-  - [ ] Regression tests.
-- [ ] **Task 4: Card states** (AC: 3, 4, 6)
-  - [ ] "#N of M" labels, unranked wording, stale/missing line with `/admin` link, "locked (game started)".
-- [ ] **Task 5: Agreement test** (AC: 9)
-  - [ ] One league fixture drives both `computeSlotGaps` and `buildActionCenter`'s stream items; assert the same best available and ranks.
-- [ ] **Task 6: Verify** (AC: all)
-  - [ ] `npm run test`, `npx tsc --noEmit`; manual check on a real Sleeper league during an in-season week (the Sleeper defense identity fix is the riskiest part: confirm my defense shows in my lineup and the optimizer).
-  - [ ] Add a CHANGELOG entry.
+- [x] **Task 1: Engine DEF + pool size** (AC: 1, 3, 4, 7, 8, 10)
+  - [x] Add `dst` to `GAP_THRESHOLDS.weekly`; add `poolSize` to `HorizonGap`; DEF slot handling and unranked/locked states in `slot-gaps.ts`.
+- [x] **Task 2: Kind status helper** (AC: 6, 10)
+  - [x] `getWeeklyKindStatus()` in `src/lib/weekly-rankings.ts` (one grouped query: `SELECT kind, MAX(week), COUNT(*) FILTER (WHERE week = overallLatest)`). Keep the status classification as a pure function so it can be unit tested without the DB.
+- [x] **Task 3: DEF candidates + platform identity** (AC: 2, 5, 10)
+  - [x] DEF injection in `team-slot-gaps.ts`.
+  - [x] Sleeper team page: normalize roster and starter ids.
+  - [x] Fleaflicker team page: resolve defense names to ids.
+  - [x] Confirm Yahoo/MyFFPC.
+  - [x] Regression tests.
+- [x] **Task 4: Card states** (AC: 3, 4, 6)
+  - [x] "#N of M" labels, unranked wording, stale/missing line with `/admin` link, "locked (game started)".
+- [x] **Task 5: Agreement test** (AC: 9)
+  - [x] One league fixture drives both `computeSlotGaps` and `buildActionCenter`'s stream items; assert the same best available and ranks.
+- [x] **Task 6: Verify** (AC: all)
+  - [x] `npm run test`, `npx tsc --noEmit`; manual check on a real Sleeper league during an in-season week (the Sleeper defense identity fix is the riskiest part: confirm my defense shows in my lineup and the optimizer).
+  - [x] Add a CHANGELOG entry.
 
 ## Dev Notes
 
@@ -148,8 +152,46 @@ Epic: `_bmad-output/implementation-artifacts/epic-3-roster-gap-visibility.md`
 
 ### Agent Model Used
 
+Kiro (bmad-dev-story workflow), model: Auto.
+
 ### Debug Log References
+
+- Red phase confirmed for `weekly-kind-status`, `defense-identity` and the new `slot-gaps` DEF/pool/stale tests before implementing.
+- The K agreement test first failed because kicker streams are per-league actions (`buildLeagueActions`), not part of the cross-league Action Center; test changed to read them there. Engine was correct.
+- Test typing: a `...extra` spread widened `position` to `string | null`; moved the spread first.
+- Live dev server briefly served the old compile after edits; touching the files forced a rebuild.
 
 ### Completion Notes List
 
+- All 10 acceptance criteria implemented.
+- **AC 1/3/4/7/8 (engine):** `WeeklyPool` gained `dst`; `GAP_THRESHOLDS.weekly.dst = 5`; DEF slots are no longer skipped; `HorizonGap` gained `poolSize` and `noRanking`; DEF recommendation is a one-for-one swap (`source: 'stream'`); an empty single-position slot (K/DEF) resolves its pool from the slot.
+- **AC 2 (candidates):** pure `defenseCandidates` / `kickerCandidates` in `slot-gaps.ts`; `getTeamSlotGaps` now builds both from the uploaded lists. Rostered ids are normalized inside the helper too (defense in depth).
+- **AC 5 (identity):** the Sleeper team page now normalizes `roster.players`, league roster ids, ownership map keys, starters and the health-dashboard lists with `normalizeSleeperStarterId`. **Fleaflicker: no change needed.** Verified against the real league: 22 of 22 rostered defenses already match by name through the page's `normalizeName`, and `resolveDefenseId` agrees. **Yahoo/MyFFPC:** confirmed all 40 DEF `roster_players` rows are `DEF_{ABBR}`.
+- **AC 6 (freshness):** new pure `weekly-freshness.ts` (`classifyKinds`, `kindNotices`) and `getWeeklyKindStatus()` (two grouped queries) in `weekly-rankings.ts`. Notices are produced only for kinds the league starts; the card prints them with an Admin link, K/DEF rows read "no current ranking", and the all-clear line is worded to claim only what could be compared.
+- **AC 9 (agreement):** shared-fixture tests assert the same best defense/kicker and ranks as `streamItems` / `streamKickerItems`, including started-team exclusion. Thresholds stay separate (Action Center 3, card 5); documented in `GAP_THRESHOLDS`.
+- Tests: 32 added (slot-gaps +16, weekly-kind-status 9, defense-identity 9; includes updated DEF-slot test). Full suite: 23 files, 292 tests passing. `tsc`: no errors outside the 17 pre-existing test-file ones. ESLint not run (hangs in this repo).
+- **Live verification (read-only):** your Sleeper team with DEF + SUPER_FLEX slots now shows "DEF New England Patriots DEF #12" in the optimizer (was "—") and `Wk DEF #12 of 24 · no action` in Roster Gaps; a 12-team league confirmed all 32 defenses are rostered, so "No ranked free agents" is accurate. K and DEF rows with real free agents render `Wk K #22 of 32 vs #7` and `Wk DEF #9 of 24 vs #6`; locked kickers show "locked (game started)".
+- **Not verified live:** the stale/missing notice. Week 12 has all four kinds uploaded, so it was covered by unit tests only. It will appear on its own the first week a kind is skipped.
+- **Observed, out of scope:** the older "Waiver-wire upgrades" card on team pages still suggests kickers whose game already started (it does not use started teams). Roster Gaps correctly excludes them.
+- **Not committed or pushed.** Waiting for Chino's local confirmation per the Definition of Done.
+
 ### File List
+
+- src/lib/slot-gaps.ts (DEF pool, candidates, pool sizes, stale handling)
+- src/lib/weekly-freshness.ts (new)
+- src/lib/weekly-rankings.ts (`getWeeklyKindStatus`)
+- src/lib/team-slot-gaps.ts (DEF candidates, freshness, normalization)
+- src/components/RosterGapsCard.tsx
+- src/app/league/[leagueId]/team/[rosterId]/page.tsx (Sleeper id normalization, notices)
+- src/app/fleaflicker/[leagueId]/team/[teamId]/page.tsx (notices)
+- src/app/db-league/[platform]/[leagueId]/team/[rosterId]/page.tsx (notices)
+- src/__tests__/lib/slot-gaps.test.ts
+- src/__tests__/lib/weekly-kind-status.test.ts (new)
+- src/__tests__/lib/defense-identity.test.ts (new)
+- CHANGELOG.md
+- README.md
+- _bmad-output/implementation-artifacts/sprint-status.yaml
+
+### Change Log
+
+- 2026-11-25: Implemented Story 3.2 (DEF in Roster Gaps, pool sizes, unranked wording, upload-freshness notices, Sleeper defense identity fix, agreement tests). Status to review.

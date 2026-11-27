@@ -18,10 +18,13 @@
 import { db } from '@/db';
 import { players, playerValues, weeklyRankings } from '@/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import { getLatestWeek, getWeeklyKickerRankings, getWeeklyRanks } from './weekly-rankings';
+import { getLatestWeek, getWeeklyKickerRankings, getWeeklyDstRankings, getWeeklyKindStatus, getWeeklyRanks } from './weekly-rankings';
 import { toPortfolioPlayer, type UpgradeSourcePlayer } from './team-waiver-upgrades';
 import { findWaiverUpgrades } from './waiver-upgrades';
-import { computeSlotGaps, dedupeById, type SlotGap } from './slot-gaps';
+import { computeSlotGaps, dedupeById, defenseCandidates, kickerCandidates, type SlotGap, type WeeklyPool } from './slot-gaps';
+import { kindNotices, type KindNotice } from './weekly-freshness';
+import { buildSlots } from './lineup-optimizer';
+import { normalizeSleeperStarterId } from './sleeper';
 import { blendedKeepValue, KEEP_SCALE, type PortfolioLeagueType, type PortfolioTeam } from './portfolio';
 
 /** Max extra weekly-ranked, unrostered players added beyond the page's FA list. */
@@ -33,6 +36,8 @@ export interface TeamSlotGapsResult {
     week: number | null;
     /** True when any roster/free-agent player carries a weekly rank. */
     hasWeeklyData: boolean;
+    /** Stale / missing K or DEF uploads for kinds this league actually starts. */
+    kindNotices: KindNotice[];
 }
 
 export interface TeamSlotGapsOptions {
@@ -120,29 +125,44 @@ export async function getTeamSlotGaps(
     leagueType: PortfolioLeagueType,
     opts: TeamSlotGapsOptions = {},
 ): Promise<TeamSlotGapsResult> {
-    const empty: TeamSlotGapsResult = { gaps: [], week: null, hasWeeklyData: false };
+    const empty: TeamSlotGapsResult = { gaps: [], week: null, hasWeeklyData: false, kindNotices: [] };
     if (!rosterPositions || rosterPositions.length === 0) return empty;
 
-    const rostered = opts.rosteredInLeague ?? new Set<string>();
-    const startsKicker = rosterPositions.some(t => {
-        const u = (t || '').toUpperCase();
-        return u === 'K' || u === 'PK';
-    });
+    // Normalize defensively: Sleeper returns defenses as bare team abbrs ("SEA") but
+    // we key them DEF_SEA, so a rostered defense must never look available.
+    const rostered = new Set([...(opts.rosteredInLeague ?? new Set<string>())].map(normalizeSleeperStarterId));
+    const slots = buildSlots(rosterPositions);
+    const startsKicker = slots.some(s => s.eligible.size === 1 && s.eligible.has('K'));
+    const startsDefense = slots.some(s => s.eligible.size === 1 && s.eligible.has('DEF'));
 
-    // Candidate sources 2 + 3 are best-effort: a failure just narrows the pool.
-    const kickerFAs: UpgradeSourcePlayer[] = [];
+    // Candidate sources are best-effort: a failure just narrows the pool.
+    // Kickers and defenses have no FantasyCalc value, so the page's value-capped
+    // list never contains them; they come from the uploaded weekly lists.
+    let kickerFAs: UpgradeSourcePlayer[] = [];
     if (startsKicker) {
         try {
-            const kr = await getWeeklyKickerRankings();
-            for (const k of kr.list) {
-                if (!k.sleeper_id || rostered.has(k.sleeper_id)) continue;
-                kickerFAs.push({
-                    sleeper_id: k.sleeper_id, full_name: k.name ?? k.sleeper_id, position: 'K',
-                    team: k.team, fc_value: null,
-                });
-            }
+            kickerFAs = kickerCandidates((await getWeeklyKickerRankings()).list, rostered);
         } catch { /* skip kicker FAs on failure */ }
     }
+    let defenseFAs: UpgradeSourcePlayer[] = [];
+    if (startsDefense) {
+        try {
+            defenseFAs = defenseCandidates((await getWeeklyDstRankings()).list, rostered);
+        } catch { /* skip defense FAs on failure */ }
+    }
+
+    // Upload freshness for the kinds this league starts (stale/missing → explicit notice).
+    let notices: KindNotice[] = [];
+    let staleKinds = new Set<WeeklyPool>();
+    let poolSizes: Partial<Record<WeeklyPool, number>> = {};
+    try {
+        const status = await getWeeklyKindStatus();
+        notices = kindNotices(status, [startsKicker ? 'k' : null, startsDefense ? 'dst' : null].filter(Boolean) as ('k' | 'dst')[]);
+        staleKinds = new Set<WeeklyPool>(notices.map(n => n.kind));
+        for (const k of ['qb', 'flex', 'k', 'dst'] as const) {
+            if (status.kinds[k].state === 'ok' && status.kinds[k].poolSize > 0) poolSizes[k] = status.kinds[k].poolSize;
+        }
+    } catch { /* freshness is advisory: skip on failure */ }
 
     let weekly: UpgradeSourcePlayer[] = [];
     let latestWeek: number | null = null;
@@ -151,7 +171,7 @@ export async function getTeamSlotGaps(
         if (latestWeek != null) weekly = await weeklyRankedCandidates(latestWeek, rostered);
     } catch { /* skip weekly-ranked candidates on failure */ }
 
-    const allFas = dedupeById([...freeAgents, ...kickerFAs, ...weekly])
+    const allFas = dedupeById([...freeAgents, ...kickerFAs, ...defenseFAs, ...weekly])
         .filter(p => !rostered.has(p.sleeper_id));
     const myIds = new Set(myPlayers.map(p => p.sleeper_id));
     const allIds = [...new Set([...myIds, ...allFas.map(p => p.sleeper_id)])];
@@ -198,8 +218,10 @@ export async function getTeamSlotGaps(
         rosterPositions,
         startedTeams: opts.startedTeams,
         upgrades,
+        poolSizes,
+        staleKinds,
     });
 
     const hasWeeklyData = team.players.some(p => p.weeklyRank != null) || fas.some(p => p.weeklyRank != null);
-    return { gaps, week, hasWeeklyData };
+    return { gaps, week, hasWeeklyData, kindNotices: notices };
 }

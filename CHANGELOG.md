@@ -4,6 +4,35 @@ All notable changes to the Volatile Fantasy Football platform.
 
 ## [Unreleased]
 
+### Added - Defense + kicker clarity in Roster Gaps, Sleeper defense fix (2026-11-25)
+
+- **Fixed: your Sleeper defense showed "—" in the Lineup Optimizer.** Sleeper
+  sends a team defense as a bare abbreviation ("NE"); our players table keys it
+  `DEF_NE`, so the Sleeper team page silently dropped it. A rostered defense had no
+  lineup slot, no value, and looked available. Roster and starter ids are now
+  normalized on that page (the same fix the free-agent page and portfolio hub
+  already had). Verified on a real league: the DEF slot now reads "New England
+  Patriots DEF #12". Fleaflicker (22 of 22 defenses matched), Yahoo and MyFFPC
+  were checked and needed no change.
+- **Defenses are now part of Roster Gaps.** A DEF slot compares your defense to the
+  best available defense from the uploaded DST list (threshold 5 spots); a
+  recommendation is a one-for-one swap for your current defense.
+- **Where you sit in the list:** kicker and defense rows show pool size, for example
+  `Wk K #22 of 32 vs #7` and `Wk DEF #9 of 24 vs #6`.
+- **Unranked K/DEF** (not in this week's list) opens with "Your kicker isn't in this
+  week's ranking" instead of passing as fine.
+- **Upload freshness.** If the kicker or defense ranking for the current week is
+  missing (or only an earlier week was uploaded), the card says so
+  ("No Week 12 kicker ranking uploaded. Last upload: Week 11.", with an Admin link)
+  and those rows read "no current ranking" instead of "no action". The all-clear
+  line then only claims the starters it could compare.
+- Rostered defenses are excluded on every platform; kickers and defenses whose game
+  already started are excluded from "best available" and shown as locked.
+- Logic: `slot-gaps.ts` (DEF pool, `defenseCandidates`, `kickerCandidates`, pool
+  sizes, stale handling), new pure `weekly-freshness.ts`, `getWeeklyKindStatus()`.
+  32 tests added, including a check that Roster Gaps and the Action Center streaming
+  items pick the same best defense/kicker with the same ranks.
+
 ### Fixed - Lineup Optimizer ignored games already played (2026-11-25)
 
 - **The team-page Lineup Optimizer no longer suggests benching (or starting)

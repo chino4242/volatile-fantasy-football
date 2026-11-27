@@ -12,9 +12,11 @@
  */
 import type { SlotGap, HorizonGap, SlotMove, WeeklyPool } from '@/lib/slot-gaps';
 import { gapSummary } from '@/lib/slot-gaps';
+import type { KindNotice } from '@/lib/weekly-freshness';
 import type { PortfolioPlayer } from '@/lib/portfolio';
 
-const POOL_LABEL: Record<WeeklyPool, string> = { qb: 'QB', flex: 'Flex', k: 'K' };
+const POOL_LABEL: Record<WeeklyPool, string> = { qb: 'QB', flex: 'Flex', k: 'K', dst: 'DEF' };
+const POOL_WORD: Partial<Record<WeeklyPool, string>> = { k: 'kicker', dst: 'defense' };
 
 function who(p: PortfolioPlayer): string {
     return `${p.full_name}${p.position ? ` (${p.position}${p.team ? ` · ${p.team}` : ''})` : ''}`;
@@ -23,12 +25,16 @@ function who(p: PortfolioPlayer): string {
 /** "Flex #14 vs #6" / "ROS #22 vs #9" — null when the horizon has nothing to show. */
 function horizonText(h: HorizonGap, label: string): string | null {
     if (h.locked) return 'locked (game started)';
+    if (h.noRanking) return "can't compare, no current ranking";
     if (h.status === 'unavailable') return null;
-    const mine = h.myRank != null ? `#${h.myRank}` : 'unranked';
+    // Kickers and defenses show where they sit in the full list: "#5 of 32".
+    const size = h.poolSize != null && (h.pool === 'k' || h.pool === 'dst') ? ` of ${h.poolSize}` : '';
+    const mine = h.myRank != null ? `#${h.myRank}${size}` : 'unranked';
     return h.best ? `${label} ${mine} vs #${h.best.rank}` : `${label} ${mine}`;
 }
 
 function statusText(g: SlotGap): string {
+    if (g.weekly.noRanking) return 'no current ranking';
     switch (g.status) {
         case 'none': return 'no action';
         case 'minor': return 'close';
@@ -91,6 +97,11 @@ function SlotRow({ g, deepLink, linkLabel }: { g: SlotGap; deepLink?: string | n
             </summary>
 
             <div className="pl-[4.5rem] pt-1.5 space-y-1">
+                {g.weekly.status === 'unranked-mine' && g.weekly.pool && POOL_WORD[g.weekly.pool] && (
+                    <div className="text-xs text-amber-600 dark:text-amber-400">
+                        Your {POOL_WORD[g.weekly.pool]} isn&apos;t in this week&apos;s ranking.
+                    </div>
+                )}
                 {g.weekly.best && (
                     <div className="text-xs text-zinc-500">
                         Best available this week: {who(g.weekly.best.player)} · {POOL_LABEL[g.weekly.pool ?? 'flex']} #{g.weekly.best.rank}
@@ -105,7 +116,7 @@ function SlotRow({ g, deepLink, linkLabel }: { g: SlotGap; deepLink?: string | n
                 {g.ros.best && sameBest && g.ros.best.player.rosPpg != null && (
                     <div className="text-xs text-zinc-500">ROS #{g.ros.best.rank} · {g.ros.best.player.rosPpg.toFixed(1)} PPG</div>
                 )}
-                {!g.weekly.best && !g.ros.best && g.status !== 'unavailable' && (
+                {!g.weekly.best && !g.ros.best && g.status !== 'unavailable' && !g.weekly.noRanking && (
                     <div className="text-xs text-zinc-400">No ranked free agents.</div>
                 )}
                 {g.move && <MoveLine move={g.move} />}
@@ -128,12 +139,15 @@ export function RosterGapsCard({
     gaps,
     week,
     hasWeeklyData,
+    notices,
     deepLink,
     linkLabel,
 }: {
     gaps: SlotGap[];
     week: number | null;
     hasWeeklyData: boolean;
+    /** Stale / missing K or DEF uploads for kinds this league starts. */
+    notices?: KindNotice[];
     deepLink?: string | null;
     linkLabel?: string;
 }) {
@@ -161,9 +175,18 @@ export function RosterGapsCard({
                 </p>
             )}
 
+            {(notices ?? []).map(n => (
+                <p key={n.kind} className="text-xs text-zinc-500 mb-2">
+                    {n.message}{' '}
+                    <a href="/admin" className="text-indigo-600 dark:text-indigo-400 hover:underline">Upload in Admin</a>
+                </p>
+            ))}
+
             {allClear && (
                 <p className="text-sm text-green-600 dark:text-green-400 mb-2">
-                    No better free agents for your starters.
+                    {(notices ?? []).length > 0
+                        ? 'No better free agents for the starters we could compare.'
+                        : 'No better free agents for your starters.'}
                 </p>
             )}
 

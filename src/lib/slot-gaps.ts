@@ -16,14 +16,23 @@
  * Recommended moves are attached only where a gap is worth acting on, reusing the
  * guarded-drop result of `findWaiverUpgrades` (this module invents no drop math).
  *
- * DEF-only slots are intentionally skipped here (Story 3.2).
+ * Kickers (k pool) and defenses (dst pool) are first-class here: they have no ROS
+ * horizon, show their pool size ("#5 of 32"), and a stale/missing weekly upload is
+ * reported as `noRanking` instead of silently reading as "no action".
  */
 
 import { buildSlots, optimizeLineup, type LineupSlot } from './lineup-optimizer';
 import { poolOf, toOptimizer, type DropTier, type WaiverUpgrade } from './waiver-upgrades';
+import { normalizeSleeperStarterId } from './sleeper';
 import type { PortfolioPlayer } from './portfolio';
 
-export type WeeklyPool = 'qb' | 'flex' | 'k';
+export type WeeklyPool = 'qb' | 'flex' | 'k' | 'dst';
+
+/** Weekly rank pool for a position. Extends the waiver engine's pools with DEF. */
+function weeklyPoolOf(position: string | null | undefined): WeeklyPool | null {
+    if (position === 'DEF' || position === 'DST') return 'dst';
+    return poolOf(position);
+}
 
 export type GapStatus = 'none' | 'minor' | 'actionable' | 'unranked-mine' | 'unavailable';
 
@@ -33,11 +42,13 @@ export type GapStatus = 'none' | 'minor' | 'actionable' | 'unranked-mine' | 'una
  * to be tuned against real weeks — change them here only.
  *
  * Note: these control what the Roster Gaps card HIGHLIGHTS. They are intentionally
- * separate from the Action Center's alerting rules (e.g. its 3-spot K/DEF stream
- * trigger) and must not be wired to them.
+ * separate from the Action Center's alerting rules (its K/DEF stream items fire at
+ * a 3-spot improvement, this card highlights at more than 5) and must not be wired
+ * to them. The two features can legitimately disagree on whether to ACT; they agree
+ * on WHO the best available defense/kicker is and on the ranks.
  */
 export const GAP_THRESHOLDS = {
-    weekly: { qb: 4, flex: 8, k: 5 } as Record<WeeklyPool, number>,
+    weekly: { qb: 4, flex: 8, k: 5, dst: 5 } as Record<WeeklyPool, number>,
     ros: { QB: 4, RB: 6, WR: 6, TE: 4 } as Record<string, number>,
 } as const;
 
@@ -60,6 +71,11 @@ export interface HorizonGap {
     pool?: WeeklyPool;
     /** Weekly horizon only: my player's game has started, nothing can change. */
     locked?: boolean;
+    /** Weekly horizon only: ranked rows in this pool's list this week ("#5 of 32"). */
+    poolSize?: number;
+    /** Weekly horizon only: this pool has no current-week upload (stale/missing), so
+     *  no comparison can be made. Must never be shown as "no action". */
+    noRanking?: boolean;
 }
 
 export interface SlotMove {
@@ -72,7 +88,7 @@ export interface SlotMove {
     informational: boolean;
     weeklyRankGain: number | null;
     /** Where the recommendation came from. */
-    source: 'weekly-upgrade' | 'ros-only';
+    source: 'weekly-upgrade' | 'ros-only' | 'stream';
     note: string | null;
 }
 
@@ -96,6 +112,10 @@ export interface SlotGapInput {
     startedTeams?: Set<string>;
     /** Output of findWaiverUpgrades for this team (used to attach guarded moves). */
     upgrades?: WaiverUpgrade[];
+    /** Ranked rows per weekly pool this week (for "#5 of 32"). */
+    poolSizes?: Partial<Record<WeeklyPool, number>>;
+    /** Pools whose weekly upload is stale or missing: reported as `noRanking`. */
+    staleKinds?: ReadonlySet<WeeklyPool>;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -131,10 +151,6 @@ function classify(gap: number, threshold: number): GapStatus {
 
 const UNAVAILABLE: HorizonGap = { status: 'unavailable', myRank: null, best: null, gap: null, threshold: null };
 
-function isDefOnly(slot: LineupSlot): boolean {
-    return slot.eligible.size === 1 && slot.eligible.has('DEF');
-}
-
 // ── core ─────────────────────────────────────────────────────────────────────
 
 export function computeSlotGaps(input: SlotGapInput): SlotGap[] {
@@ -158,11 +174,11 @@ export function computeSlotGaps(input: SlotGapInput): SlotGap[] {
 
     const gaps: SlotGap[] = [];
     slots.forEach((slot, i) => {
-        if (isDefOnly(slot)) return; // Story 3.2
         const optPlayer = assigned[i]?.player ?? null;
         const mine = optPlayer ? byId.get(optPlayer.sleeper_id) ?? null : null;
 
-        const weekly = weeklyHorizon(slot, mine, freeAgents, hasStarted);
+        const weekly = weeklyHorizon(slot, mine, freeAgents, hasStarted, input.staleKinds);
+        if (weekly.pool && input.poolSizes?.[weekly.pool] != null) weekly.poolSize = input.poolSizes[weekly.pool];
         const ros = rosHorizon(slot, mine, freeAgents);
         gaps.push({
             slot: slot.slot,
@@ -186,29 +202,39 @@ function weeklyHorizon(
     mine: PortfolioPlayer | null,
     freeAgents: PortfolioPlayer[],
     hasStarted: (p: PortfolioPlayer) => boolean,
+    staleKinds?: ReadonlySet<WeeklyPool>,
 ): HorizonGap {
-    if (mine && hasStarted(mine)) {
-        return { ...UNAVAILABLE, myRank: mine.weeklyRank ?? null, locked: true, pool: poolOf(mine.position) ?? undefined };
-    }
-
     const eligibleFas = freeAgents.filter(fa =>
         slot.eligible.has(fa.position as string) &&
         fa.weeklyRank != null &&
-        poolOf(fa.position) != null &&
+        weeklyPoolOf(fa.position) != null &&
         !hasStarted(fa),
     );
 
-    // Pool: my player's pool; for an empty slot, the pool of the best-ranked
-    // eligible free agent (the optimizer also compares raw ranks across pools).
-    let pool: WeeklyPool | null = mine ? poolOf(mine.position) : null;
+    // Pool: my player's pool. For an empty slot: the slot's single position pool
+    // when it has one (K, DEF), else the pool of the best-ranked eligible free agent
+    // (the optimizer also compares raw ranks across pools).
+    let pool: WeeklyPool | null = mine ? weeklyPoolOf(mine.position) : null;
     if (!mine) {
-        const top = [...eligibleFas].sort((a, b) => (a.weeklyRank as number) - (b.weeklyRank as number))[0];
-        pool = top ? poolOf(top.position) : null;
+        if (slot.eligible.size === 1) {
+            pool = weeklyPoolOf([...slot.eligible][0] as string);
+        } else {
+            const top = [...eligibleFas].sort((a, b) => (a.weeklyRank as number) - (b.weeklyRank as number))[0];
+            pool = top ? weeklyPoolOf(top.position) : null;
+        }
+    }
+
+    if (mine && hasStarted(mine)) {
+        return { ...UNAVAILABLE, myRank: mine.weeklyRank ?? null, locked: true, pool: pool ?? undefined };
     }
     if (!pool) return { ...UNAVAILABLE, myRank: mine?.weeklyRank ?? null };
+    // No current-week upload for this pool: we cannot compare, and must say so.
+    if (staleKinds?.has(pool)) {
+        return { ...UNAVAILABLE, myRank: mine?.weeklyRank ?? null, pool, noRanking: true };
+    }
 
     const threshold = GAP_THRESHOLDS.weekly[pool];
-    const candidates = eligibleFas.filter(fa => poolOf(fa.position) === pool);
+    const candidates = eligibleFas.filter(fa => weeklyPoolOf(fa.position) === pool);
     const bestFa = [...candidates].sort((a, b) => (a.weeklyRank as number) - (b.weeklyRank as number))[0] ?? null;
     const best: RankedPlayer | null = bestFa ? { player: bestFa, rank: bestFa.weeklyRank as number } : null;
     const myRank = mine?.weeklyRank ?? null;
@@ -286,6 +312,23 @@ function attachMoves(gaps: SlotGap[], upgrades: WaiverUpgrade[]): void {
         const wk = g.weekly;
         const weeklyWorthIt = wk.status === 'actionable' || wk.status === 'unranked-mine';
 
+        // Defenses have no waiver-engine result: a stream is a one-for-one swap that
+        // replaces my current defense (keeps the lineup legal, never drops anyone else).
+        if (weeklyWorthIt && wk.best && wk.pool === 'dst' && !used.has(wk.best.player.sleeper_id)) {
+            used.add(wk.best.player.sleeper_id);
+            g.move = {
+                add: wk.best.player,
+                drop: g.myPlayer,
+                type: g.myPlayer ? 'swap' : 'add',
+                tier: 'safe',
+                informational: false,
+                weeklyRankGain: g.weekly.gap,
+                source: 'stream',
+                note: null,
+            };
+            continue;
+        }
+
         if (weeklyWorthIt && wk.best && !used.has(wk.best.player.sleeper_id)) {
             const u = upgradeByAddId.get(wk.best.player.sleeper_id);
             if (u) {
@@ -322,6 +365,56 @@ function attachMoves(gaps: SlotGap[], upgrades: WaiverUpgrade[]): void {
             };
         }
     }
+}
+
+// ── candidates (pure) ────────────────────────────────────────────────────────
+
+/** A row from an uploaded weekly K / DST ranking list. */
+export interface RankedListRow {
+    sleeper_id: string;
+    rank?: number | null;
+    name?: string | null;
+    team?: string | null;
+}
+
+export interface CandidatePlayer {
+    sleeper_id: string;
+    full_name: string;
+    position: 'DEF' | 'K';
+    team: string | null;
+    fc_value: null;
+}
+
+/**
+ * Unrostered defenses from the uploaded DST list. Rostered ids are normalized first
+ * (Sleeper returns a bare team abbr like "SEA"; we key defenses as DEF_SEA), so a
+ * rostered defense can never look available regardless of which platform it came from.
+ */
+export function defenseCandidates(list: RankedListRow[], rostered: ReadonlySet<string>): CandidatePlayer[] {
+    const taken = new Set([...rostered].map(normalizeSleeperStarterId));
+    const out: CandidatePlayer[] = [];
+    for (const r of list) {
+        if (!r.sleeper_id || taken.has(r.sleeper_id)) continue;
+        const abbr = r.sleeper_id.match(/^DEF_([A-Z]{2,4})$/)?.[1] ?? null;
+        out.push({
+            sleeper_id: r.sleeper_id,
+            full_name: r.name ?? r.sleeper_id,
+            position: 'DEF',
+            team: r.team ?? abbr,
+            fc_value: null,
+        });
+    }
+    return out;
+}
+
+/** Unrostered kickers from the uploaded K list. */
+export function kickerCandidates(list: RankedListRow[], rostered: ReadonlySet<string>): CandidatePlayer[] {
+    const out: CandidatePlayer[] = [];
+    for (const r of list) {
+        if (!r.sleeper_id || rostered.has(r.sleeper_id)) continue;
+        out.push({ sleeper_id: r.sleeper_id, full_name: r.name ?? r.sleeper_id, position: 'K', team: r.team ?? null, fc_value: null });
+    }
+    return out;
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

@@ -509,6 +509,7 @@ export default async function FleaflickerTeamPage({
                             gaps={slotGaps.gaps}
                             week={slotGaps.week}
                             hasWeeklyData={slotGaps.hasWeeklyData}
+                            notices={slotGaps.kindNotices}
                             deepLink={deepLinkFor('fleaflicker', leagueId, teamId)}
                             linkLabel="Fleaflicker"
                         />

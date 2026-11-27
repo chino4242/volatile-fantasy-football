@@ -175,6 +175,7 @@ export default async function DbTeamPage({ params }: PageProps) {
                             gaps={slotGaps.gaps}
                             week={slotGaps.week}
                             hasWeeklyData={slotGaps.hasWeeklyData}
+                            notices={slotGaps.kindNotices}
                             deepLink={deepLinkFor(platform as "yahoo" | "myffpc", leagueId, String(numericId))}
                             linkLabel={label}
                         />
