@@ -197,7 +197,7 @@ export function rankForPosition(
 
 // ── Glue: build optimizer input from a roster + weekly ranks, run the engine ──
 
-import { buildSlots, optimizeAndDiff, type OptimizerPlayer, type OptimizerResult } from './lineup-optimizer';
+import { buildSlots, optimizeAndDiff, isGameStarted, type OptimizerPlayer, type OptimizerResult } from './lineup-optimizer';
 
 /** Minimal roster-player shape the optimizer glue needs (any platform can map to this). */
 export interface RosterPlayerLite {
@@ -205,6 +205,8 @@ export interface RosterPlayerLite {
     full_name: string;
     position: string | null;
     is_starter: boolean;
+    /** NFL team abbr. Needed to lock players whose game has already started. */
+    team?: string | null;
 }
 
 export interface TeamOptimization extends OptimizerResult {
@@ -221,6 +223,12 @@ export async function optimizeTeam(
     roster: RosterPlayerLite[],
     rosterPositions: string[] | null | undefined,
     week?: number,
+    opts: {
+        /** NFL team abbrs whose game has kicked off. Their players are locked: a
+         *  played starter is never benched and a played bench player is never
+         *  started (their points are already locked in). Omitted = no locking. */
+        startedTeams?: Set<string>;
+    } = {},
 ): Promise<TeamOptimization> {
     const slots = buildSlots(rosterPositions);
     const ids = roster.map(r => r.sleeper_id);
@@ -236,6 +244,7 @@ export async function optimizeTeam(
             total: info.total,
             posMatchup: info.posMatchup,
             isStarter: r.is_starter,
+            locked: isGameStarted(r.team, opts.startedTeams),
         };
     });
 

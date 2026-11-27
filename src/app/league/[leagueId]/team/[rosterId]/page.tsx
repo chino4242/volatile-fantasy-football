@@ -423,11 +423,14 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
     // Lineup optimizer (latest uploaded week). Roster players only (exclude PICKs);
     // starters from the Sleeper roster.starters list.
     const starterSet = new Set(roster.starters || []);
+    const startedTeams = await getStartedTeams(); // games already kicked off → players are locked
     const lineupOpt = await optimizeTeam(
         enrichedPlayers
             .filter((p: any) => p.position !== 'PICK')
-            .map((p: any) => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, is_starter: starterSet.has(p.sleeper_id) })),
+            .map((p: any) => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, is_starter: starterSet.has(p.sleeper_id) })),
         sleeperRosterPositions,
+        undefined,
+        { startedTeams },
     );
 
     // Waiver-wire upgrades this week (available players who beat one of mine).
@@ -442,7 +445,6 @@ export default async function TeamPage({ params, searchParams }: PageProps & { s
     );
 
     // Roster Gaps: my player vs best available at each starting slot (weekly + ROS).
-    const startedTeams = await getStartedTeams();
     const slotGaps = await getTeamSlotGaps(
         myPlayersForTxn.map((p: any) => ({ ...p, is_starter: starterSet.has(p.sleeper_id) })),
         freeAgentsForTxn,

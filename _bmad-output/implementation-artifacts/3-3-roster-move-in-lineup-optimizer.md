@@ -20,6 +20,8 @@ Shows **at most one** move. A ranked list would add the noise this epic is meant
 
 Epic: `_bmad-output/implementation-artifacts/epic-3-roster-gap-visibility.md`
 
+> **Update 2026-11-25:** the lock-awareness part of AC 6 (`optimizeTeam` takes `startedTeams`, `RosterPlayerLite.team`, `isGameStarted`, three pages pass them, `🔒 locked` marker in the card) was delivered early as a bug fix, outside this story. Do not redo it. This story still owns the roster-move logic and the move-suppression rules in AC 6.
+
 ## Acceptance Criteria
 
 1. **Pure builder.** `src/lib/roster-move.ts` exports `buildRosterMove({ roster, slots, gaps, upgrades, startedTeams }): RosterMove | null` with no I/O.

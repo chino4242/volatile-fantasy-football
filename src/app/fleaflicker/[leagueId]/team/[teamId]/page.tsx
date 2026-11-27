@@ -105,10 +105,11 @@ export default async function FleaflickerTeamPage({
         .map(p => {
             const dbP = nameToPlayerMap.get(normalizeName(p.full_name));
             if (!dbP) return null;
-            return { sleeper_id: dbP.sleeper_id, full_name: p.full_name, position: dbP.position, is_starter: p.id ? starterProIds.has(String(p.id)) : false };
+            return { sleeper_id: dbP.sleeper_id, full_name: p.full_name, position: dbP.position, team: dbP.team, is_starter: p.id ? starterProIds.has(String(p.id)) : false };
         })
-        .filter((p): p is { sleeper_id: string; full_name: string; position: string | null; is_starter: boolean } => p !== null);
-    const lineupOpt = await optimizeTeam(optimizerRoster, ffLineup?.rosterPositions ?? null, optWeek ?? undefined);
+        .filter((p): p is { sleeper_id: string; full_name: string; position: string | null; team: string | null; is_starter: boolean } => p !== null);
+    const startedTeamsFF = await getStartedTeams(); // games already kicked off → players are locked
+    const lineupOpt = await optimizeTeam(optimizerRoster, ffLineup?.rosterPositions ?? null, optWeek ?? undefined, { startedTeams: startedTeamsFF });
 
     // Transform players to TeamRosterTable format
     const playersWithData = roster.players
@@ -432,7 +433,6 @@ export default async function FleaflickerTeamPage({
 
     // Roster Gaps: my player vs best available at each starting slot (weekly + ROS).
     const starterIdsFF = new Set(optimizerRoster.filter(p => p.is_starter).map(p => p.sleeper_id));
-    const startedTeamsFF = await getStartedTeams();
     const slotGaps = await getTeamSlotGaps(
         myPlayersForTxn.map(p => ({ ...p, is_starter: starterIdsFF.has(p.sleeper_id) })),
         freeAgentsForTxn,

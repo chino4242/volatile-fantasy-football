@@ -120,6 +120,15 @@ export function slotEligibility(token: string): Set<Position> | null {
     }
 }
 
+/**
+ * Has this player's NFL game already kicked off? `startedTeams` is the set of NFL
+ * team abbrs (our DB convention) from ESPN's scoreboard. Fails open: no set, no
+ * team, or an empty set all mean "not started".
+ */
+export function isGameStarted(team: string | null | undefined, startedTeams?: Set<string>): boolean {
+    return !!(startedTeams && startedTeams.size > 0 && team && startedTeams.has(team.toUpperCase()));
+}
+
 /** Build the ordered starting-slot list from a roster_positions array. */
 export function buildSlots(rosterPositions: string[] | null | undefined): LineupSlot[] {
     if (!rosterPositions) return [];

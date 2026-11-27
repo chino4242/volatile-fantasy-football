@@ -73,9 +73,12 @@ export default async function DbTeamPage({ params }: PageProps) {
     const rankingsVintage = formatVintage(await getRankingsVintage(format));
 
     // Lineup optimizer (latest uploaded week).
+    const startedTeams = await getStartedTeams(); // games already kicked off → players are locked
     const lineupOpt = await optimizeTeam(
-        myPlayers.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, is_starter: p.is_starter })),
+        myPlayers.map(p => ({ sleeper_id: p.sleeper_id, full_name: p.full_name, position: p.position, team: p.team, is_starter: p.is_starter })),
         data.rosterPositions,
+        undefined,
+        { startedTeams },
     );
 
     // Value-based waiver recommendations (adds WITH a guarded drop), ROS-driven —
@@ -110,7 +113,7 @@ export default async function DbTeamPage({ params }: PageProps) {
         leagueTypeVal,
         {
             coreCapacity: rosterConfig?.coreCapacity,
-            startedTeams: await getStartedTeams(),
+            startedTeams,
             rosteredInLeague: new Set(allLeaguePlayers.map(p => p.sleeper_id)),
         },
     );

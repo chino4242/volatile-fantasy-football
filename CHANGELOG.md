@@ -4,6 +4,23 @@ All notable changes to the Volatile Fantasy Football platform.
 
 ## [Unreleased]
 
+### Fixed - Lineup Optimizer ignored games already played (2026-11-25)
+
+- **The team-page Lineup Optimizer no longer suggests benching (or starting)
+  players whose NFL game has already kicked off.** It was recommending moves like
+  "bench Jared Goff" or "bench Colston Loveland" after they had already played,
+  which can't be done. Played starters now keep their slot, played bench players
+  are never suggested as starters, and the optimizer only reshuffles players whose
+  games are still ahead.
+- Locked players show a `🔒 locked` marker in the optimal lineup and bench so it's
+  clear why they stay put.
+- Applies to Sleeper, Fleaflicker, Yahoo and MyFFPC team pages. Same lock logic the
+  portfolio hub already used. Fails open: if the scoreboard can't be reached,
+  nothing is locked (previous behavior).
+- `optimizeTeam` takes an optional `startedTeams` (backward compatible); new
+  `isGameStarted()` helper in `lineup-optimizer.ts`. 6 tests added, including the
+  Goff / Loveland / Johnson / Williams scenario.
+
 ### Changed - Rankings uploads replace the old ranking (2026-11-25)
 
 - **A VFF rankings upload (1QB, SF, Redraft, ROS) now replaces the previous

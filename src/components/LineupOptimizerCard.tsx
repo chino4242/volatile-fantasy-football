@@ -77,6 +77,7 @@ export function LineupOptimizerCard({ opt }: { opt: TeamOptimization }) {
                             <span className="flex-1 truncate text-zinc-800 dark:text-zinc-200">
                                 {a.player ? a.player.full_name : <span className="text-zinc-400">—</span>}
                             </span>
+                            {a.player?.locked && <span className="text-[10px] text-zinc-400 flex-shrink-0" title="Game already started: this player can't be moved this week">🔒 locked</span>}
                             {a.player?.rank != null && <span className="text-xs text-zinc-400 flex-shrink-0">#{a.player.rank}</span>}
                         </div>
                     ))}
@@ -104,6 +105,7 @@ export function LineupOptimizerCard({ opt }: { opt: TeamOptimization }) {
                                     <span className="text-[10px] font-semibold uppercase text-zinc-400 w-10 flex-shrink-0">{b.player.position ?? '—'}</span>
                                     <span className="truncate text-zinc-700 dark:text-zinc-300">{b.player.full_name}</span>
                                     {b.player.rank != null && <span className="text-xs text-zinc-400 flex-shrink-0">#{b.player.rank}</span>}
+                                    {b.player.locked && <span className="text-[10px] text-zinc-400 flex-shrink-0" title="Game already started: this player can't be moved this week">🔒 locked</span>}
                                 </span>
                                 {b.isCloseCall && b.gapToStart != null ? (
                                     <span

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSlots, optimizeLineup, optimizeAndDiff, slotEligibility, type OptimizerPlayer } from '@/lib/lineup-optimizer';
+import { buildSlots, optimizeLineup, optimizeAndDiff, slotEligibility, isGameStarted, type OptimizerPlayer } from '@/lib/lineup-optimizer';
 
 const P = (id: string, name: string, pos: string, rank: number | null, isStarter = false, total: number | null = null, posMatchup: number | null = null): OptimizerPlayer =>
     ({ sleeper_id: id, full_name: name, position: pos, rank, total, posMatchup, isStarter });
@@ -185,5 +185,71 @@ describe('optimizeAndDiff — locked (already-played) players', () => {
         // The locked starter is untouched.
         const ids = d.optimal.map(a => a.player?.sleeper_id);
         expect(ids).toContain('locked_start');
+    });
+});
+
+describe('isGameStarted', () => {
+    it('is true only when the player team is in the started set (case-insensitive)', () => {
+        const started = new Set(['DET', 'GB']);
+        expect(isGameStarted('DET', started)).toBe(true);
+        expect(isGameStarted('det', started)).toBe(true);
+        expect(isGameStarted('SF', started)).toBe(false);
+    });
+
+    it('fails open: no started set, empty set, or no team means not started', () => {
+        expect(isGameStarted('DET', undefined)).toBe(false);
+        expect(isGameStarted('DET', new Set())).toBe(false);
+        expect(isGameStarted(null, new Set(['DET']))).toBe(false);
+        expect(isGameStarted(undefined, new Set(['DET']))).toBe(false);
+    });
+});
+
+describe('team-page lineup with started games (Thanksgiving-style week)', () => {
+    // Slots: QB, 2 RB, 2 WR, TE, FLEX. Games that already kicked off: DET, GB, DAL.
+    const slots = buildSlots(['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'BN']);
+    const started = new Set(['DET', 'GB', 'DAL']);
+    const mk = (id: string, name: string, pos: string, team: string, rank: number, isStarter: boolean): OptimizerPlayer =>
+        ({ ...P(id, name, pos, rank, isStarter), locked: isGameStarted(team, started) });
+
+    const roster = [
+        mk('goff', 'Jared Goff', 'QB', 'DET', 20, true),       // played, started
+        mk('purdy', 'Brock Purdy', 'QB', 'SF', 5, false),      // would be "better", but Goff already played
+        mk('rb1', 'RB One', 'RB', 'MIA', 3, true),
+        mk('rb2', 'Emmett Johnson', 'RB', 'GB', 30, true),     // played, started
+        mk('rb3', 'Ashton Jeanty', 'RB', 'LV', 19, false),
+        mk('wr1', 'WR One', 'WR', 'MIA', 2, true),
+        mk('wr2', 'WR Two', 'WR', 'SEA', 10, true),
+        mk('te1', 'Colston Loveland', 'TE', 'DAL', 50, true),  // played, started
+        mk('te2', 'George Kittle', 'TE', 'SF', 34, false),
+        mk('wr3', 'Javonte Williams', 'RB', 'DAL', 60, true),  // FLEX, played, started
+        mk('wr4', 'Emeka Egbuka', 'WR', 'TB', 55, false),
+    ];
+
+    it('never suggests benching a player whose game has already been played', () => {
+        const d = optimizeAndDiff(roster, slots);
+        const benched = d.swaps.map(s => s.benchPlayer?.sleeper_id);
+        for (const id of ['goff', 'rb2', 'te1', 'wr3']) expect(benched).not.toContain(id);
+    });
+
+    it('never suggests starting a locked bench player', () => {
+        const withLockedBench = [...roster, mk('qb_locked', 'Locked QB', 'QB', 'GB', 1, false)];
+        const d = optimizeAndDiff(withLockedBench, slots);
+        expect(d.swaps.map(s => s.startPlayer.sleeper_id)).not.toContain('qb_locked');
+    });
+
+    it('still suggests swaps among players whose games have NOT started', () => {
+        // Same roster but nobody locked: Purdy should replace Goff, Kittle should replace Loveland.
+        const unlocked = roster.map(p => ({ ...p, locked: false }));
+        const d = optimizeAndDiff(unlocked, slots);
+        const starts = d.swaps.map(s => s.startPlayer.sleeper_id);
+        expect(starts).toContain('purdy');
+        expect(starts).toContain('te2');
+    });
+
+    it('with locks applied, those same swaps disappear', () => {
+        const d = optimizeAndDiff(roster, slots);
+        const starts = d.swaps.map(s => s.startPlayer.sleeper_id);
+        expect(starts).not.toContain('purdy'); // QB slot is held by played Goff
+        expect(starts).not.toContain('te2');   // TE slot is held by played Loveland
     });
 });
