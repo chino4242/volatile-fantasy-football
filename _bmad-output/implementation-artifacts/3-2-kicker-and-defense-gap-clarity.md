@@ -4,7 +4,7 @@ baseline_commit: 84618500b25ef5a2581e01620a59681a6f990845
 
 # Story 3.2: Kicker and Defense Gap Clarity
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -72,6 +72,18 @@ Epic: `_bmad-output/implementation-artifacts/epic-3-roster-gap-visibility.md`
 - [x] **Task 6: Verify** (AC: all)
   - [x] `npm run test`, `npx tsc --noEmit`; manual check on a real Sleeper league during an in-season week (the Sleeper defense identity fix is the riskiest part: confirm my defense shows in my lineup and the optimizer).
   - [x] Add a CHANGELOG entry.
+
+### Review Findings
+
+Code review 2026-11-25 (three layers; reviewed `8461850..47dc6b9`).
+
+- [x] [Review][Decision] RESOLVED (option 1, extend to QB and Flex): Should the upload-staleness notice also cover the QB and Flex lists? Today only K and DEF produce a notice. If the flex or qb list is stale or missing, those slots show nothing comparable and no message explains why, because other lists keep `hasWeeklyData` true. Options: (1) extend notices and stale handling to qb and flex for any league that starts those slots (a quiet one-line message, only shown when something is wrong); (2) leave K and DEF only, as specified.
+- [x] [Review][Patch] Kicker team abbreviations: the weekly rankings store Jacksonville as `JAC` (confirmed in the database: 1 kicker, 4 flex, 1 QB row for week 12), but the started-teams set and the players table use `JAX`. A Jacksonville kicker whose game already started is not excluded or locked, in Roster Gaps and in the Action Center's kicker stream (same source). Normalize with `fixTeamAbbr` at the source and defensively in the candidate helpers; make `defenseCandidates` take the team from the id (AC 7) before the row's team. [src/lib/weekly-rankings.ts:getWeeklyKickerRankings, src/lib/slot-gaps.ts:kickerCandidates/defenseCandidates]
+- [x] [Review][Patch] If my kicker or defense is not in this week's list and no ranked free agent exists, the row shows nothing, so the "Your kicker isn't in this week's ranking" line (AC 4) never appears. Show the line whenever my K/DEF has no weekly rank and the list is current, and keep the row quiet (no "worth a move" without something to move to). [src/components/RosterGapsCard.tsx]
+- [x] [Review][Patch] Test gaps: no started-team case in the K agreement test, no alias case (`JAC`) for `kickerCandidates`, and no card-level check for the unranked wording. [src/__tests__/lib/defense-identity.test.ts, slot-gaps.test.ts]
+- [x] [Review][Defer] No automated tests for `getWeeklyKindStatus`'s queries or the page wiring (Fleaflicker name matching was verified live on 22 of 22 rostered defenses). [src/lib/weekly-rankings.ts] — deferred, no database test harness
+
+Dismissed as noise or handled elsewhere (about 18): `getWeeklyKindStatus` shape differs from the spec text (intentional, split into a pure module); a failed freshness query (the rows then read "unavailable", not "no action"); rows with null ranks (never occurs); alias handling for rostered ids (platform ids already match); DEF swap guards (consistent with the Action Center's stream); the `PK`/`DST` token handling; reserve/taxi ids (included in Sleeper's `players` list); card edge cases; the pinned-threshold test; admin link; and similar.
 
 ## Dev Notes
 
@@ -191,7 +203,11 @@ Kiro (bmad-dev-story workflow), model: Auto.
 - CHANGELOG.md
 - README.md
 - _bmad-output/implementation-artifacts/sprint-status.yaml
+- src/lib/weekly-freshness.ts, src/lib/weekly-rankings.ts, src/lib/team-slot-gaps.ts, src/lib/slot-gaps.ts, src/components/RosterGapsCard.tsx (review patches)
+- src/__tests__/components/RosterGapsCard.test.tsx (new, review)
+- src/__tests__/lib/weekly-kind-status.test.ts, src/__tests__/lib/defense-identity.test.ts, src/__tests__/lib/slot-gaps.test.ts (review tests)
 
 ### Change Log
 
 - 2026-11-25: Implemented Story 3.2 (DEF in Roster Gaps, pool sizes, unranked wording, upload-freshness notices, Sleeper defense identity fix, agreement tests). Status to review.
+- 2026-11-25: Code review: decision resolved by Chino, the upload-staleness notice now also covers the QB and Flex lists (AC 6 extended: kinds the league starts are QB, Flex, K, DEF). Patches applied: kicker/defense team abbreviations normalized (JAC to JAX) at the source and in the candidate helpers, defense team taken from the DEF_ id; an unranked K/DEF with no ranked free agent now says "isn't in this week's ranking"; a stale weekly list no longer hides a ROS-driven gap; tests added. Status to done.

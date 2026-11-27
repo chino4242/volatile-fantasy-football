@@ -64,3 +64,27 @@ describe('kindNotices (only for kinds the league starts)', () => {
         expect(kindNotices(both, ['k', 'dst']).map(n => n.kind)).toEqual(['k', 'dst']);
     });
 });
+
+describe('kindNotices for QB and Flex lists', () => {
+    it('names the quarterback list when it is stale', () => {
+        const st = classifyKinds([row('flex', 12, 100), row('qb', 11, 0), row('k', 12, 32), row('dst', 12, 24)], 12);
+        const n = kindNotices(st, ['qb', 'flex']);
+        expect(n.map(x => x.kind)).toEqual(['qb']);
+        expect(n[0].message).toBe('No Week 12 quarterback ranking uploaded. Last upload: Week 11.');
+    });
+
+    it('names the flex list when it is missing', () => {
+        const st = classifyKinds([row('qb', 12, 24)], 12);
+        const n = kindNotices(st, ['flex']);
+        expect(n[0].kind).toBe('flex');
+        expect(n[0].state).toBe('missing');
+        expect(n[0].message).toBe('No flex (RB/WR/TE) ranking has been uploaded.');
+    });
+
+    it('keeps the order given and stays silent when every started kind is ok', () => {
+        const ok = classifyKinds([row('flex', 12, 100), row('qb', 12, 24), row('k', 12, 32), row('dst', 12, 24)], 12);
+        expect(kindNotices(ok, ['qb', 'flex', 'k', 'dst'])).toEqual([]);
+        const bad = classifyKinds([], null);
+        expect(kindNotices(bad, ['flex', 'qb']).map(x => x.kind)).toEqual(['flex', 'qb']);
+    });
+});

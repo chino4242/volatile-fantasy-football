@@ -4,6 +4,27 @@ All notable changes to the Volatile Fantasy Football platform.
 
 ## [Unreleased]
 
+### Changed - Code review fixes for Roster Gaps and rankings upload (2026-11-25)
+
+- **Upload warnings now cover QB and Flex too.** If the quarterback or flex ranking
+  for the current week is missing or stale, the Roster Gaps card says so (with an
+  Admin link) instead of showing nothing comparable. Only appears when something is
+  wrong.
+- **Fixed: Jacksonville kickers and defenses.** Weekly rankings store the team as
+  `JAC` while the rest of the app uses `JAX`, so a Jacksonville kicker whose game had
+  already started was not excluded or locked. Teams are now normalized when the
+  lists are read, which also fixes the portfolio kicker streaming suggestion.
+- **Roster Gaps can no longer break a team page.** If anything in the card fails it
+  now renders nothing instead of an error page.
+- **More complete moves.** An actionable slot always shows a recommended add (with
+  "Check your bench for a drop" when no drop is known) and a platform link; two
+  recommendations never tell you to drop the same player; your own players are never
+  offered as free agents.
+- **Unranked K/DEF is explained** even when no ranked free agent exists ("Your kicker
+  isn't in this week's ranking").
+- A stale weekly list no longer hides a rest-of-season gap on the same slot.
+- 27 tests added (including the first render tests for the card).
+
 ### Added - Defense + kicker clarity in Roster Gaps, Sleeper defense fix (2026-11-25)
 
 - **Fixed: your Sleeper defense showed "—" in the Lineup Optimizer.** Sleeper

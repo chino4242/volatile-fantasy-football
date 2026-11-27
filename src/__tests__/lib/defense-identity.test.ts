@@ -138,4 +138,28 @@ describe('Roster Gaps agrees with the Action Center DEF / K streaming picks', ()
         expect(k.weekly.best?.rank).toBe((stream!.meta as any).rank);
         expect(k.weekly.myRank).toBe((stream!.meta as any).myRank);
     });
+
+    it('K: both paths skip a kicker whose game already started and agree on the next best', () => {
+        const KR = [
+            { sleeper_id: 'k_started', rank: 1, name: 'Started K', team: 'BUF', tier: 1, score: null, opponent: 'AAA' },
+            { sleeper_id: 'k_next', rank: 4, name: 'Next K', team: 'MIA', tier: 1, score: null, opponent: 'BBB' },
+            { sleeper_id: 'k_mine', rank: 20, name: 'My K', team: 'NYG', tier: 3, score: null, opponent: 'CCC' },
+        ];
+        const started = new Set(['BUF']);
+        const my = team('1', [P({ sleeper_id: 'qb1', position: 'QB', is_starter: true }), P({ sleeper_id: 'k_mine', position: 'K', team: 'NYG', is_starter: true })]);
+        const lg: PortfolioLeague = {
+            platform: 'sleeper', leagueId: 'L1', name: 'T', format: '1qb', leagueType: 'dynasty',
+            teams: [my, team('2', [])], freeAgents: [], rosterPositions: ['QB', 'K', 'BN'], weeklyWeek: 12,
+        };
+        const stream = buildLeagueActions({
+            league: lg, myRosterId: '1', startedTeams: started,
+            kickerRankings: KR.map(k => ({ sleeper_id: k.sleeper_id, rank: k.rank, score: null, opponent: k.opponent, name: k.name, team: k.team })),
+        }).find(i => i.kind === 'stream-k');
+        const rankOf = new Map(KR.map(k => [k.sleeper_id, k.rank]));
+        const fas = kickerCandidates(KR, new Set(['k_mine'])).map(c => P({ ...c, weeklyRank: rankOf.get(c.sleeper_id) ?? null }) as PortfolioPlayer);
+        const roster = my.players.map(p => ({ ...p, weeklyRank: p.position === 'K' ? 20 : null }));
+        const k = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: ['QB', 'K', 'BN'], startedTeams: started }).find(g => g.slot === 'K')!;
+        expect((stream!.meta as any).kickerId).toBe('k_next');
+        expect(k.weekly.best?.player.sleeper_id).toBe('k_next');
+    });
 });

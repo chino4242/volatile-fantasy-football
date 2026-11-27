@@ -22,7 +22,7 @@ import { getLatestWeek, getWeeklyKickerRankings, getWeeklyDstRankings, getWeekly
 import { toPortfolioPlayer, type UpgradeSourcePlayer } from './team-waiver-upgrades';
 import { findWaiverUpgrades } from './waiver-upgrades';
 import { computeSlotGaps, dedupeById, defenseCandidates, kickerCandidates, type SlotGap, type WeeklyPool } from './slot-gaps';
-import { kindNotices, type KindNotice } from './weekly-freshness';
+import { kindNotices, type KindNotice, type WeeklyKind } from './weekly-freshness';
 import { buildSlots } from './lineup-optimizer';
 import { normalizeSleeperStarterId } from './sleeper';
 import { blendedKeepValue, KEEP_SCALE, type PortfolioLeagueType, type PortfolioTeam } from './portfolio';
@@ -118,12 +118,31 @@ async function rosByIds(ids: string[]): Promise<Map<string, RosInfo>> {
     return out;
 }
 
+/**
+ * Advisory card helper: it must NEVER take a team page down. Any failure (database,
+ * optimizer, ranking lookup) logs and returns an empty result, which renders nothing.
+ */
 export async function getTeamSlotGaps(
     myPlayers: UpgradeSourcePlayer[],
     freeAgents: UpgradeSourcePlayer[],
     rosterPositions: string[] | null | undefined,
     leagueType: PortfolioLeagueType,
     opts: TeamSlotGapsOptions = {},
+): Promise<TeamSlotGapsResult> {
+    try {
+        return await computeTeamSlotGaps(myPlayers, freeAgents, rosterPositions, leagueType, opts);
+    } catch (err) {
+        console.error('[roster-gaps] failed, rendering nothing:', err);
+        return { gaps: [], week: null, hasWeeklyData: false, kindNotices: [] };
+    }
+}
+
+async function computeTeamSlotGaps(
+    myPlayers: UpgradeSourcePlayer[],
+    freeAgents: UpgradeSourcePlayer[],
+    rosterPositions: string[] | null | undefined,
+    leagueType: PortfolioLeagueType,
+    opts: TeamSlotGapsOptions,
 ): Promise<TeamSlotGapsResult> {
     const empty: TeamSlotGapsResult = { gaps: [], week: null, hasWeeklyData: false, kindNotices: [] };
     if (!rosterPositions || rosterPositions.length === 0) return empty;
@@ -134,6 +153,8 @@ export async function getTeamSlotGaps(
     const slots = buildSlots(rosterPositions);
     const startsKicker = slots.some(s => s.eligible.size === 1 && s.eligible.has('K'));
     const startsDefense = slots.some(s => s.eligible.size === 1 && s.eligible.has('DEF'));
+    const startsQb = slots.some(s => s.eligible.has('QB'));
+    const startsFlex = slots.some(s => s.eligible.has('RB') || s.eligible.has('WR') || s.eligible.has('TE'));
 
     // Candidate sources are best-effort: a failure just narrows the pool.
     // Kickers and defenses have no FantasyCalc value, so the page's value-capped
@@ -157,7 +178,12 @@ export async function getTeamSlotGaps(
     let poolSizes: Partial<Record<WeeklyPool, number>> = {};
     try {
         const status = await getWeeklyKindStatus();
-        notices = kindNotices(status, [startsKicker ? 'k' : null, startsDefense ? 'dst' : null].filter(Boolean) as ('k' | 'dst')[]);
+        const started: WeeklyKind[] = [];
+        if (startsQb) started.push('qb');
+        if (startsFlex) started.push('flex');
+        if (startsKicker) started.push('k');
+        if (startsDefense) started.push('dst');
+        notices = kindNotices(status, started);
         staleKinds = new Set<WeeklyPool>(notices.map(n => n.kind));
         for (const k of ['qb', 'flex', 'k', 'dst'] as const) {
             if (status.kinds[k].state === 'ok' && status.kinds[k].poolSize > 0) poolSizes[k] = status.kinds[k].poolSize;
@@ -171,9 +197,10 @@ export async function getTeamSlotGaps(
         if (latestWeek != null) weekly = await weeklyRankedCandidates(latestWeek, rostered);
     } catch { /* skip weekly-ranked candidates on failure */ }
 
-    const allFas = dedupeById([...freeAgents, ...kickerFAs, ...defenseFAs, ...weekly])
-        .filter(p => !rostered.has(p.sleeper_id));
     const myIds = new Set(myPlayers.map(p => p.sleeper_id));
+    // Never offer my own players as free agents, even if the league-wide rostered set is incomplete.
+    const allFas = dedupeById([...freeAgents, ...kickerFAs, ...defenseFAs, ...weekly])
+        .filter(p => !rostered.has(p.sleeper_id) && !myIds.has(p.sleeper_id));
     const allIds = [...new Set([...myIds, ...allFas.map(p => p.sleeper_id)])];
 
     // One query each for ROS detail and this week's ranks.

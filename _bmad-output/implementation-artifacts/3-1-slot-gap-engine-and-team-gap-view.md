@@ -4,7 +4,7 @@ baseline_commit: 7840f100a279e14c218fc9c12ca08b1ea1dc7208
 
 # Story 3.1: Slot Gap Engine + Per-Team "Roster Gaps" View
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -92,6 +92,21 @@ Epic: `_bmad-output/implementation-artifacts/epic-3-roster-gap-visibility.md`
 - [x] **Task 6: Verify** (AC: all)
   - [x] `npm run test` and `npx tsc --noEmit` (note: test files currently emit pre-existing `expect`/`it` type errors; do not count those as regressions, and do not try to fix them in this story).
   - [x] Manual check on one league per platform against a known case, for example a kicker whose rank and the best available rank you can read from the Admin upload.
+
+### Review Findings
+
+Code review 2026-11-25 (three layers: Blind Hunter, Edge Case Hunter, Acceptance Auditor; reviewed `7840f10..beeab81`).
+
+- [x] [Review][Patch] A failure in the Roster Gaps helper can take down the whole team page: `getWeeklyRanks` is not guarded like the other best-effort sources, and the three pages `await getTeamSlotGaps(...)` with no catch. Make the helper non-throwing and return an empty result. [src/lib/team-slot-gaps.ts:getTeamSlotGaps]
+- [x] [Review][Patch] Exclude my own players from the free-agent pool defensively, in case `rosteredInLeague` is ever omitted or incomplete. [src/lib/team-slot-gaps.ts:allFas]
+- [x] [Review][Patch] An actionable slot whose best free agent has no matching waiver-upgrade result (the engine caps at 25) shows "worth a move" but no move, and the deep link only appears when a move exists. Fall back to a plain add with "Check your bench for a drop", and show the platform link on every open row. [src/lib/slot-gaps.ts:attachMoves, src/components/RosterGapsCard.tsx]
+- [x] [Review][Patch] Two slots can each recommend dropping the same player. If a drop is already used by an earlier move, show the add without a drop. [src/lib/slot-gaps.ts:attachMoves]
+- [x] [Review][Patch] Test gaps: no test for the `rosRank` tie-break on the ROS horizon, and none for a `caution`-tier swap. [src/__tests__/lib/slot-gaps.test.ts]
+- [x] [Review][Defer] Started-game locking can lock every player if the ESPN scoreboard has not rolled to the new week when the next week's rankings are uploaded (about Tuesday to Wednesday). [src/lib/nfl-live.ts:startedTeamsFromStates] — deferred, pre-existing (same behavior in the portfolio hub and Action Center)
+- [x] [Review][Defer] An empty slot is never actionable on the ROS horizon (the horizon needs my player's position). [src/lib/slot-gaps.ts:rosHorizon] — deferred, negligible (weekly covers empty slots)
+- [x] [Review][Defer] No automated tests for the database-bound helpers (`getTeamSlotGaps`, `weeklyRankedCandidates`, page wiring). [src/lib/team-slot-gaps.ts] — deferred, the repo has no database test harness
+
+Dismissed as noise or handled elsewhere (about 20): the ROS-unranked "quiet" rule differs from the original AC 5 text but was approved by Chino and is recorded in the Change Log; "all clear" wording; the 450-row candidate headroom (the week-12 flex and qb lists total 124 rows); performance and sequential awaits; position case handling; unranked styling; admin link; unchecked `leagueType` cast; widened exports; stale route comment; and similar.
 
 ## Dev Notes
 
@@ -258,8 +273,11 @@ Kiro (bmad-dev-story workflow), model: Auto.
 - CHANGELOG.md
 - README.md
 - _bmad-output/implementation-artifacts/sprint-status.yaml
+- src/__tests__/components/RosterGapsCard.test.tsx (new, review)
+- src/lib/slot-gaps.ts, src/lib/team-slot-gaps.ts, src/components/RosterGapsCard.tsx, src/__tests__/lib/slot-gaps.test.ts (review patches)
 
 ### Change Log
 
 - 2026-11-25: Implemented Story 3.1 (slot gap engine, server helper, Roster Gaps card on all team pages, `getStartedTeams`). Status to review.
 - 2026-11-25: Missing ROS rank is now quiet at the slot level (decided with Chino). `unranked-mine` on the ROS horizon no longer makes a slot "worth a move" or attaches a move; a missing weekly rank still does. The ROS horizon keeps its numbers for display. 2 tests added (suite 254 passing). Refines AC 4/5 and the AC 8 attach rule; the noise tuning note in Completion Notes is resolved.
+- 2026-11-25: Code review patches applied (all four reviewers' findings resolved): Roster Gaps helper can no longer take a team page down (non-throwing); own players excluded from the candidate pool; an actionable slot with no waiver-engine match gets a plain add and every open row shows the platform link; two moves no longer drop the same player; tests added for the ROS tie-break and caution-tier swaps. Status to done.

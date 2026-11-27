@@ -24,6 +24,7 @@
 import { buildSlots, optimizeLineup, type LineupSlot } from './lineup-optimizer';
 import { poolOf, toOptimizer, type DropTier, type WaiverUpgrade } from './waiver-upgrades';
 import { normalizeSleeperStarterId } from './sleeper';
+import { fixTeamAbbr } from './nameUtils';
 import type { PortfolioPlayer } from './portfolio';
 
 export type WeeklyPool = 'qb' | 'flex' | 'k' | 'dst';
@@ -88,7 +89,7 @@ export interface SlotMove {
     informational: boolean;
     weeklyRankGain: number | null;
     /** Where the recommendation came from. */
-    source: 'weekly-upgrade' | 'ros-only' | 'stream';
+    source: 'weekly-upgrade' | 'weekly-add' | 'ros-only' | 'stream';
     note: string | null;
 }
 
@@ -307,15 +308,18 @@ function attachMoves(gaps: SlotGap[], upgrades: WaiverUpgrade[]): void {
             return (bg - ag) || (a.i - b.i);
         });
 
-    const used = new Set<string>();
+    const used = new Set<string>();      // free agents already recommended
+    const usedDrops = new Set<string>(); // players already told to be dropped
     for (const { g } of order) {
         const wk = g.weekly;
         const weeklyWorthIt = wk.status === 'actionable' || wk.status === 'unranked-mine';
+        const bestId = wk.best?.player.sleeper_id;
 
         // Defenses have no waiver-engine result: a stream is a one-for-one swap that
         // replaces my current defense (keeps the lineup legal, never drops anyone else).
         if (weeklyWorthIt && wk.best && wk.pool === 'dst' && !used.has(wk.best.player.sleeper_id)) {
             used.add(wk.best.player.sleeper_id);
+            if (g.myPlayer) usedDrops.add(g.myPlayer.sleeper_id);
             g.move = {
                 add: wk.best.player,
                 drop: g.myPlayer,
@@ -329,24 +333,34 @@ function attachMoves(gaps: SlotGap[], upgrades: WaiverUpgrade[]): void {
             continue;
         }
 
-        if (weeklyWorthIt && wk.best && !used.has(wk.best.player.sleeper_id)) {
-            const u = upgradeByAddId.get(wk.best.player.sleeper_id);
+        if (weeklyWorthIt && wk.best && bestId && !used.has(bestId)) {
+            const u = upgradeByAddId.get(bestId);
+            used.add(bestId);
             if (u) {
-                used.add(u.add.sleeper_id);
+                let drop = u.informational ? null : u.drop;
+                let type = u.type;
+                let note: string | null = u.informational ? 'Help exists, but every droppable player is a core asset' : null;
+                let source: SlotMove['source'] = 'weekly-upgrade';
+                if (drop && usedDrops.has(drop.sleeper_id)) {
+                    // The same player is already being dropped for another move: don't tell
+                    // the user to drop him twice.
+                    drop = null; type = 'add'; note = 'Check your bench for a drop'; source = 'weekly-add';
+                } else if (drop) {
+                    usedDrops.add(drop.sleeper_id);
+                }
                 g.move = {
-                    add: u.add,
-                    drop: u.informational ? null : u.drop,
-                    type: u.type,
-                    tier: u.tier,
-                    informational: u.informational,
-                    weeklyRankGain: u.weeklyRankGain,
-                    source: 'weekly-upgrade',
-                    note: u.informational
-                        ? 'Help exists, but every droppable player is a core asset'
-                        : null,
+                    add: u.add, drop, type, tier: u.tier, informational: u.informational,
+                    weeklyRankGain: u.weeklyRankGain, source, note,
                 };
-                continue;
+            } else {
+                // The waiver engine has no result for this free agent (it caps its list), but
+                // the gap is real: recommend the add without inventing a drop.
+                g.move = {
+                    add: wk.best.player, drop: null, type: 'add', tier: 'safe', informational: false,
+                    weeklyRankGain: wk.gap, source: 'weekly-add', note: 'Check your bench for a drop',
+                };
             }
+            continue;
         }
 
         // ROS-only: no weekly engine result exists for it, so don't invent a drop.
@@ -400,7 +414,8 @@ export function defenseCandidates(list: RankedListRow[], rostered: ReadonlySet<s
             sleeper_id: r.sleeper_id,
             full_name: r.name ?? r.sleeper_id,
             position: 'DEF',
-            team: r.team ?? abbr,
+            // The id is authoritative (rows often carry no team, or JAC instead of JAX).
+            team: abbr ?? (r.team ? fixTeamAbbr(r.team) : null),
             fc_value: null,
         });
     }
@@ -412,7 +427,7 @@ export function kickerCandidates(list: RankedListRow[], rostered: ReadonlySet<st
     const out: CandidatePlayer[] = [];
     for (const r of list) {
         if (!r.sleeper_id || rostered.has(r.sleeper_id)) continue;
-        out.push({ sleeper_id: r.sleeper_id, full_name: r.name ?? r.sleeper_id, position: 'K', team: r.team ?? null, fc_value: null });
+        out.push({ sleeper_id: r.sleeper_id, full_name: r.name ?? r.sleeper_id, position: 'K', team: r.team ? fixTeamAbbr(r.team) : null, fc_value: null });
     }
     return out;
 }

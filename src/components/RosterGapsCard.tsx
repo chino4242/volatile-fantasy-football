@@ -23,10 +23,14 @@ function who(p: PortfolioPlayer): string {
 }
 
 /** "Flex #14 vs #6" / "ROS #22 vs #9" — null when the horizon has nothing to show. */
-function horizonText(h: HorizonGap, label: string): string | null {
+function horizonText(h: HorizonGap, label: string, hasPlayer = true): string | null {
     if (h.locked) return 'locked (game started)';
     if (h.noRanking) return "can't compare, no current ranking";
-    if (h.status === 'unavailable') return null;
+    if (h.status === 'unavailable') {
+        // A kicker/defense that isn't in this week's list (and nothing ranked to compare to).
+        if (hasPlayer && h.myRank == null && (h.pool === 'k' || h.pool === 'dst')) return `${label} unranked`;
+        return null;
+    }
     // Kickers and defenses show where they sit in the full list: "#5 of 32".
     const size = h.poolSize != null && (h.pool === 'k' || h.pool === 'dst') ? ` of ${h.poolSize}` : '';
     const mine = h.myRank != null ? `#${h.myRank}${size}` : 'unranked';
@@ -34,7 +38,8 @@ function horizonText(h: HorizonGap, label: string): string | null {
 }
 
 function statusText(g: SlotGap): string {
-    if (g.weekly.noRanking) return 'no current ranking';
+    // A stale weekly list must never read as "no action", but it must not hide a ROS gap either.
+    if (g.weekly.noRanking && g.status !== 'actionable') return 'no current ranking';
     switch (g.status) {
         case 'none': return 'no action';
         case 'minor': return 'close';
@@ -63,7 +68,7 @@ function MoveLine({ move }: { move: SlotMove }) {
                 : move.drop
                     ? <>Add <strong>{move.add.full_name}</strong> · drop {move.drop.full_name}</>
                     : <>Add <strong>{move.add.full_name}</strong></>}
-            {move.source === 'ros-only' && move.note && (
+            {move.source !== 'weekly-upgrade' && move.note && (
                 <span className="ml-1 text-xs text-zinc-500">({move.note})</span>
             )}
         </div>
@@ -74,10 +79,13 @@ function SlotRow({ g, deepLink, linkLabel }: { g: SlotGap; deepLink?: string | n
     const open = g.status === 'actionable' || g.status === 'unranked-mine';
     const poolLabel = g.weekly.pool ? POOL_LABEL[g.weekly.pool] : 'Wk';
     const bits = [
-        horizonText(g.weekly, `Wk ${poolLabel}`),
+        horizonText(g.weekly, `Wk ${poolLabel}`, !!g.myPlayer),
         horizonText(g.ros, 'ROS'),
     ].filter(Boolean);
     const sameBest = g.weekly.best && g.ros.best && g.weekly.best.player.sleeper_id === g.ros.best.player.sleeper_id;
+    // My kicker/defense has no rank in this week's (current) list.
+    const unlisted = !!g.myPlayer && g.weekly.myRank == null && !g.weekly.noRanking && !g.weekly.locked
+        && !!g.weekly.pool && !!POOL_WORD[g.weekly.pool];
 
     return (
         <details open={open} className="group py-1.5 border-t border-zinc-100 dark:border-zinc-800 first:border-t-0">
@@ -97,8 +105,8 @@ function SlotRow({ g, deepLink, linkLabel }: { g: SlotGap; deepLink?: string | n
             </summary>
 
             <div className="pl-[4.5rem] pt-1.5 space-y-1">
-                {g.weekly.status === 'unranked-mine' && g.weekly.pool && POOL_WORD[g.weekly.pool] && (
-                    <div className="text-xs text-amber-600 dark:text-amber-400">
+                {unlisted && g.weekly.pool && (
+                    <div className={`text-xs ${g.weekly.status === 'unranked-mine' ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-500'}`}>
                         Your {POOL_WORD[g.weekly.pool]} isn&apos;t in this week&apos;s ranking.
                     </div>
                 )}
@@ -120,7 +128,7 @@ function SlotRow({ g, deepLink, linkLabel }: { g: SlotGap; deepLink?: string | n
                     <div className="text-xs text-zinc-400">No ranked free agents.</div>
                 )}
                 {g.move && <MoveLine move={g.move} />}
-                {g.move && deepLink && (
+                {open && deepLink && (
                     <a
                         href={deepLink}
                         target={deepLink.startsWith('http') ? '_blank' : undefined}

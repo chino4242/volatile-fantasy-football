@@ -11,6 +11,7 @@ import { db } from '@/db';
 import { weeklyRankings } from '@/db/schema';
 import { and, eq, desc, inArray, max, count } from 'drizzle-orm';
 import { classifyKinds, type WeeklyKindStatus } from './weekly-freshness';
+import { fixTeamAbbr } from './nameUtils';
 
 export interface WeeklyRankInfo {
     rank: number | null;
@@ -145,7 +146,7 @@ export async function getWeeklyDstRankings(week?: number): Promise<{ week: numbe
             tier: r.tier ?? null,
             spread: toNum(r.spread),
             opponent: r.opponent ?? null,
-            team: r.team ?? null,
+            team: r.team ? fixTeamAbbr(r.team) : null, // uploads use JAC etc.; we store JAX
             name: r.player_name ?? null,
         }))
         .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
@@ -194,7 +195,7 @@ export async function getWeeklyKickerRankings(week?: number): Promise<{ week: nu
             tier: r.tier ?? null,
             score: toNum(r.total),
             opponent: r.opponent ?? null,
-            team: r.team ?? null,
+            team: r.team ? fixTeamAbbr(r.team) : null, // uploads use JAC etc.; we store JAX
             name: r.player_name ?? null,
         }))
         .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));

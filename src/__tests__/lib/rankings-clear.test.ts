@@ -102,3 +102,34 @@ describe('clearFieldsFor', () => {
         expect(() => clearFieldsFor('bogus' as any)).toThrow();
     });
 });
+
+describe('review patches: exact column sets and the missing-player case', () => {
+    it('1qb clears exactly overall, pos, tier and updated_at', () => {
+        expect(Object.keys(clearFieldsFor('1qb')).sort()).toEqual(['rank_1qb_overall', 'rank_1qb_pos', 'rank_1qb_tier', 'rank_1qb_updated_at']);
+    });
+    it('sf clears exactly overall, pos, tier and updated_at', () => {
+        expect(Object.keys(clearFieldsFor('sf')).sort()).toEqual(['rank_sf_overall', 'rank_sf_pos', 'rank_sf_tier', 'rank_sf_updated_at']);
+    });
+    it('redraft clears exactly overall, pos, tier, auction value and updated_at', () => {
+        expect(Object.keys(clearFieldsFor('redraft')).sort()).toEqual([
+            'redraft_auction_value', 'redraft_rank_overall', 'redraft_rank_pos', 'redraft_rank_tier', 'redraft_rank_updated_at',
+        ]);
+    });
+
+    it('a previously ranked player who is not in the file (e.g. injured Jaxson Dart) is cleared; the rest are kept', () => {
+        const previous = ['dart', 'goff', 'chase', 'jefferson'];
+        const matched = new Set(['goff', 'chase', 'jefferson']);
+        const plan = planClear({ previouslyRanked: previous, matched, totalRows: 3, matchedCount: 3 });
+        expect(plan.toClear).toEqual(['dart']);
+        expect(plan.skippedReason).toBeNull();
+    });
+
+    it('a name that failed to match is treated as missing, so a previously ranked player is cleared (and the guards still apply)', () => {
+        // 10 previously ranked, file has 6 rows; 5 match, 1 unmatched name -> match rate 83%, coverage 50%
+        const previous = Array.from({ length: 10 }, (_, i) => `p${i}`);
+        const matched = new Set(previous.slice(0, 5));
+        const plan = planClear({ previouslyRanked: previous, matched, totalRows: 6, matchedCount: 5 });
+        expect(plan.skippedReason).toBeNull();
+        expect(plan.toClear).toHaveLength(5);
+    });
+});

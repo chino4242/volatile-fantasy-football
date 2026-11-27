@@ -69,12 +69,12 @@ development_status:
   epic-2-retrospective: optional
 
   epic-3: in-progress
-  3-1-slot-gap-engine-and-team-gap-view: review
-  3-2-kicker-and-defense-gap-clarity: review
+  3-1-slot-gap-engine-and-team-gap-view: done
+  3-2-kicker-and-defense-gap-clarity: done
   3-3-roster-move-in-lineup-optimizer: ready-for-dev
   3-4-cross-league-gap-summary: backlog
   epic-3-retrospective: optional
 
   epic-4: in-progress
-  4-1-rankings-replace-on-upload: review
+  4-1-rankings-replace-on-upload: done
   epic-4-retrospective: optional

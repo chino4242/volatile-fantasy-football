@@ -55,17 +55,17 @@ export function classifyKinds(rows: KindRow[], overallLatestWeek: number | null)
 }
 
 export interface KindNotice {
-    kind: 'k' | 'dst';
+    kind: WeeklyKind;
     state: 'stale' | 'missing';
     latestWeek: number | null;
     overallLatestWeek: number | null;
     message: string;
 }
 
-const KIND_WORD: Record<'k' | 'dst', string> = { k: 'kicker', dst: 'defense' };
+const KIND_WORD: Record<WeeklyKind, string> = { qb: 'quarterback', flex: 'flex (RB/WR/TE)', k: 'kicker', dst: 'defense' };
 
 /** Notices only for the kinds the league actually starts, and only when not ok. */
-export function kindNotices(status: WeeklyKindStatus, startedKinds: ('k' | 'dst')[]): KindNotice[] {
+export function kindNotices(status: WeeklyKindStatus, startedKinds: WeeklyKind[]): KindNotice[] {
     const out: KindNotice[] = [];
     for (const kind of startedKinds) {
         const s = status.kinds[kind];

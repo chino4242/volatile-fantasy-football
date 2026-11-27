@@ -4,7 +4,7 @@ baseline_commit: 7840f100a279e14c218fc9c12ca08b1ea1dc7208
 
 # Story 4.1: Rankings Replace on Upload (clear players missing from the file)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -44,6 +44,16 @@ Decisions from Chino (2026-11-25):
 - [x] **Task 3:** Admin page message shows cleared players and skip reason. (AC: 4)
 - [x] **Task 4:** Verify: full tests, `tsc`; CHANGELOG entry. Do not write to the database. (AC: all)
 
+### Review Findings
+
+Code review 2026-11-25 (three layers; reviewed `beeab81..28adf00`).
+
+- [x] [Review][Patch] Strengthen tests: assert the exact column set for `1qb`, `sf` and `redraft` (only ROS is exact today), and add a case showing a previously ranked player who is missing from the file is in the clear list. [src/__tests__/lib/rankings-clear.test.ts]
+- [x] [Review][Defer] The upload route is not atomic: the history insert, the rank updates and the clear are separate statements, so a failure midway leaves a partial result and a retry re-archives. [src/app/api/admin/upload-rankings/route.ts] — deferred, pre-existing design (the updates were already non-transactional)
+- [x] [Review][Defer] Clearing `rank_ros_ppg`, `ros_sos`, `ros_next4_sos`, `bye_week` and `redraft_auction_value` is not archived, because `rankings_history` only stores overall, position rank and tier. The one-time cleanup was backed up to a JSON file; future clears are not. [src/db/schema.ts:rankingsHistory] — deferred, needs a schema change
+
+Dismissed as noise or handled elsewhere (about 20): null `full_name` crash (the column is `NOT NULL`); cleared count vs name lookup (foreign key guarantees the row); un-batched name select (a few hundred ids is far below the driver limit); NaN overall inflating the match rate (the update would throw first, an existing behavior); blank rows lowering the rate (conservative); the 50 to 99% coverage case (an accepted tradeoff, and the cleared list is shown); concurrency (single user); green success box for the skip message (the text begins "Not cleared:"); duplicated category list; message wording and `updated_at` bump; and similar.
+
 ## Dev Notes
 
 - The route already loads `existingRanks` (players with a non-null overall rank for the category) before applying the file; reuse its ids as the "previously ranked" set.
@@ -82,7 +92,9 @@ Kiro (Auto).
 - CHANGELOG.md
 - _bmad-output/implementation-artifacts/sprint-status.yaml
 - _bmad-output/implementation-artifacts/4-1-stale-ros-backup-2026-11-25.json (new, backup of cleared rows)
+- src/__tests__/lib/rankings-clear.test.ts (review tests)
 
 ### Change Log
 
 - 2026-11-25: Rankings uploads (1qb, sf, redraft, ros) now replace the previous ranking: players missing from the file are cleared, with guards and a visible cleared list. Status to review.
+- 2026-11-25: Code review patch applied: tests now assert the exact cleared columns for 1qb, sf and redraft, and cover a previously ranked player missing from the file and an unmatched name. No production code changes were needed. Status to done.

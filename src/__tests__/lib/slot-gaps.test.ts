@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSlotGaps, gapSummary, dedupeById, GAP_THRESHOLDS, type SlotGap } from '@/lib/slot-gaps';
+import { computeSlotGaps, gapSummary, dedupeById, kickerCandidates, defenseCandidates, GAP_THRESHOLDS, type SlotGap } from '@/lib/slot-gaps';
 import { findWaiverUpgrades, type WaiverUpgrade } from '@/lib/waiver-upgrades';
 import type { PortfolioPlayer } from '@/lib/portfolio';
 
@@ -480,5 +480,107 @@ describe('computeSlotGaps: pool size and stale rankings', () => {
         const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: ['QB'], staleKinds: new Set(['k', 'dst'] as const) })[0];
         expect(g.weekly.noRanking).toBeUndefined();
         expect(g.weekly.status).toBe('none');
+    });
+});
+
+describe('review patches: ROS tie-break and caution tier', () => {
+    it('ROS tie-break: equal position rank is broken by overall ROS rank', () => {
+        const roster = [P({ sleeper_id: 'rb1', position: 'RB', rosPosRank: 30 })];
+        const fas = [
+            P({ sleeper_id: 'worse_overall', position: 'RB', rosPosRank: 10, rosRank: 90 }),
+            P({ sleeper_id: 'better_overall', position: 'RB', rosPosRank: 10, rosRank: 40 }),
+        ];
+        const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: ['RB'] })[0];
+        expect(g.ros.best?.player.sleeper_id).toBe('better_overall');
+    });
+
+    it('a caution-tier swap is surfaced with its tier (and a safe one is not flagged)', () => {
+        const roster = [P({ sleeper_id: 'myk', position: 'K', weeklyRank: 25, is_starter: true, marketValue: 2000 })];
+        const fas = [P({ sleeper_id: 'k1', position: 'K', weeklyRank: 3 })];
+        const upgrades = findWaiverUpgrades(
+            { rosterId: 'me', ownerName: 'me', players: roster }, fas, ['K', 'BN'], 'redraft',
+            { coreCapacity: 1, actualCoreCount: 1 },
+        );
+        const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: ['K', 'BN'], upgrades })[0];
+        expect(g.move?.tier).toBe('caution');
+        expect(g.move?.drop?.sleeper_id).toBe('myk');
+        expect(g.move?.informational).toBe(false);
+    });
+});
+
+describe('review patches: attachMoves fallbacks', () => {
+    it('an actionable slot with no matching waiver upgrade still gets a plain add with no drop', () => {
+        const roster = [P({ sleeper_id: 'myk', position: 'K', weeklyRank: 25, is_starter: true })];
+        const fas = [P({ sleeper_id: 'k1', position: 'K', weeklyRank: 3 })];
+        const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: ['K'], upgrades: [] })[0];
+        expect(g.weekly.status).toBe('actionable');
+        expect(g.move?.add.sleeper_id).toBe('k1');
+        expect(g.move?.drop).toBeNull();
+        expect(g.move?.note).toMatch(/bench/i);
+    });
+
+    it('two moves never recommend dropping the same player', () => {
+        const roster = [
+            P({ sleeper_id: 'wr1', position: 'WR', weeklyRank: 60 }),
+            P({ sleeper_id: 'rb1', position: 'RB', weeklyRank: 70 }),
+            P({ sleeper_id: 'bench', position: 'WR', weeklyRank: 120 }),
+        ];
+        const fas = [
+            P({ sleeper_id: 'fa_a', position: 'WR', weeklyRank: 5 }),
+            P({ sleeper_id: 'fa_b', position: 'RB', weeklyRank: 8 }),
+        ];
+        const mk = (add: PortfolioPlayer): WaiverUpgrade => ({
+            add, drop: roster[2], type: 'swap', tier: 'safe', informational: false, cracksLineup: true,
+            comparedTo: roster[2], pool: 'flex', addWeeklyRank: add.weeklyRank ?? null, dropWeeklyRank: 120,
+            weeklyRankGain: 100, valueSurrendered: 0,
+        });
+        const gaps = computeSlotGaps({
+            roster, freeAgents: fas, rosterPositions: ['WR', 'RB', 'BN'], upgrades: [mk(fas[0]), mk(fas[1])],
+        });
+        const drops = gaps.map(g => g.move?.drop?.sleeper_id).filter(Boolean);
+        expect(new Set(drops).size).toBe(drops.length);
+        expect(gaps.filter(g => g.move).length).toBe(2); // both slots still get an add
+    });
+});
+
+describe('review patches: team abbreviation convention (JAC vs JAX)', () => {
+    it('kickerCandidates normalizes a JAC row to our JAX convention', () => {
+        const c = kickerCandidates([{ sleeper_id: 'k1', rank: 4, name: 'Cam Little', team: 'JAC' }], new Set());
+        expect(c[0].team).toBe('JAX');
+    });
+
+    it('a Jacksonville kicker whose game started (JAX in started set) is excluded even if the row said JAC', () => {
+        const roster = [P({ sleeper_id: 'myk', position: 'K', weeklyRank: 25, team: 'KC' })];
+        const cands = kickerCandidates([{ sleeper_id: 'k1', rank: 1, name: 'JAX K', team: 'JAC' }, { sleeper_id: 'k2', rank: 6, name: 'Other', team: 'BUF' }], new Set());
+        const fas = cands.map(c => P({ ...c, weeklyRank: c.sleeper_id === 'k1' ? 1 : 6 }));
+        const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: ['K'], startedTeams: new Set(['JAX']) })[0];
+        expect(g.weekly.best?.player.sleeper_id).toBe('k2');
+    });
+
+    it('defenseCandidates takes the team from the DEF_ id, not from a row team that may disagree', () => {
+        const c = defenseCandidates([{ sleeper_id: 'DEF_JAX', rank: 3, name: 'Jaguars', team: 'JAC' }], new Set());
+        expect(c[0].team).toBe('JAX');
+        const d = defenseCandidates([{ sleeper_id: 'DEF_SEA', rank: 3, name: 'Seahawks', team: 'LAR' }], new Set());
+        expect(d[0].team).toBe('SEA');
+    });
+});
+
+describe('review patches: stale QB / flex lists', () => {
+    it('a stale flex list marks flex slots noRanking, while ROS still computes', () => {
+        const roster = [P({ sleeper_id: 'rb1', position: 'RB', rosPosRank: 30 })];
+        const fas = [P({ sleeper_id: 'f', position: 'RB', rosPosRank: 5 })];
+        const g = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: ['RB'], staleKinds: new Set(['flex'] as const) })[0];
+        expect(g.weekly.noRanking).toBe(true);
+        expect(g.weekly.pool).toBe('flex');
+        expect(g.ros.status).toBe('actionable');
+        expect(g.status).toBe('actionable'); // ROS still drives the slot
+    });
+
+    it('a stale qb list marks QB slots noRanking but leaves flex slots alone', () => {
+        const roster = [P({ sleeper_id: 'qb1', position: 'QB', weeklyRank: null }), P({ sleeper_id: 'wr1', position: 'WR', weeklyRank: 5 })];
+        const fas = [P({ sleeper_id: 'wr2', position: 'WR', weeklyRank: 40 })];
+        const gaps = computeSlotGaps({ roster, freeAgents: fas, rosterPositions: ['QB', 'WR'], staleKinds: new Set(['qb'] as const) });
+        expect(gaps.find(g => g.slot === 'QB')!.weekly.noRanking).toBe(true);
+        expect(gaps.find(g => g.slot === 'WR')!.weekly.noRanking).toBeUndefined();
     });
 });
